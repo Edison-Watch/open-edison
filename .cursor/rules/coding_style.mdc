@@ -1,0 +1,26 @@
+---
+description: Python coding style for Open Edison
+globs:
+  - "src/**/*.py"
+  - "tests/**/*.py"
+  - "main.py"
+  - "**/*.py"
+alwaysApply: false
+---
+## Stylistic preferences
+
+- Use snake_case for all function, file, and directory names
+- Use PascalCase for class names
+- Use lowercase for variable names
+- Use UPPER_SNAKE_CASE for constants
+- Use 4 spaces for indentation
+- Use double quotes for strings
+- Type hints for all function signatures, using modern syntax (instead of Optional[T], use T | None, instead of List[T], use list[T], etc)
+- Docstrings for public functions and classes
+
+## Open Edison specific
+
+- Prefer simplicity over complexity
+- Keep single-user focus (no multi-user patterns)
+- Use dataclasses for configuration structures
+- Use subprocess management for MCP servers

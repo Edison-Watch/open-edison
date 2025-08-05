@@ -1,0 +1,58 @@
+---
+description: Testing approach for Open Edison
+globs:
+  - "tests/**/*.py"
+  - "**/test_*.py"
+alwaysApply: false
+---
+## Testing Strategy
+
+Write simple, focused tests for Open Edison's core functionality.
+
+### Test Structure
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from src.server import OpenEdisonProxy
+
+@pytest.fixture
+def client():
+    proxy = OpenEdisonProxy()
+    return TestClient(proxy.app)
+
+def test_health_endpoint(client):
+    """Test health check endpoint"""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+```
+
+### Test Categories
+
+- **Unit tests** - Configuration, individual functions
+- **Integration tests** - API endpoints, server functionality
+- **Config tests** - JSON loading, validation
+
+### Key Areas to Test
+
+1. **Configuration system** - Loading, saving, validation
+2. **API endpoints** - Health, status, server management
+3. **Authentication** - API key validation
+4. **MCP proxy** - Server start/stop, process management
+
+### Running Tests
+
+```bash
+make test          # Run all tests
+pytest tests/      # Direct pytest
+pytest -v tests/   # Verbose output
+```
+
+### Best Practices
+
+- Test the happy path and error cases
+- Use descriptive test names
+- Keep tests simple and focused
+- Mock external dependencies (MCP servers)
+- Test configuration edge cases

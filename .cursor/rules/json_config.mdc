@@ -1,0 +1,48 @@
+---
+description: How to use and manage JSON configuration in Open Edison
+globs:
+  - "src/config.py"
+  - "config.json"
+  - "**/*config*.py"
+alwaysApply: false
+---
+## JSON Configuration System
+
+Open Edison uses a simple JSON-based configuration system instead of databases or complex config management.
+
+### Core Principles
+
+- **Single config.json file** - All configuration in one place
+- **Type-safe with dataclasses** - Configuration validated with Python dataclasses
+- **Version control friendly** - Can be committed to git
+- **No database required** - Zero setup complexity
+
+### Usage Pattern
+
+```python
+from src.config import config
+
+# Access server settings
+print(config.server.host)
+print(config.server.port)
+print(config.server.api_key)
+
+# Access MCP servers
+for server in config.mcp_servers:
+    if server.enabled:
+        print(f"Server: {server.name}")
+```
+
+### Adding New Configuration
+
+1. Add field to appropriate dataclass in `src/config.py`
+2. Update default configuration in `create_default()` method
+3. Document new option in configuration guide
+
+### Configuration Structure
+
+- `server` - Host, port, API key
+- `logging` - Log level, database path
+- `mcp_servers` - List of MCP server configurations
+
+Never bypass the configuration system. Always use `config` import for accessing settings.

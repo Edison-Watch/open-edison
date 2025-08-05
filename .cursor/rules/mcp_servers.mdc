@@ -1,0 +1,71 @@
+---
+description: MCP server management patterns for Open Edison
+globs:
+  - "src/proxy.py"
+  - "src/server.py"
+  - "src/config.py"
+alwaysApply: false
+---
+## MCP Server Management
+
+Open Edison manages MCP servers as subprocess instances, not containers or database entries.
+
+### Core Patterns
+
+```python
+# MCP server configuration in config.json
+{
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "command": "uvx", 
+      "args": ["mcp-server-filesystem", "/path"],
+      "env": {"VAR": "value"},
+      "enabled": true
+    }
+  ]
+}
+
+# Process management
+process = subprocess.Popen(
+    [server.command] + server.args,
+    env=server.env,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    stdin=subprocess.PIPE,
+    text=True
+)
+```
+
+### Key Principles
+
+- **Subprocess-based** - Each MCP server runs as separate process
+- **JSON configuration** - No database, all config in config.json
+- **Simple lifecycle** - Start, stop, check status
+- **Process isolation** - Servers don't affect each other
+
+### Common Operations
+
+```python
+from src.proxy import MCPProxy
+
+proxy = MCPProxy()
+
+# Start server
+await proxy.start_server("filesystem")
+
+# Check if running  
+is_running = await proxy.is_server_running("filesystem")
+
+# Stop server
+await proxy.stop_server("filesystem")
+```
+
+### Error Handling
+
+- Graceful shutdown with terminate() then kill()
+- Process cleanup on server shutdown
+- Health monitoring for crashed processes
+- Clear error messages for failed starts
+
+Keep MCP server management simple and process-focused.

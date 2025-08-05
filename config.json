@@ -1,0 +1,23 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 3000,
+        "api_key": "dev-api-key-change-me"
+    },
+    "logging": {
+        "level": "INFO",
+        "database_path": "sessions.db"
+    },
+    "mcp_servers": [
+        {
+            "name": "example-filesystem",
+            "command": "uvx",
+            "args": [
+                "mcp-server-filesystem",
+                "/tmp"
+            ],
+            "env": {},
+            "enabled": false
+        }
+    ]
+}

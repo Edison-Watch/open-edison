@@ -1,0 +1,48 @@
+---
+description: Single-user design principles for Open Edison
+globs:
+  - "src/**/*.py"
+  - "main.py"
+alwaysApply: false
+---
+## Single-User Design Philosophy
+
+Open Edison is deliberately designed for single-user deployment. Always maintain this focus.
+
+### Core Principles
+
+- **One user, one instance** - No multi-tenancy
+- **Local deployment** - Designed for self-hosting
+- **Simple authentication** - Single API key, no user management
+- **JSON configuration** - No database complexity
+- **Process management** - Subprocess over containers
+
+### What NOT to add
+
+❌ User management systems  
+❌ Database migrations  
+❌ Complex authentication  
+❌ Multi-tenant features  
+❌ Organization/team features  
+
+### What to maintain
+
+✅ Simple API key authentication  
+✅ JSON configuration file  
+✅ Process-based MCP server management  
+✅ Single-port server architecture  
+✅ Local file storage  
+
+### Code Patterns
+
+```python
+# Good: Simple API key check
+def verify_api_key(credentials):
+    if credentials.credentials != config.server.api_key:
+        raise HTTPException(401, "Invalid API key")
+
+# Bad: Complex user lookup
+# def get_user_by_token(token): ...
+```
+
+When in doubt, choose the simpler approach that works for one user on one machine.
