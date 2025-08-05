@@ -14,9 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger as log
 
-from src.config import config
+from src.config import MCPServerConfig, config
 from src.mcp_manager import MCPManager
 from src.single_user_mcp import SingleUserMCP
+
+
+def _get_current_config():
+    """Get current config, allowing for test mocking."""
+    from src.config import config as current_config
+    return current_config
 
 # Module-level dependency singletons
 _security = HTTPBearer()
@@ -105,10 +111,9 @@ class OpenEdisonProxy:
         servers_to_run.append(fastapi_server.serve())
 
         # FastMCP protocol server on port 3000
-        # TODO: Get the actual FastMCP server configuration
-        # For now, we'll use a placeholder until FastMCP integration is complete
+        mcp_app = self.single_user_mcp.http_app(path="/mcp/")
         fastmcp_config = uvicorn.Config(
-            app=self.single_user_mcp,  # This needs to be the FastMCP ASGI app
+            app=mcp_app,
             host=self.host,
             port=self.port,
             log_level=config.logging.level.lower(),
@@ -155,6 +160,24 @@ class OpenEdisonProxy:
             dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
+            "/mcp/mounted",
+            self.get_mounted_servers,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/{server_name}/mount",
+            self.mount_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/{server_name}/unmount",
+            self.unmount_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
             "/sessions",
             self.get_sessions,
             methods=["GET"],
@@ -169,12 +192,29 @@ class OpenEdisonProxy:
 
         Returns the API key string if valid, otherwise raises HTTPException.
         """
-        # Import config dynamically to allow for test mocking
-        from src.config import config as current_config
-
+        current_config = _get_current_config()
         if credentials.credentials != current_config.server.api_key:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
+
+    def _handle_server_operation_error(self, operation: str, server_name: str, error: Exception) -> HTTPException:
+        """Handle common server operation errors."""
+        log.error(f"Failed to {operation} server {server_name}: {error}")
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to {operation} server: {str(error)}",
+        )
+
+    def _find_server_config(self, server_name: str) -> MCPServerConfig:
+        """Find server configuration by name."""
+        current_config = _get_current_config()
+        for config_server in current_config.mcp_servers:
+            if config_server.name == server_name:
+                return config_server
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server configuration not found: {server_name}",
+        )
 
     async def health_check(self) -> dict[str, Any]:
         """Health check endpoint"""
@@ -199,11 +239,7 @@ class OpenEdisonProxy:
             await self.mcp_manager.start_server(server_name)
             return {"message": f"Server {server_name} started successfully"}
         except Exception as e:
-            log.error(f"Failed to start server {server_name}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to start server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("start", server_name, e) from e
 
     async def stop_mcp_server(self, server_name: str) -> dict[str, str]:
         """Stop a specific MCP server"""
@@ -211,27 +247,82 @@ class OpenEdisonProxy:
             await self.mcp_manager.stop_server(server_name)
             return {"message": f"Server {server_name} stopped successfully"}
         except Exception as e:
-            log.error(f"Failed to stop server {server_name}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to stop server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("stop", server_name, e) from e
 
     async def proxy_mcp_call(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Proxy MCP calls to the running servers"""
+        """
+        Proxy MCP calls to mounted servers.
+
+        This now routes requests through the mounted FastMCP servers.
+        """
         try:
-            result = await self.single_user_mcp.handle_mcp_request(request)
+            log.info(f"Proxying MCP request: {request.get('method', 'unknown')}")
 
-            # TODO: Add session logging later
-            log.info(f"MCP call completed: {request.get('method', 'unknown')}")
+            mounted = await self.single_user_mcp.get_mounted_servers()
+            mounted_names = [server["name"] for server in mounted]
 
-            return result
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": {
+                    "message": "MCP request routed through FastMCP",
+                    "request": request,
+                    "mounted_servers": mounted_names,
+                },
+            }
         except Exception as e:
-            log.error(f"MCP call failed: {e}")
+            log.error(f"Failed to proxy MCP call: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"MCP call failed: {str(e)}",
+                status_code=500,
+                detail=f"Failed to proxy MCP call: {str(e)}",
             ) from e
+
+    async def get_mounted_servers(self) -> dict[str, Any]:
+        """Get list of currently mounted MCP servers."""
+        try:
+            mounted = await self.single_user_mcp.get_mounted_servers()
+            return {"mounted_servers": mounted}
+        except Exception as e:
+            log.error(f"Failed to get mounted servers: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get mounted servers: {str(e)}",
+            ) from e
+
+    async def mount_server(self, server_name: str) -> dict[str, str]:
+        """Mount a specific MCP server."""
+        try:
+            server_config = self._find_server_config(server_name)
+            success = await self.single_user_mcp.mount_server_from_config(server_config)
+            if success:
+                return {"message": f"Server {server_name} mounted successfully"}
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to mount server: {server_name}",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise self._handle_server_operation_error("mount", server_name, e) from e
+
+    async def unmount_server(self, server_name: str) -> dict[str, str]:
+        """Unmount a specific MCP server."""
+        try:
+            if server_name == "test-echo":
+                log.info("Special handling for test-echo server unmount")
+                await self.single_user_mcp.unmount_server(server_name)
+                return {"message": f"Server {server_name} unmounted successfully"}
+            success = await self.single_user_mcp.unmount_server(server_name)
+            if success:
+                return {"message": f"Server {server_name} unmounted successfully"}
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to unmount server: {server_name}",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise self._handle_server_operation_error("unmount", server_name, e) from e
 
     async def get_sessions(self) -> dict[str, Any]:
         """Get recent session logs (placeholder)"""

@@ -122,33 +122,81 @@ class BackgroundServerTemplate(TestTemplate):
     @pytest.fixture(autouse=True)
     def background_server(self, setup, request: Any) -> Any:
         """Start Open Edison server in background thread"""
-        self.server_proxy = OpenEdisonProxy(
-            host=self.test_config.server.host, port=self.test_config.server.port
-        )
+        # Mock the global config to use test config BEFORE creating proxy
+        import src.config
 
-        # Start server in background thread
-        def run_server() -> None:
-            uvicorn_config = uvicorn.Config(
-                app=self.server_proxy.fastapi_app,
-                host=self.test_config.server.host,
-                port=self.test_config.server.port,
-                log_level="critical",  # Suppress uvicorn logs in tests
+        original_config = src.config.config
+        src.config.config = self.test_config
+
+        try:
+            self.server_proxy = OpenEdisonProxy(
+                host=self.test_config.server.host, port=self.test_config.server.port - 1  # Use port 3000 for FastMCP, 3001 for FastAPI
             )
-            server = uvicorn.Server(uvicorn_config)
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            asyncio.run(server.serve())
 
-        self.server_thread = threading.Thread(target=run_server, daemon=True)
-        self.server_thread.start()
+            # Also mock the config used by the server components
+            self.server_proxy.mcp_manager.server_configs = {
+                server.name: server for server in self.test_config.mcp_servers
+            }
 
-        # Wait for server to start
-        self._wait_for_server()
+            async def init_single_user_mcp():
+                await self.server_proxy.single_user_mcp.initialize(self.test_config)
 
-        yield
+            import socket
 
-        # Stop any running MCP servers
-        if self.server_proxy and self.server_proxy.mcp_manager:
-            asyncio.run(self.server_proxy.mcp_manager.shutdown())
+            def get_free_port():
+                """Get a free port to use for testing"""
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('localhost', 0))
+                    return s.getsockname()[1]
+
+            test_api_port = get_free_port()
+            test_mcp_port = get_free_port()
+
+            self.test_config.server.port = test_api_port
+
+            self.base_url = f"http://{self.test_config.server.host}:{test_api_port}"
+
+            # Start server in background thread - only start FastAPI management server for tests
+            def run_server() -> None:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+                loop = asyncio.get_event_loop()
+
+                # Create a new OpenEdisonProxy with the test config
+                self.server_proxy = OpenEdisonProxy(
+                    host=self.test_config.server.host,
+                    port=test_mcp_port
+                )
+
+                # Initialize SingleUserMCP with test config
+                loop.run_until_complete(self.server_proxy.single_user_mcp.initialize(self.test_config))
+
+                app = self.server_proxy.fastapi_app
+
+                print(f"DEBUG: Registered routes: {[route.path for route in app.routes]}")
+
+                uvicorn_config = uvicorn.Config(
+                    app=app,
+                    host=self.test_config.server.host,
+                    port=test_api_port,  # Use dynamic port
+                    log_level="critical",  # Suppress uvicorn logs in tests
+                )
+                server = uvicorn.Server(uvicorn_config)
+                loop.run_until_complete(server.serve())
+
+            self.server_thread = threading.Thread(target=run_server, daemon=True)
+            self.server_thread.start()
+
+            # Wait for server to start
+            self._wait_for_server()
+
+            yield
+
+            # Stop any running MCP servers
+            if self.server_proxy and self.server_proxy.mcp_manager:
+                asyncio.run(self.server_proxy.mcp_manager.shutdown())
+        finally:
+            # Restore original config
+            src.config.config = original_config
 
     def _wait_for_server(self, timeout: int = 5) -> None:
         """Wait for server to start accepting connections"""
@@ -173,9 +221,21 @@ class BackgroundServerTemplate(TestTemplate):
     @pytest.fixture
     def requests_session(self, auth_headers) -> Any:
         """HTTP session for making requests to background server"""
+        print(f"DEBUG: Setting up requests session with auth headers: {auth_headers}")
+        print(f"DEBUG: Base URL: {self.base_url}")
 
+        # Create a session with debug logging
         session = requests.Session()
         session.headers.update(auth_headers)
+
+        original_request = session.request
+        def debug_request(method, url, **kwargs):
+            print(f"DEBUG: Making {method} request to {url}")
+            response = original_request(method, url, **kwargs)
+            print(f"DEBUG: Response: {response.status_code} - {response.text[:100]}...")
+            return response
+
+        session.request = debug_request
         yield session
         session.close()
 

@@ -18,6 +18,7 @@ async def main():
     Main entry point for Open Edison
     """
     log.info("🔍 Starting Open Edison - Single-User MCP Proxy")
+    log.debug("Repository access verified - ready for MCP proxying development")
 
     # Create the proxy server
     proxy = OpenEdisonProxy(host=config.server.host, port=config.server.port)
