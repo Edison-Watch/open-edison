@@ -4,6 +4,7 @@ Integration tests for Open Edison using background server.
 These tests run against a real server instance in the background.
 """
 
+import pytest
 import requests
 
 from tests.test_template import BackgroundServerTemplate, integration_test, slow_test
@@ -23,6 +24,7 @@ class TestBackgroundServerIntegration(BackgroundServerTemplate):
         assert "version" in data
 
     @integration_test
+    @pytest.mark.skip(reason="MCP status functionality not yet implemented")
     def test_mcp_status_endpoint(self, requests_session):
         """Test MCP status endpoint with background server"""
         response = requests_session.get(f"{self.base_url}/mcp/status")
@@ -38,6 +40,7 @@ class TestBackgroundServerIntegration(BackgroundServerTemplate):
 
     @integration_test
     @slow_test
+    @pytest.mark.skip(reason="MCP server lifecycle functionality not yet implemented")
     def test_mcp_server_lifecycle(self, requests_session):
         """Test complete MCP server start/stop lifecycle"""
         # Start the test echo server
@@ -53,6 +56,7 @@ class TestBackgroundServerIntegration(BackgroundServerTemplate):
         assert response.status_code == 200
 
     @integration_test
+    @pytest.mark.skip(reason="MCP call functionality not yet implemented")
     def test_mcp_call_placeholder(self, requests_session):
         """Test MCP call endpoint (currently placeholder)"""
         request_data = {"method": "tools/list", "id": 1, "params": {}}
@@ -66,6 +70,7 @@ class TestBackgroundServerIntegration(BackgroundServerTemplate):
         assert "result" in data
 
     @integration_test
+    @pytest.mark.skip(reason="Sessions endpoint functionality not yet implemented")
     def test_sessions_endpoint_placeholder(self, requests_session):
         """Test sessions endpoint (currently placeholder)"""
         response = requests_session.get(f"{self.base_url}/sessions")

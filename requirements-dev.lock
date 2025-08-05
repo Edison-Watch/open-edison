@@ -63,6 +63,8 @@ fastmcp==2.11.1
 frozenlist==1.7.0
     # via aiohttp
     # via aiosignal
+greenlet==3.2.3
+    # via sqlalchemy
 h11==0.16.0
     # via httpcore
     # via uvicorn
