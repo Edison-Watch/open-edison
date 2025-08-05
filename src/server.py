@@ -14,9 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger as log
 
-from src.config import config
+from src.config import MCPServerConfig, config
 from src.mcp_manager import MCPManager
 from src.single_user_mcp import SingleUserMCP
+
+
+def _get_current_config():
+    """Get current config, allowing for test mocking."""
+    from src.config import config as current_config
+    return current_config
 
 # Module-level dependency singletons
 _security = HTTPBearer()
@@ -186,12 +192,29 @@ class OpenEdisonProxy:
 
         Returns the API key string if valid, otherwise raises HTTPException.
         """
-        # Import config dynamically to allow for test mocking
-        from src.config import config as current_config
-
+        current_config = _get_current_config()
         if credentials.credentials != current_config.server.api_key:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
+
+    def _handle_server_operation_error(self, operation: str, server_name: str, error: Exception) -> HTTPException:
+        """Handle common server operation errors."""
+        log.error(f"Failed to {operation} server {server_name}: {error}")
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to {operation} server: {str(error)}",
+        )
+
+    def _find_server_config(self, server_name: str) -> MCPServerConfig:
+        """Find server configuration by name."""
+        current_config = _get_current_config()
+        for config_server in current_config.mcp_servers:
+            if config_server.name == server_name:
+                return config_server
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server configuration not found: {server_name}",
+        )
 
     async def health_check(self) -> dict[str, Any]:
         """Health check endpoint"""
@@ -216,11 +239,7 @@ class OpenEdisonProxy:
             await self.mcp_manager.start_server(server_name)
             return {"message": f"Server {server_name} started successfully"}
         except Exception as e:
-            log.error(f"Failed to start server {server_name}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to start server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("start", server_name, e) from e
 
     async def stop_mcp_server(self, server_name: str) -> dict[str, str]:
         """Stop a specific MCP server"""
@@ -228,11 +247,7 @@ class OpenEdisonProxy:
             await self.mcp_manager.stop_server(server_name)
             return {"message": f"Server {server_name} stopped successfully"}
         except Exception as e:
-            log.error(f"Failed to stop server {server_name}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to stop server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("stop", server_name, e) from e
 
     async def proxy_mcp_call(self, request: dict[str, Any]) -> dict[str, Any]:
         """
@@ -277,20 +292,7 @@ class OpenEdisonProxy:
     async def mount_server(self, server_name: str) -> dict[str, str]:
         """Mount a specific MCP server."""
         try:
-            # Import config dynamically to allow for test mocking
-            from src.config import config as current_config
-            server_config = None
-            for config_server in current_config.mcp_servers:
-                if config_server.name == server_name:
-                    server_config = config_server
-                    break
-
-            if not server_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Server configuration not found: {server_name}",
-                )
-
+            server_config = self._find_server_config(server_name)
             success = await self.single_user_mcp.mount_server_from_config(server_config)
             if success:
                 return {"message": f"Server {server_name} mounted successfully"}
@@ -301,11 +303,7 @@ class OpenEdisonProxy:
         except HTTPException:
             raise
         except Exception as e:
-            log.error(f"Failed to mount server {server_name}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to mount server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("mount", server_name, e) from e
 
     async def unmount_server(self, server_name: str) -> dict[str, str]:
         """Unmount a specific MCP server."""
@@ -324,11 +322,7 @@ class OpenEdisonProxy:
         except HTTPException:
             raise
         except Exception as e:
-            log.error(f"Failed to unmount server {server_name}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to unmount server: {str(e)}",
-            ) from e
+            raise self._handle_server_operation_error("unmount", server_name, e) from e
 
     async def get_sessions(self) -> dict[str, Any]:
         """Get recent session logs (placeholder)"""
