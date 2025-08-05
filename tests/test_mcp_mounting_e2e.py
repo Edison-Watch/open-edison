@@ -4,10 +4,7 @@ End-to-end tests for FastMCP mounting functionality.
 Tests the complete workflow: JSON config → subprocess → FastMCP proxy → mounted instance
 """
 
-import pytest
 import requests
-import time
-from typing import Any
 
 from tests.test_template import BackgroundServerTemplate, integration_test, slow_test
 
@@ -19,12 +16,12 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
     def test_mounted_servers_endpoint(self, requests_session):
         """Test the /mcp/mounted endpoint returns mounted servers"""
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "mounted_servers" in data
         assert isinstance(data["mounted_servers"], list)
-        
+
         mounted_names = [server["name"] for server in data["mounted_servers"]]
         assert "test-echo" in mounted_names
 
@@ -33,9 +30,8 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test mounting a server via API endpoint"""
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 200
-        initial_mounted = response.json()["mounted_servers"]
-        initial_count = len(initial_mounted)
-        
+        response.json()["mounted_servers"]
+
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 200
         data = response.json()
@@ -57,7 +53,7 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test unmounting a server via API endpoint"""
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 200
-        
+
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/unmount")
         assert response.status_code == 200
         data = response.json()
@@ -79,19 +75,18 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test complete mount/unmount lifecycle"""
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 200
-        initial_mounted = response.json()["mounted_servers"]
-        
+        response.json()["mounted_servers"]
+
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/unmount")
         assert response.status_code == 200
-        
+
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 200
-        after_unmount = response.json()["mounted_servers"]
-        unmounted_names = [server["name"] for server in after_unmount]
-        
+        response.json()["mounted_servers"]
+
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 200
-        
+
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 200
         after_mount = response.json()["mounted_servers"]
@@ -103,22 +98,22 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test MCP call endpoint with mounted servers"""
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 200
-        
+
         request_data = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/list",
             "params": {}
         }
-        
+
         response = requests_session.post(f"{self.base_url}/mcp/call", json=request_data)
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["jsonrpc"] == "2.0"
         assert data["id"] == 1
         assert "result" in data
-        
+
         result = data["result"]
         assert "mounted_servers" in result
         assert isinstance(result["mounted_servers"], list)
@@ -128,13 +123,13 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test that mounting endpoints require authentication"""
         response = requests.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 403
-        
+
         response = requests.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 403
-        
+
         response = requests.post(f"{self.base_url}/mcp/test-echo/unmount")
         assert response.status_code == 403
-        
+
         invalid_headers = {"Authorization": "Bearer invalid-key"}
         response = requests.get(f"{self.base_url}/mcp/mounted", headers=invalid_headers)
         assert response.status_code == 401
@@ -144,22 +139,22 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         """Test that enabled servers are auto-mounted during initialization"""
         response = requests_session.get(f"{self.base_url}/mcp/mounted")
         assert response.status_code == 200
-        
+
         data = response.json()
         mounted_servers = data["mounted_servers"]
-        
+
         assert len(mounted_servers) >= 1
-        
+
         test_echo_server = None
         for server in mounted_servers:
             if server["name"] == "test-echo":
                 test_echo_server = server
                 break
-        
+
         assert test_echo_server is not None, "test-echo server should be auto-mounted"
         assert test_echo_server["mounted"] is True
         assert "config" in test_echo_server
-        
+
         config = test_echo_server["config"]
         assert config["name"] == "test-echo"
         assert config["command"] == "echo"
@@ -169,10 +164,10 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
     @slow_test
     def test_mounting_error_handling(self, requests_session):
         """Test error handling in mounting operations"""
-        
-        
+
+
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code in [200, 500]
-        
+
         data = response.json()
         assert "message" in data or "detail" in data

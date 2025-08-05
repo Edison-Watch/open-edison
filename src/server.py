@@ -279,7 +279,6 @@ class OpenEdisonProxy:
         try:
             # Import config dynamically to allow for test mocking
             from src.config import config as current_config
-            
             server_config = None
             for config_server in current_config.mcp_servers:
                 if config_server.name == server_name:
@@ -312,10 +311,9 @@ class OpenEdisonProxy:
         """Unmount a specific MCP server."""
         try:
             if server_name == "test-echo":
-                log.info(f"Special handling for test-echo server unmount")
+                log.info("Special handling for test-echo server unmount")
                 await self.single_user_mcp.unmount_server(server_name)
                 return {"message": f"Server {server_name} unmounted successfully"}
-                
             success = await self.single_user_mcp.unmount_server(server_name)
             if success:
                 return {"message": f"Server {server_name} unmounted successfully"}

@@ -86,7 +86,6 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             if server_name in self.mounted_servers:
                 mounted = self.mounted_servers[server_name]
-                
                 if mounted["session"] is not None and "session" in mounted:
                     await mounted["session"].close()
 
@@ -95,7 +94,6 @@ class SingleUserMCP(FastMCP[Any]):
 
             if server_name != "test-echo":
                 await self.mcp_manager.stop_server(server_name)
-                
             return True
 
         except Exception as e:
@@ -141,7 +139,6 @@ class SingleUserMCP(FastMCP[Any]):
     async def initialize(self, test_config=None) -> None:
         """Initialize the FastMCP server and auto-mount enabled servers."""
         log.info("Initializing Single User MCP server")
-        
         config_to_use = test_config if test_config is not None else config
         log.debug(f"Available MCP servers in config: {[s.name for s in config_to_use.mcp_servers]}")
 
