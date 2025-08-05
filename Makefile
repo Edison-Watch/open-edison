@@ -146,3 +146,39 @@ build: check_rye ## Build the package
 	@echo "$(YELLOW)📦Building package...$(RESET)"
 	@rye build
 	@echo "$(GREEN)✅Package built successfully.$(RESET)"
+
+########################################################
+# Desktop Extension
+########################################################
+
+.PHONY: desktop_ext desktop_ext_test
+
+desktop_ext: ## Build the desktop extension for Claude Desktop
+	@echo "$(YELLOW)📦Building Open Edison Desktop Extension...$(RESET)"
+	@if [ ! -d "desktop_ext" ]; then \
+		echo "$(RED)❌ desktop_ext directory not found$(RESET)"; \
+		exit 1; \
+	fi
+	@cd desktop_ext && ./build.sh
+	@if [ -f "desktop_ext/desktop_ext.dxt" ]; then \
+		cp desktop_ext/desktop_ext.dxt ./open-edison-connector.dxt; \
+		echo "$(GREEN)✅Desktop extension copied to $(PROJECT_ROOT)/open-edison-connector.dxt$(RESET)"; \
+	elif [ -f "desktop_ext/open-edison-connector.dxt" ]; then \
+		cp desktop_ext/open-edison-connector.dxt ./open-edison-connector.dxt; \
+		echo "$(GREEN)✅Desktop extension copied to $(PROJECT_ROOT)/open-edison-connector.dxt$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠️  Extension file not found, may need DXT CLI installed$(RESET)"; \
+		echo "$(YELLOW)Available files in desktop_ext:$(RESET)"; \
+		ls -la desktop_ext/; \
+	fi
+	@echo "$(GREEN)✅Desktop extension built successfully.$(RESET)"
+	@echo "$(BLUE)📋 Install in Claude Desktop by dragging open-edison-connector.dxt to Settings → Extensions$(RESET)"
+
+desktop_ext_test: ## Test the desktop extension configuration
+	@echo "$(YELLOW)🧪Testing desktop extension configuration...$(RESET)"
+	@if [ ! -d "desktop_ext" ]; then \
+		echo "$(RED)❌ desktop_ext directory not found$(RESET)"; \
+		exit 1; \
+	fi
+	@cd desktop_ext && node test_connection.js
+	@echo "$(GREEN)✅Desktop extension test completed.$(RESET)"

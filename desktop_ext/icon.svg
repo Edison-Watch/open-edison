@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circles with gradient effect -->
+  <circle cx="64" cy="64" r="56" fill="#2563eb"/>
+  <circle cx="64" cy="64" r="48" fill="#3b82f6" fill-opacity="0.8"/>
+  <circle cx="64" cy="64" r="40" fill="#60a5fa" fill-opacity="0.6"/>
+  
+  <!-- Lightning bolt (Edison reference) -->
+  <path d="M45 30 L60 50 L50 50 L65 80 L50 60 L60 60 L45 30" fill="white"/>
+  
+  <!-- Open indicator (open circle) -->
+  <circle cx="85" cy="35" r="8" fill="none" stroke="white" stroke-width="2" stroke-opacity="0.8"/>
+  <circle cx="85" cy="35" r="2" fill="white"/>
+  
+  <!-- Open Edison text -->
+  <text x="64" y="105" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold">OE</text>
+</svg>

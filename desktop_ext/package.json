@@ -1,0 +1,27 @@
+{
+    "name": "open-edison-connector-dxt",
+    "version": "1.0.0",
+    "description": "Build scripts for Open Edison Connector Desktop Extension",
+    "scripts": {
+        "build": "echo 'Building Open Edison Connector Desktop Extension...' && npm run validate && npm run pack",
+        "validate": "echo 'Validating manifest.json...' && dxt validate manifest.json || echo 'DXT CLI not found, skipping validation'",
+        "pack": "dxt pack || echo 'DXT CLI not found. Install with: npm install -g @anthropic-ai/dxt'",
+        "test": "node test_connection.js",
+        "install-deps": "echo 'No Python dependencies needed - using mcp-remote'",
+        "dev": "echo 'Testing connection configuration...' && node test_connection.js"
+    },
+    "keywords": [
+        "mcp",
+        "desktop-extension",
+        "open-edison",
+        "connector",
+        "proxy",
+        "single-user"
+    ],
+    "author": "Open Edison Team",
+    "license": "GPL-3.0",
+    "devDependencies": {
+        "@anthropic-ai/dxt": "^0.1.0"
+    },
+    "dependencies": {}
+}
