@@ -4,6 +4,8 @@ Integration tests for Open Edison using background server.
 These tests run against a real server instance in the background.
 """
 
+import requests
+
 from tests.test_template import BackgroundServerTemplate, integration_test, slow_test
 
 

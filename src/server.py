@@ -9,14 +9,18 @@ import asyncio
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger as log
 
 from src.config import config
 from src.mcp_manager import MCPManager
 from src.single_user_mcp import SingleUserMCP
+
+# Module-level dependency singletons
+_security = HTTPBearer()
+_auth_dependency = Depends(_security)
 
 
 class OpenEdisonProxy:
@@ -55,93 +59,8 @@ class OpenEdisonProxy:
             allow_headers=["*"],
         )
 
-        # Security
-        security = HTTPBearer()
-
-        def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
-            """Simple API key verification"""
-            # Import config dynamically to allow for test mocking
-            from src.config import config as current_config
-
-            if credentials.credentials != current_config.server.api_key:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
-                )
-            return credentials.credentials
-
-        # Health check endpoint
-        @app.get("/health")
-        async def health_check():
-            """Health check endpoint"""
-            return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
-
-        # MCP server status
-        @app.get("/mcp/status", dependencies=[Depends(verify_api_key)])
-        async def mcp_status():
-            """Get status of configured MCP servers"""
-            return {
-                "servers": [
-                    {
-                        "name": server.name,
-                        "enabled": server.enabled,
-                        "running": await self.mcp_manager.is_server_running(server.name),
-                    }
-                    for server in config.mcp_servers
-                ]
-            }
-
-        # Start MCP server
-        @app.post("/mcp/{server_name}/start", dependencies=[Depends(verify_api_key)])
-        async def start_mcp_server(server_name: str):
-            """Start a specific MCP server"""
-            try:
-                await self.mcp_manager.start_server(server_name)
-                return {"message": f"Server {server_name} started successfully"}
-            except Exception as e:
-                log.error(f"Failed to start server {server_name}: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to start server: {str(e)}",
-                )
-
-        # Stop MCP server
-        @app.post("/mcp/{server_name}/stop", dependencies=[Depends(verify_api_key)])
-        async def stop_mcp_server(server_name: str):
-            """Stop a specific MCP server"""
-            try:
-                await self.mcp_manager.stop_server(server_name)
-                return {"message": f"Server {server_name} stopped successfully"}
-            except Exception as e:
-                log.error(f"Failed to stop server {server_name}: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to stop server: {str(e)}",
-                )
-
-        # Proxy MCP requests
-        @app.post("/mcp/call", dependencies=[Depends(verify_api_key)])
-        async def proxy_mcp_call(request: dict[str, Any]):
-            """Proxy MCP calls to the running servers"""
-            try:
-                result = await self.single_user_mcp.handle_mcp_request(request)
-
-                # TODO: Add session logging later
-                log.info(f"MCP call completed: {request.get('method', 'unknown')}")
-
-                return result
-            except Exception as e:
-                log.error(f"MCP call failed: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"MCP call failed: {str(e)}",
-                )
-
-        # Get session logs (placeholder for now)
-        @app.get("/sessions", dependencies=[Depends(verify_api_key)])
-        async def get_sessions():
-            """Get recent session logs (placeholder)"""
-            # TODO: Implement session logging to SQLite
-            return {"sessions": [], "message": "Session logging not yet implemented"}
+        # Register all routes
+        self._register_routes(app)
 
         return app
 
@@ -206,3 +125,115 @@ class OpenEdisonProxy:
         log.info("🛑 Shutting down Open Edison proxy server")
         await self.mcp_manager.shutdown()
         log.info("✅ Open Edison proxy server shutdown complete")
+
+    def _register_routes(self, app: FastAPI) -> None:
+        """Register all routes for the FastAPI app"""
+        # Register routes with their decorators
+        app.add_api_route("/health", self.health_check, methods=["GET"])
+        app.add_api_route(
+            "/mcp/status",
+            self.mcp_status,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/{server_name}/start",
+            self.start_mcp_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/{server_name}/stop",
+            self.stop_mcp_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/call",
+            self.proxy_mcp_call,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/sessions",
+            self.get_sessions,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+
+    async def verify_api_key(
+        self, credentials: HTTPAuthorizationCredentials = _auth_dependency
+    ) -> str:
+        """
+        Dependency to verify API key from Authorization header.
+
+        Returns the API key string if valid, otherwise raises HTTPException.
+        """
+        # Import config dynamically to allow for test mocking
+        from src.config import config as current_config
+
+        if credentials.credentials != current_config.server.api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+        return credentials.credentials
+
+    async def health_check(self) -> dict[str, Any]:
+        """Health check endpoint"""
+        return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
+
+    async def mcp_status(self) -> dict[str, Any]:
+        """Get status of configured MCP servers"""
+        return {
+            "servers": [
+                {
+                    "name": server.name,
+                    "enabled": server.enabled,
+                    "running": await self.mcp_manager.is_server_running(server.name),
+                }
+                for server in config.mcp_servers
+            ]
+        }
+
+    async def start_mcp_server(self, server_name: str) -> dict[str, str]:
+        """Start a specific MCP server"""
+        try:
+            await self.mcp_manager.start_server(server_name)
+            return {"message": f"Server {server_name} started successfully"}
+        except Exception as e:
+            log.error(f"Failed to start server {server_name}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to start server: {str(e)}",
+            ) from e
+
+    async def stop_mcp_server(self, server_name: str) -> dict[str, str]:
+        """Stop a specific MCP server"""
+        try:
+            await self.mcp_manager.stop_server(server_name)
+            return {"message": f"Server {server_name} stopped successfully"}
+        except Exception as e:
+            log.error(f"Failed to stop server {server_name}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to stop server: {str(e)}",
+            ) from e
+
+    async def proxy_mcp_call(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Proxy MCP calls to the running servers"""
+        try:
+            result = await self.single_user_mcp.handle_mcp_request(request)
+
+            # TODO: Add session logging later
+            log.info(f"MCP call completed: {request.get('method', 'unknown')}")
+
+            return result
+        except Exception as e:
+            log.error(f"MCP call failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"MCP call failed: {str(e)}",
+            ) from e
+
+    async def get_sessions(self) -> dict[str, Any]:
+        """Get recent session logs (placeholder)"""
+        # TODO: Implement session logging to SQLite
+        return {"sessions": [], "message": "Session logging not yet implemented"}

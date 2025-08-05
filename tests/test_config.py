@@ -2,8 +2,10 @@
 Tests for configuration management
 """
 
+import json
 import tempfile
 from pathlib import Path
+
 import pytest
 
 from src.config import Config, MCPServerConfig
@@ -72,7 +74,7 @@ class TestConfiguration(TestTemplate):
             config_path = Path(f.name)
 
         try:
-            with pytest.raises(Exception):  # Should raise JSON parsing error
+            with pytest.raises(json.JSONDecodeError):  # Should raise JSON parsing error
                 Config.load(config_path)
         finally:
             config_path.unlink()

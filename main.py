@@ -5,11 +5,12 @@ Main entry point for running the Open Edison MCP proxy server.
 
 import asyncio
 import sys
-from loguru import logger as log
 import traceback
 
-from src.server import OpenEdisonProxy
+from loguru import logger as log
+
 from src.config import config
+from src.server import OpenEdisonProxy
 
 
 async def main():

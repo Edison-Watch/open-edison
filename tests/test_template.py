@@ -12,14 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import requests
 import uvicorn
 from fastapi.testclient import TestClient
 
-from src.config import Config, ServerConfig, LoggingConfig, MCPServerConfig
+from src.config import Config, LoggingConfig, MCPServerConfig, ServerConfig
 from src.server import OpenEdisonProxy
-from src.mcp_manager import MCPManager
-import requests
-
 
 # Test markers
 slow_test = pytest.mark.slow

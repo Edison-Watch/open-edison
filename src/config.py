@@ -6,7 +6,7 @@ No database, no multi-user support - just local file-based config.
 """
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from loguru import logger as log

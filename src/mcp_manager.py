@@ -10,7 +10,7 @@ from typing import Any
 
 from loguru import logger as log
 
-from src.config import config, MCPServerConfig
+from src.config import MCPServerConfig, config
 
 
 class MCPManager:
@@ -33,10 +33,9 @@ class MCPManager:
         Returns whether a new process was started (False if already running).
         Raises on error when creating server process.
         """
-        if server_name in self.processes:
-            if self.processes[server_name].poll() is None:
-                log.warning(f"Server {server_name} is already running")
-                return False
+        if server_name in self.processes and self.processes[server_name].poll() is None:
+            log.warning(f"Server {server_name} is already running")
+            return False
 
         server_config = self.server_configs.get(server_name)
         if not server_config:
