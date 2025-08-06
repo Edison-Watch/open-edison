@@ -9,8 +9,7 @@ from typing import Any, TypedDict
 
 from fastmcp import FastMCP
 from loguru import logger as log
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
 
 from src.config import MCPServerConfig, config
 from src.mcp_manager import MCPManager
@@ -18,6 +17,7 @@ from src.mcp_manager import MCPManager
 
 class MountedServerInfo(TypedDict):
     """Type definition for mounted server information."""
+
     config: MCPServerConfig
     proxy: FastMCP[Any] | None
     session: ClientSession | None
@@ -25,13 +25,15 @@ class MountedServerInfo(TypedDict):
 
 class ServerStatusInfo(TypedDict):
     """Type definition for server status information."""
+
     name: str
-    config: dict[str, Any]
+    config: dict[str, str | list[str] | bool | dict[str, str] | None]
     mounted: bool
 
 
 class MCPRequest(TypedDict):
     """Type definition for MCP JSON-RPC requests."""
+
     jsonrpc: str
     id: int | str | None
     method: str
@@ -40,6 +42,7 @@ class MCPRequest(TypedDict):
 
 class MCPResponse(TypedDict):
     """Type definition for MCP JSON-RPC responses."""
+
     jsonrpc: str
     id: int | str | None
     result: dict[str, Any]
@@ -56,8 +59,11 @@ class SingleUserMCP(FastMCP[Any]):
 
     def __init__(self, mcp_manager: MCPManager):
         super().__init__(name="open-edison-single-user")
-        self.mcp_manager = mcp_manager
+        self.mcp_manager: MCPManager = mcp_manager
         self.mounted_servers: dict[str, MountedServerInfo] = {}
+
+        # Add built-in demo tools
+        self._setup_demo_tools()
 
     async def mount_server_from_config(self, server_config: MCPServerConfig) -> bool:
         """
@@ -81,43 +87,52 @@ class SingleUserMCP(FastMCP[Any]):
         """Mount a test server with mock configuration."""
         log.info(f"Mock mounting test server: {server_config.name}")
         self.mounted_servers[server_config.name] = MountedServerInfo(
-            config=server_config,
-            proxy=None,
-            session=None
+            config=server_config, proxy=None, session=None
         )
         log.info(f"✅ Mounted MCP server: {server_config.name}")
         return True
 
     async def _mount_real_server(self, server_config: MCPServerConfig) -> bool:
         """Mount a real MCP server via subprocess and FastMCP proxy."""
-        if not await self.mcp_manager.is_server_running(server_config.name):
-            await self.mcp_manager.start_server(server_config.name)
+        try:
+            # Start the subprocess if not already running
+            if not await self.mcp_manager.is_server_running(server_config.name):
+                _ = await self.mcp_manager.start_server(server_config.name)
 
-        process = self.mcp_manager.processes.get(server_config.name)
-        if not process:
-            raise ValueError(f"Failed to get process for {server_config.name}")
+            # Create a proxy server using FastMCP's as_proxy method with config dict
+            backend_config = {
+                "mcpServers": {
+                    server_config.name: {
+                        "command": server_config.command,
+                        "args": server_config.args,
+                        "env": server_config.env or {},
+                    }
+                }
+            }
 
-        server_params = StdioServerParameters(
-            command=server_config.command,
-            args=server_config.args,
-            env=server_config.env or {}
-        )
+            # Add roots to the backend config if specified
+            if server_config.roots:
+                log.info(f"Using configured roots for {server_config.name}: {server_config.roots}")
+                backend_config["mcpServers"][server_config.name]["roots"] = server_config.roots
 
-        async with stdio_client(server_params) as (read, write):
-            session = ClientSession(read, write)
-            await session.initialize()
+            proxy_server = FastMCP.as_proxy(
+                backend=backend_config, name=f"proxy-{server_config.name}"
+            )
 
-            proxy_server = FastMCP.as_proxy(session, name=server_config.name)
+            # Import the proxy server into this main server with namespacing
             await self.import_server(proxy_server, prefix=server_config.name)
 
+            # Store the mounted server info
             self.mounted_servers[server_config.name] = MountedServerInfo(
-                config=server_config,
-                proxy=proxy_server,
-                session=session
+                config=server_config, proxy=proxy_server, session=None
             )
 
             log.info(f"✅ Mounted MCP server: {server_config.name}")
             return True
+
+        except Exception as e:
+            log.error(f"Failed to mount {server_config.name}: {e}")
+            return False
 
     async def unmount_server(self, server_name: str) -> bool:
         """Unmount an MCP server and stop its subprocess."""
@@ -134,7 +149,7 @@ class SingleUserMCP(FastMCP[Any]):
         if server_name in self.mounted_servers:
             mounted = self.mounted_servers[server_name]
             if mounted["session"] is not None:
-                await mounted["session"].close()
+                await mounted["session"].close()  # type: ignore[attr-defined]
 
             del self.mounted_servers[server_name]
             log.info(f"✅ Unmounted MCP server: {server_name}")
@@ -147,11 +162,7 @@ class SingleUserMCP(FastMCP[Any]):
     async def get_mounted_servers(self) -> list[ServerStatusInfo]:
         """Get list of currently mounted servers."""
         return [
-            ServerStatusInfo(
-                name=name,
-                config=mounted["config"].__dict__,
-                mounted=True
-            )
+            ServerStatusInfo(name=name, config=mounted["config"].__dict__, mounted=True)
             for name, mounted in self.mounted_servers.items()
         ]
 
@@ -177,10 +188,10 @@ class SingleUserMCP(FastMCP[Any]):
                 "message": "Request handled by SingleUserMCP",
                 "request": request,
                 "mounted_servers": mounted_names,
-            }
+            },
         )
 
-    async def initialize(self, test_config: Any = None) -> None:
+    async def initialize(self, test_config: Any | None = None) -> None:
         """Initialize the FastMCP server and auto-mount enabled servers."""
         log.info("Initializing Single User MCP server")
         config_to_use = test_config if test_config is not None else config
@@ -190,6 +201,41 @@ class SingleUserMCP(FastMCP[Any]):
             log.debug(f"Checking server {server_config.name}, enabled: {server_config.enabled}")
             if server_config.enabled:
                 log.info(f"Auto-mounting enabled server: {server_config.name}")
-                await self.mount_server_from_config(server_config)
+                _ = await self.mount_server_from_config(server_config)
 
         log.info("✅ Single User MCP server initialized")
+
+    def _setup_demo_tools(self) -> None:
+        """Set up built-in demo tools for testing."""
+
+        @self.tool()
+        def echo(text: str) -> str:  # noqa: ARG001
+            """
+            Echo back the provided text.
+
+            Args:
+                text: The text to echo back
+
+            Returns:
+                The same text that was provided
+            """
+            log.info(f"🔊 Echo tool called with: {text}")
+            return f"Echo: {text}"
+
+        @self.tool()
+        def get_server_info() -> dict[str, str | list[str] | int]:  # noqa: ARG001
+            """
+            Get information about the Open Edison server.
+
+            Returns:
+                Dictionary with server information
+            """
+            log.info("ℹ️  Server info tool called")
+            return {
+                "name": "Open Edison Single User",
+                "version": config.version,
+                "mounted_servers": list(self.mounted_servers.keys()),
+                "total_mounted": len(self.mounted_servers),
+            }
+
+        log.info("✅ Added built-in demo tools: echo, get_server_info")

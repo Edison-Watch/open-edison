@@ -104,7 +104,12 @@ fix: check_rye ## Auto-fix linting issues with Ruff
 	@rye run ruff check . --fix
 	@echo "$(GREEN)✅Linting fixes applied.$(RESET)"
 
-ci: lint ## Run CI checks (lint)
+basedpyright_check: check_rye ## Run type checking with Basedpyright
+	@echo "$(YELLOW)🔍Running Basedpyright...$(RESET)"
+	@rye run basedpyright .
+	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
+
+ci: lint basedpyright_check ## Run CI checks (lint, type check)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################

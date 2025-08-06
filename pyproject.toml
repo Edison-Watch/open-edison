@@ -31,6 +31,7 @@ build-backend = "hatchling.build"
 managed = true
 dev-dependencies = [
     "pytest-asyncio>=1.0.0",
+    "basedpyright>=1.21.0",
 ]
 
 [tool.hatch.metadata]
@@ -59,3 +60,12 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
 ]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+useLibraryCodeForTypes = true
+include = ["src"]
+ignore = [".venv", "tests/**", "alembic", "tests"]
+reportMissingTypeStubs = true
+reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
+venvPath = ".venv"

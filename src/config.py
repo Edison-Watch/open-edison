@@ -6,8 +6,10 @@ No database, no multi-user support - just local file-based config.
 """
 
 import json
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from loguru import logger as log
 
@@ -41,6 +43,7 @@ class MCPServerConfig:
     args: list[str]
     env: dict[str, str] | None = None
     enabled: bool = True
+    roots: list[str] | None = None
 
     def __post_init__(self):
         if self.env is None:
@@ -55,6 +58,22 @@ class Config:
     logging: LoggingConfig
     mcp_servers: list[MCPServerConfig]
 
+    @property
+    def version(self) -> str:
+        """Get version from pyproject.toml"""
+        try:
+            pyproject_path = root_dir / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "rb") as f:
+                    pyproject_data = tomllib.load(f)
+                    project_data = pyproject_data.get("project", {})  # type: ignore
+                    version = project_data.get("version", "unknown")  # type: ignore
+                    return str(version)  # type: ignore
+            return "unknown"
+        except Exception as e:
+            log.warning(f"Failed to read version from pyproject.toml: {e}")
+            return "unknown"
+
     @classmethod
     def load(cls, config_path: Path | None = None) -> "Config":
         """Load configuration from JSON file"""
@@ -68,13 +87,18 @@ class Config:
             return default_config
 
         with open(config_path) as f:
-            data = json.load(f)
+            data: dict[str, Any] = json.load(f)
+
+        mcp_servers_data = data.get("mcp_servers", [])  # type: ignore
+        server_data = data.get("server", {})  # type: ignore
+        logging_data = data.get("logging", {})  # type: ignore
 
         return cls(
-            server=ServerConfig(**data.get("server", {})),
-            logging=LoggingConfig(**data.get("logging", {})),
+            server=ServerConfig(**server_data),  # type: ignore
+            logging=LoggingConfig(**logging_data),  # type: ignore
             mcp_servers=[
-                MCPServerConfig(**server_data) for server_data in data.get("mcp_servers", [])
+                MCPServerConfig(**server_item)  # type: ignore
+                for server_item in mcp_servers_data  # type: ignore
             ],
         )
 

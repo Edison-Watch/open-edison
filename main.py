@@ -28,7 +28,7 @@ async def main():
         await proxy.start()
         log.info("🚀 Open Edison is ready to proxy MCP traffic")
         # Keep the server running
-        await asyncio.Event().wait()
+        _ = await asyncio.Event().wait()
     except KeyboardInterrupt:
         log.info("👋 Received shutdown signal")
 

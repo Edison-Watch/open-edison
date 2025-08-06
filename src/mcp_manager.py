@@ -6,7 +6,6 @@ Separate from FastMCP to keep concerns clean.
 """
 
 import subprocess
-from typing import Any
 
 from loguru import logger as log
 
@@ -48,8 +47,12 @@ class MCPManager:
             # Build the command
             cmd = [server_config.command] + server_config.args
 
-            # Set up environment
-            env = dict(server_config.env) if server_config.env else {}
+            # Set up environment - inherit system environment and add server-specific vars
+            import os
+
+            env = os.environ.copy()
+            if server_config.env:
+                env.update(server_config.env)
 
             log.info(f"Starting MCP server {server_name}: {' '.join(cmd)}")
 
@@ -89,12 +92,12 @@ class MCPManager:
 
                 # Wait for graceful shutdown
                 try:
-                    process.wait(timeout=5)
+                    _ = process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     # Force kill if graceful shutdown fails
                     log.warning(f"Force killing MCP server {server_name}")
                     process.kill()
-                    process.wait()
+                    _ = process.wait()
 
                 log.info(f"✅ MCP server {server_name} stopped")
 
@@ -121,7 +124,7 @@ class MCPManager:
 
         log.info("✅ All MCP servers stopped")
 
-    def get_server_status(self) -> list[dict[str, Any]]:
+    def get_server_status(self) -> list[dict[str, str | bool]]:
         """Get status of all configured servers."""
         return [
             {

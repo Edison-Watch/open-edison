@@ -32,6 +32,7 @@ attrs==25.3.0
     # via referencing
 authlib==1.6.1
     # via fastmcp
+basedpyright==1.31.1
 certifi==2025.8.3
     # via httpcore
     # via httpx
@@ -63,8 +64,6 @@ fastmcp==2.11.1
 frozenlist==1.7.0
     # via aiohttp
     # via aiosignal
-greenlet==3.2.3
-    # via sqlalchemy
 h11==0.16.0
     # via httpcore
     # via uvicorn
@@ -114,6 +113,8 @@ more-itertools==10.7.0
 multidict==6.6.3
     # via aiohttp
     # via yarl
+nodejs-wheel-binaries==22.18.0
+    # via basedpyright
 openapi-core==0.19.5
     # via fastmcp
 openapi-pydantic==0.5.1

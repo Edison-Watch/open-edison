@@ -6,6 +6,7 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
+from collections.abc import Coroutine
 from typing import Any
 
 import uvicorn
@@ -22,7 +23,9 @@ from src.single_user_mcp import SingleUserMCP
 def _get_current_config():
     """Get current config, allowing for test mocking."""
     from src.config import config as current_config
+
     return current_config
+
 
 # Module-level dependency singletons
 _security = HTTPBearer()
@@ -38,15 +41,15 @@ class OpenEdisonProxy:
     """
 
     def __init__(self, host: str = "localhost", port: int = 3000):
-        self.host = host
-        self.port = port
+        self.host: str = host
+        self.port: int = port
 
         # Initialize components
-        self.mcp_manager = MCPManager()
-        self.single_user_mcp = SingleUserMCP(self.mcp_manager)
+        self.mcp_manager: MCPManager = MCPManager()
+        self.single_user_mcp: SingleUserMCP = SingleUserMCP(self.mcp_manager)
 
         # Initialize FastAPI app for management
-        self.fastapi_app = self._create_fastapi_app()
+        self.fastapi_app: FastAPI = self._create_fastapi_app()
 
     def _create_fastapi_app(self) -> FastAPI:
         """Create and configure FastAPI application"""
@@ -76,17 +79,8 @@ class OpenEdisonProxy:
         log.info(f"FastAPI management API on {self.host}:{self.port + 1}")
         log.info(f"FastMCP protocol server on {self.host}:{self.port}")
 
-        # Initialize the FastMCP server
+        # Initialize the FastMCP server (this handles starting enabled MCP servers)
         await self.single_user_mcp.initialize()
-
-        # Start enabled MCP servers
-        for server in config.mcp_servers:
-            if server.enabled:
-                try:
-                    await self.mcp_manager.start_server(server.name)
-                    log.info(f"✅ Started MCP server: {server.name}")
-                except Exception as e:
-                    log.error(f"❌ Failed to start MCP server {server.name}: {e}")
 
         # Add CORS middleware to FastAPI
         self.fastapi_app.add_middleware(
@@ -98,7 +92,7 @@ class OpenEdisonProxy:
         )
 
         # Create server configurations
-        servers_to_run = []
+        servers_to_run: list[Coroutine[Any, Any, None]] = []
 
         # FastAPI management server on port 3001
         fastapi_config = uvicorn.Config(
@@ -110,8 +104,8 @@ class OpenEdisonProxy:
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
 
-        # FastMCP protocol server on port 3000
-        mcp_app = self.single_user_mcp.http_app(path="/mcp/")
+        # FastMCP protocol server on port 3000 (stateless for testing)
+        mcp_app = self.single_user_mcp.http_app(path="/mcp/", stateless_http=True)
         fastmcp_config = uvicorn.Config(
             app=mcp_app,
             host=self.host,
@@ -123,7 +117,7 @@ class OpenEdisonProxy:
 
         # Run both servers concurrently
         log.info("🚀 Starting both FastAPI and FastMCP servers...")
-        await asyncio.gather(*servers_to_run)
+        _ = await asyncio.gather(*servers_to_run)
 
     async def shutdown(self) -> None:
         """Shutdown the proxy server and all MCP servers"""
@@ -197,7 +191,9 @@ class OpenEdisonProxy:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
 
-    def _handle_server_operation_error(self, operation: str, server_name: str, error: Exception) -> HTTPException:
+    def _handle_server_operation_error(
+        self, operation: str, server_name: str, error: Exception
+    ) -> HTTPException:
         """Handle common server operation errors."""
         log.error(f"Failed to {operation} server {server_name}: {error}")
         return HTTPException(
@@ -220,7 +216,7 @@ class OpenEdisonProxy:
         """Health check endpoint"""
         return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
 
-    async def mcp_status(self) -> dict[str, Any]:
+    async def mcp_status(self) -> dict[str, list[dict[str, str | bool]]]:
         """Get status of configured MCP servers"""
         return {
             "servers": [
@@ -236,7 +232,7 @@ class OpenEdisonProxy:
     async def start_mcp_server(self, server_name: str) -> dict[str, str]:
         """Start a specific MCP server"""
         try:
-            await self.mcp_manager.start_server(server_name)
+            _ = await self.mcp_manager.start_server(server_name)
             return {"message": f"Server {server_name} started successfully"}
         except Exception as e:
             raise self._handle_server_operation_error("start", server_name, e) from e
@@ -310,21 +306,16 @@ class OpenEdisonProxy:
         try:
             if server_name == "test-echo":
                 log.info("Special handling for test-echo server unmount")
-                await self.single_user_mcp.unmount_server(server_name)
+                _ = await self.single_user_mcp.unmount_server(server_name)
                 return {"message": f"Server {server_name} unmounted successfully"}
-            success = await self.single_user_mcp.unmount_server(server_name)
-            if success:
-                return {"message": f"Server {server_name} unmounted successfully"}
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to unmount server: {server_name}",
-            )
+            _ = await self.single_user_mcp.unmount_server(server_name)
+            return {"message": f"Server {server_name} unmounted successfully"}
         except HTTPException:
             raise
         except Exception as e:
             raise self._handle_server_operation_error("unmount", server_name, e) from e
 
-    async def get_sessions(self) -> dict[str, Any]:
+    async def get_sessions(self) -> dict[str, list[Any] | str]:
         """Get recent session logs (placeholder)"""
         # TODO: Implement session logging to SQLite
         return {"sessions": [], "message": "Session logging not yet implemented"}

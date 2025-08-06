@@ -1,0 +1,199 @@
+"""
+Session Tracking Middleware for Open Edison
+
+This middleware tracks tool usage patterns across all mounted tool calls,
+providing session-level statistics accessible via contextvar.
+"""
+
+import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+import mcp.types as mt
+from fastmcp.server.middleware import Middleware
+from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
+from loguru import logger as log
+from sqlalchemy import JSON, Column, Integer, String, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import select
+
+
+@dataclass
+class ToolCall:
+    id: str
+    tool_name: str
+    parameters: dict[str, Any]
+    timestamp: datetime
+    duration_ms: float | None = None
+    status: str = "pending"
+    result: Any | None = None
+
+
+@dataclass
+class MCPSession:
+    session_id: str
+    correlation_id: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+
+
+Base = declarative_base()
+
+
+class MCPSessionModel(Base):  # type: ignore
+    __tablename__: str = "mcp_sessions"
+    id = Column(Integer, primary_key=True)  # type: ignore
+    session_id = Column(String, unique=True)  # type: ignore
+    correlation_id = Column(String)  # type: ignore
+    tool_calls = Column(JSON)  # type: ignore
+
+
+current_session_id_ctxvar: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+
+
+@contextmanager
+def create_db_session() -> Generator[Session, None, None]:
+    """Create a db session to our local sqlite db"""
+    engine = create_engine("sqlite:///edison.db")
+    # Ensure tables exist
+    Base.metadata.create_all(engine)  # type: ignore
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def get_session_from_db(session_id: str) -> MCPSession:
+    """Get session from db"""
+    with create_db_session() as db_session:
+        session = db_session.execute(
+            select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
+        ).scalar_one_or_none()
+
+        if session is None:
+            # Create a new session model for the database
+            new_session_model = MCPSessionModel(
+                session_id=session_id,
+                correlation_id=str(uuid.uuid4()),
+                tool_calls=[],  # type: ignore
+            )
+            db_session.add(new_session_model)
+            db_session.commit()
+
+            # Return the MCPSession object
+            return MCPSession(
+                session_id=session_id,
+                correlation_id=str(new_session_model.correlation_id),
+                tool_calls=[],
+            )
+        # Return existing session
+        tool_calls: list[ToolCall] = []
+        if session.tool_calls is not None:  # type: ignore
+            tool_calls_data = session.tool_calls  # type: ignore
+            for tc_dict in tool_calls_data:  # type: ignore
+                # Convert timestamp string back to datetime if it exists
+                tc_dict_copy = dict(tc_dict)  # type: ignore
+                if "timestamp" in tc_dict_copy:  # type: ignore
+                    tc_dict_copy["timestamp"] = datetime.fromisoformat(tc_dict_copy["timestamp"])  # type: ignore
+                tool_calls.append(ToolCall(**tc_dict_copy))  # type: ignore
+
+        return MCPSession(
+            session_id=session_id,
+            correlation_id=str(session.correlation_id),
+            tool_calls=tool_calls,
+        )
+
+
+class SessionTrackingMiddleware(Middleware):
+    """
+    Middleware that tracks tool call statistics for all mounted tools.
+
+    This middleware intercepts every tool call and maintains per-session
+    statistics accessible via contextvar.
+    """
+
+    def _get_or_create_session_stats(
+        self,
+        context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
+    ) -> tuple[MCPSession, str]:
+        """Get or create session stats for the current connection.
+        returns (session, session_id)"""
+
+        # Get session ID from HTTP headers if available
+        assert context.fastmcp_context is not None
+        session_id = context.fastmcp_context.session_id
+
+        # For debugging, let's log what we got
+        log.debug(f"FastMCP context session_id: {context.fastmcp_context.session_id}")
+
+        # Check if we already have a session for this user
+        session = get_session_from_db(session_id)
+        _ = current_session_id_ctxvar.set(session_id)
+        return session, session_id
+
+    async def on_request(
+        self,
+        context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
+        call_next: CallNext[mt.Request[Any, Any], Any],  # type: ignore
+    ) -> Any:
+        """
+        Process the request and track tool calls.
+        """
+        # Get or create session stats
+        _, _session_id = self._get_or_create_session_stats(context)
+
+        return await call_next(context)  # type: ignore
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],  # type: ignore
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],  # type: ignore
+    ) -> ToolResult:
+        """Process the tool call and track tool calls."""
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            raise ValueError("No session ID found in context")
+        session = get_session_from_db(session_id)
+        log.trace(f"Adding tool call to session {session_id}")
+
+        # Create new tool call
+        new_tool_call = ToolCall(
+            id=str(uuid.uuid4()),
+            tool_name=context.message.name,
+            parameters=context.message.arguments or {},
+            timestamp=datetime.now(),
+        )
+        session.tool_calls.append(new_tool_call)
+
+        # Update database session
+        with create_db_session() as db_session:
+            db_session_model = db_session.execute(
+                select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
+            ).scalar_one()
+
+            # Convert tool calls to dict format for JSON storage
+            tool_calls_dict = [
+                {
+                    "id": tc.id,
+                    "tool_name": tc.tool_name,
+                    "parameters": tc.parameters,
+                    "timestamp": tc.timestamp.isoformat(),
+                    "duration_ms": tc.duration_ms,
+                    "status": tc.status,
+                    "result": tc.result,
+                }
+                for tc in session.tool_calls
+            ]
+            # Update the tool_calls for this session
+            db_session_model.tool_calls = tool_calls_dict  # type: ignore
+            db_session.commit()
+
+        log.trace(f"Tool call {context.message.name} added to session {session_id}")
+
+        return await call_next(context)  # type: ignore
