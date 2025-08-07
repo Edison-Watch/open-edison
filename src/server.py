@@ -104,8 +104,8 @@ class OpenEdisonProxy:
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
 
-        # FastMCP protocol server on port 3000 (stateless for testing)
-        mcp_app = self.single_user_mcp.http_app(path="/mcp/", stateless_http=True)
+        # FastMCP protocol server on port 3000 (stateful for session persistence)
+        mcp_app = self.single_user_mcp.http_app(path="/mcp/", stateless_http=False)
         fastmcp_config = uvicorn.Config(
             app=mcp_app,
             host=self.host,
@@ -289,7 +289,7 @@ class OpenEdisonProxy:
         """Mount a specific MCP server."""
         try:
             server_config = self._find_server_config(server_name)
-            success = await self.single_user_mcp.mount_server_from_config(server_config)
+            success = await self.single_user_mcp.mount_server(server_config)
             if success:
                 return {"message": f"Server {server_name} mounted successfully"}
             raise HTTPException(

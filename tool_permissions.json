@@ -1,0 +1,136 @@
+{
+    "_metadata": {
+        "description": "Tool security classifications for Open Edison data access tracker",
+        "last_updated": "2025-08-07"
+    },
+    "echo": {
+        "write_operation": false,
+        "read_private_data": false,
+        "read_untrusted_public_data": false
+    },
+    "get_server_info": {
+        "write_operation": false,
+        "read_private_data": false,
+        "read_untrusted_public_data": false
+    },
+    "get_security_status": {
+        "write_operation": false,
+        "read_private_data": false,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_read_file": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_read_text_file": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_read_media_file": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_read_multiple_files": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_write_file": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_edit_file": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_create_directory": {
+        "write_operation": true,
+        "read_private_data": false,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_list_directory": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_list_directory_with_sizes": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_directory_tree": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_move_file": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_search_files": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_get_file_info": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "filesystem_list_allowed_directories": {
+        "write_operation": false,
+        "read_private_data": false,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_db_info": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_query": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_list_tables": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_get_table_schema": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_create_record": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_read_records": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_update_records": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "sqlite_delete_records": {
+        "write_operation": true,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    },
+    "test_server/*": {
+        "write_operation": false,
+        "read_private_data": true,
+        "read_untrusted_public_data": false
+    }
+}

@@ -60,6 +60,27 @@ make run
 
 The server will be available at `http://localhost:3000`.
 
+## MCP Connection
+
+Connect any MCP client to Open Edison:
+
+```bash
+npx -y mcp-remote http://localhost:3000/mcp/ --http-only --header "Authorization: Bearer your-api-key"
+```
+
+Or add to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "open-edison": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp/", "--http-only", "--header", "Authorization: Bearer your-api-key"]
+    }
+  }
+}
+```
+
 ## Usage
 
 ### API Endpoints
@@ -121,6 +142,37 @@ Each MCP server configuration includes:
 - `args` - Arguments for the command
 - `env` - Environment variables (optional)
 - `enabled` - Whether to auto-start this server
+
+## Security & Tool Permissions
+
+Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks:
+
+1. **Private data access** - Tools that can read sensitive local files/data
+2. **Untrusted content exposure** - Tools that fetch external/web content  
+3. **External communication** - Tools that can write/send data externally
+
+### Tool Permissions Configuration
+
+The `tool_permissions.json` file defines security classifications for all tools. Each tool is classified with three boolean flags:
+
+```json
+{
+  "filesystem_read_file": {
+    "write_operation": false,
+    "read_private_data": true,
+    "read_untrusted_public_data": false
+  },
+  "some_web_tool": {
+    "write_operation": false,
+    "read_private_data": false,
+    "read_untrusted_public_data": true
+  }
+}
+```
+
+**All tools must be explicitly configured** - unknown tools will be rejected for security.
+
+Use the `get_security_status` tool to monitor your session's current risk level and see which capabilities have been accessed.
 
 ## Documentation
 

@@ -19,9 +19,10 @@ from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
 from sqlalchemy import JSON, Column, Integer, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
+
+from src.middleware.data_access_tracker import DataAccessTracker
 
 
 @dataclass
@@ -40,6 +41,7 @@ class MCPSession:
     session_id: str
     correlation_id: str
     tool_calls: list[ToolCall] = field(default_factory=list)
+    data_access_tracker: DataAccessTracker | None = None
 
 
 Base = declarative_base()
@@ -51,9 +53,29 @@ class MCPSessionModel(Base):  # type: ignore
     session_id = Column(String, unique=True)  # type: ignore
     correlation_id = Column(String)  # type: ignore
     tool_calls = Column(JSON)  # type: ignore
+    data_access_summary = Column(JSON)  # type: ignore
 
 
 current_session_id_ctxvar: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+
+
+def get_current_session_data_tracker() -> DataAccessTracker | None:
+    """
+    Get the data access tracker for the current session.
+
+    Returns:
+        DataAccessTracker instance for the current session, or None if no session
+    """
+    session_id = current_session_id_ctxvar.get()
+    if session_id is None:
+        return None
+
+    try:
+        session = get_session_from_db(session_id)
+        return session.data_access_tracker
+    except Exception as e:
+        log.error(f"Failed to get current session data tracker: {e}")
+        return None
 
 
 @contextmanager
@@ -82,6 +104,7 @@ def get_session_from_db(session_id: str) -> MCPSession:
                 session_id=session_id,
                 correlation_id=str(uuid.uuid4()),
                 tool_calls=[],  # type: ignore
+                data_access_summary={},  # type: ignore
             )
             db_session.add(new_session_model)
             db_session.commit()
@@ -91,6 +114,7 @@ def get_session_from_db(session_id: str) -> MCPSession:
                 session_id=session_id,
                 correlation_id=str(new_session_model.correlation_id),
                 tool_calls=[],
+                data_access_tracker=DataAccessTracker(),
             )
         # Return existing session
         tool_calls: list[ToolCall] = []
@@ -103,10 +127,27 @@ def get_session_from_db(session_id: str) -> MCPSession:
                     tc_dict_copy["timestamp"] = datetime.fromisoformat(tc_dict_copy["timestamp"])  # type: ignore
                 tool_calls.append(ToolCall(**tc_dict_copy))  # type: ignore
 
+        # Restore data access tracker from database if available
+        data_access_tracker = DataAccessTracker()
+        if hasattr(session, "data_access_summary") and session.data_access_summary:  # type: ignore
+            summary_data = session.data_access_summary  # type: ignore
+            if "lethal_trifecta" in summary_data:
+                trifecta = summary_data["lethal_trifecta"]
+                data_access_tracker.has_private_data_access = trifecta.get(
+                    "has_private_data_access", False
+                )
+                data_access_tracker.has_untrusted_content_exposure = trifecta.get(
+                    "has_untrusted_content_exposure", False
+                )
+                data_access_tracker.has_external_communication = trifecta.get(
+                    "has_external_communication", False
+                )
+
         return MCPSession(
             session_id=session_id,
             correlation_id=str(session.correlation_id),
             tool_calls=tool_calls,
+            data_access_tracker=data_access_tracker,
         )
 
 
@@ -171,6 +212,10 @@ class SessionTrackingMiddleware(Middleware):
         )
         session.tool_calls.append(new_tool_call)
 
+        assert session.data_access_tracker is not None
+        log.debug(f"🔍 Analyzing tool {context.message.name} for security implications")
+        _ = session.data_access_tracker.add_tool_call(context.message.name)
+
         # Update database session
         with create_db_session() as db_session:
             db_session_model = db_session.execute(
@@ -192,6 +237,8 @@ class SessionTrackingMiddleware(Middleware):
             ]
             # Update the tool_calls for this session
             db_session_model.tool_calls = tool_calls_dict  # type: ignore
+            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
+
             db_session.commit()
 
         log.trace(f"Tool call {context.message.name} added to session {session_id}")
