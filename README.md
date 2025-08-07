@@ -143,17 +143,19 @@ Each MCP server configuration includes:
 - `env` - Environment variables (optional)
 - `enabled` - Whether to auto-start this server
 
-## Security & Tool Permissions
+## Security & Permissions System
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks:
 
-1. **Private data access** - Tools that can read sensitive local files/data
-2. **Untrusted content exposure** - Tools that fetch external/web content  
-3. **External communication** - Tools that can write/send data externally
+1. **Private data access** - Access to sensitive local files/data
+2. **Untrusted content exposure** - Exposure to external/web content  
+3. **External communication** - Ability to write/send data externally
 
-### Tool Permissions Configuration
+The system monitors these risks across **tools**, **resources**, and **prompts** using separate configuration files.
 
-The `tool_permissions.json` file defines security classifications for all tools. Each tool is classified with three boolean flags:
+### Tool Permissions (`tool_permissions.json`)
+
+Defines security classifications for MCP tools. Each tool is classified with three boolean flags:
 
 ```json
 {
@@ -162,17 +164,83 @@ The `tool_permissions.json` file defines security classifications for all tools.
     "read_private_data": true,
     "read_untrusted_public_data": false
   },
-  "some_web_tool": {
-    "write_operation": false,
-    "read_private_data": false,
-    "read_untrusted_public_data": true
+  "sqlite_create_record": {
+    "write_operation": true,
+    "read_private_data": true,
+    "read_untrusted_public_data": false
   }
 }
 ```
 
-**All tools must be explicitly configured** - unknown tools will be rejected for security.
+### Resource Permissions (`resource_permissions.json`)
 
-Use the `get_security_status` tool to monitor your session's current risk level and see which capabilities have been accessed.
+Defines security classifications for resource access patterns. Currently empty - add classifications as needed:
+
+```json
+{
+  "_metadata": {
+    "description": "Resource security classifications for Open Edison data access tracker",
+    "last_updated": "2025-08-07"
+  },
+  "file:*": {
+    "write_operation": false,
+    "read_private_data": true,
+    "read_untrusted_public_data": false
+  },
+  "http:*": {
+    "write_operation": false,
+    "read_private_data": false,
+    "read_untrusted_public_data": true
+  },
+  "database:*": {
+    "write_operation": false,
+    "read_private_data": true,
+    "read_untrusted_public_data": false
+  }
+}
+```
+
+### Prompt Permissions (`prompt_permissions.json`)
+
+Defines security classifications for prompt types. Currently empty - add classifications as needed:
+
+```json
+{
+  "_metadata": {
+    "description": "Prompt security classifications for Open Edison data access tracker", 
+    "last_updated": "2025-08-07"
+  },
+  "system": {
+    "write_operation": false,
+    "read_private_data": false,
+    "read_untrusted_public_data": false
+  },
+  "external_prompt": {
+    "write_operation": false,
+    "read_private_data": false,
+    "read_untrusted_public_data": true
+  },
+  "prompt:file:*": {
+    "write_operation": false,
+    "read_private_data": true,
+    "read_untrusted_public_data": false
+  }
+}
+```
+
+### Wildcard Patterns
+
+All permission types support wildcard patterns:
+
+- **Tools**: `server_name/*` (e.g., `filesystem/*` matches all filesystem tools)
+- **Resources**: `scheme:*` (e.g., `file:*` matches all file resources)  
+- **Prompts**: `type:*` (e.g., `template:*` matches all template prompts)
+
+### Security Monitoring
+
+**All items must be explicitly configured** - unknown tools/resources/prompts will be rejected for security.
+
+Use the `get_security_status` tool to monitor your session's current risk level and see which capabilities have been accessed. When the lethal trifecta is achieved (all three risk flags set), further potentially dangerous operations are blocked.
 
 ## Documentation
 

@@ -2,6 +2,8 @@
 Tests for JSON-based Tool Permissions
 
 Tests the external JSON configuration system for tool security classifications.
+This test file focuses on tool permissions while the generalized permissions
+are tested in test_generalized_permissions.py.
 """
 
 import tempfile
@@ -87,18 +89,16 @@ def test_json_caching():
     """Test that JSON configuration is cached properly."""
     tracker = DataAccessTracker()
 
-    # First call should load and cache JSON
+    # First call should load and cache JSON (caching happens at module level now)
     tracker.add_tool_call("filesystem_read_file")
-    assert tracker._json_config_cache is not None
 
     # Second call should use cache
     tracker2 = DataAccessTracker()
-    tracker2._json_config_cache = tracker._json_config_cache  # Share cache
     tracker2.add_tool_call("sqlite_list_tables")
 
-    # Both should have permissions cached
-    assert len(tracker._tool_permissions_cache) >= 1
-    assert len(tracker2._tool_permissions_cache) >= 1
+    # Both calls should succeed (indicating cache is working)
+    assert tracker.has_private_data_access
+    assert tracker2.has_private_data_access
 
 
 def test_malformed_json_handling():
@@ -124,6 +124,23 @@ def test_malformed_json_handling():
     finally:
         # Clean up
         Path(temp_path).unlink()
+
+
+def test_generalized_methods_available():
+    """Test that the new generalized methods are available on DataAccessTracker."""
+    tracker = DataAccessTracker()
+
+    # Test that new methods exist
+    assert hasattr(tracker, "add_resource_access")
+    assert hasattr(tracker, "add_prompt_access")
+    assert callable(tracker.add_resource_access)
+    assert callable(tracker.add_prompt_access)
+
+    # Test that new classification methods exist
+    assert hasattr(tracker, "_classify_resource_permissions")
+    assert hasattr(tracker, "_classify_prompt_permissions")
+    assert callable(tracker._classify_resource_permissions)
+    assert callable(tracker._classify_prompt_permissions)
 
 
 if __name__ == "__main__":

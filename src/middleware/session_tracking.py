@@ -244,3 +244,65 @@ class SessionTrackingMiddleware(Middleware):
         log.trace(f"Tool call {context.message.name} added to session {session_id}")
 
         return await call_next(context)  # type: ignore
+
+    async def on_resource_access(
+        self,
+        context: MiddlewareContext[Any],  # type: ignore
+        call_next: CallNext[Any, Any],  # type: ignore
+        resource_name: str,
+    ) -> Any:
+        """Process resource access and track security implications."""
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            log.warning("No session ID found for resource access tracking")
+            return await call_next(context)
+
+        session = get_session_from_db(session_id)
+        log.trace(f"Adding resource access to session {session_id}")
+
+        assert session.data_access_tracker is not None
+        log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
+        _ = session.data_access_tracker.add_resource_access(resource_name)
+
+        # Update database session
+        with create_db_session() as db_session:
+            db_session_model = db_session.execute(
+                select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
+            ).scalar_one()
+
+            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
+            db_session.commit()
+
+        log.trace(f"Resource access {resource_name} added to session {session_id}")
+        return await call_next(context)
+
+    async def on_prompt_access(
+        self,
+        context: MiddlewareContext[Any],  # type: ignore
+        call_next: CallNext[Any, Any],  # type: ignore
+        prompt_name: str,
+    ) -> Any:
+        """Process prompt access and track security implications."""
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            log.warning("No session ID found for prompt access tracking")
+            return await call_next(context)
+
+        session = get_session_from_db(session_id)
+        log.trace(f"Adding prompt access to session {session_id}")
+
+        assert session.data_access_tracker is not None
+        log.debug(f"🔍 Analyzing prompt {prompt_name} for security implications")
+        _ = session.data_access_tracker.add_prompt_access(prompt_name)
+
+        # Update database session
+        with create_db_session() as db_session:
+            db_session_model = db_session.execute(
+                select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
+            ).scalar_one()
+
+            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
+            db_session.commit()
+
+        log.trace(f"Prompt access {prompt_name} added to session {session_id}")
+        return await call_next(context)
