@@ -196,7 +196,7 @@ class SessionTrackingMiddleware(Middleware):
         context: MiddlewareContext[mt.CallToolRequestParams],  # type: ignore
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],  # type: ignore
     ) -> ToolResult:
-        """Process the tool call and track tool calls."""
+        """Process tool calls and track security implications."""
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
             raise ValueError("No session ID found in context")

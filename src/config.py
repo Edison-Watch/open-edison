@@ -17,6 +17,15 @@ from loguru import logger as log
 root_dir = Path(__file__).parent.parent
 
 
+class ConfigError(Exception):
+    """Exception raised for configuration-related errors"""
+    
+    def __init__(self, message: str, config_path: Path | None = None):
+        self.message = message
+        self.config_path = config_path
+        super().__init__(self.message)
+
+
 @dataclass
 class ServerConfig:
     """Server configuration"""

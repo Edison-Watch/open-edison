@@ -130,7 +130,9 @@ class BackgroundServerTemplate(TestTemplate):
 
         try:
             self.server_proxy = OpenEdisonProxy(
-                host=self.test_config.server.host, port=self.test_config.server.port - 1  # Use port 3000 for FastMCP, 3001 for FastAPI
+                host=self.test_config.server.host,
+                port=self.test_config.server.port
+                - 1,  # Use port 3000 for FastMCP, 3001 for FastAPI
             )
 
             # Also mock the config used by the server components
@@ -146,7 +148,7 @@ class BackgroundServerTemplate(TestTemplate):
             def get_free_port():
                 """Get a free port to use for testing"""
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('localhost', 0))
+                    s.bind(("localhost", 0))
                     return s.getsockname()[1]
 
             test_api_port = get_free_port()
@@ -163,12 +165,13 @@ class BackgroundServerTemplate(TestTemplate):
 
                 # Create a new OpenEdisonProxy with the test config
                 self.server_proxy = OpenEdisonProxy(
-                    host=self.test_config.server.host,
-                    port=test_mcp_port
+                    host=self.test_config.server.host, port=test_mcp_port
                 )
 
                 # Initialize SingleUserMCP with test config
-                loop.run_until_complete(self.server_proxy.single_user_mcp.initialize(self.test_config))
+                loop.run_until_complete(
+                    self.server_proxy.single_user_mcp.initialize(self.test_config)
+                )
 
                 app = self.server_proxy.fastapi_app
 
@@ -229,6 +232,7 @@ class BackgroundServerTemplate(TestTemplate):
         session.headers.update(auth_headers)
 
         original_request = session.request
+
         def debug_request(method, url, **kwargs):
             print(f"DEBUG: Making {method} request to {url}")
             response = original_request(method, url, **kwargs)
