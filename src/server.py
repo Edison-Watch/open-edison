@@ -7,7 +7,7 @@ No multi-user support, no complex routing - just a straightforward proxy.
 
 import asyncio
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -18,6 +18,10 @@ from loguru import logger as log
 from src.config import MCPServerConfig, config
 from src.mcp_manager import MCPManager
 from src.single_user_mcp import SingleUserMCP
+from src.middleware.session_tracking import (
+    create_db_session,
+    MCPSessionModel,
+)
 
 
 def _get_current_config():
@@ -171,11 +175,11 @@ class OpenEdisonProxy:
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
+        # Public sessions endpoint (no auth) for simple local dashboard
         app.add_api_route(
             "/sessions",
             self.get_sessions,
             methods=["GET"],
-            dependencies=[Depends(self.verify_api_key)],
         )
 
     async def verify_api_key(
@@ -315,7 +319,51 @@ class OpenEdisonProxy:
         except Exception as e:
             raise self._handle_server_operation_error("unmount", server_name, e) from e
 
-    async def get_sessions(self) -> dict[str, list[Any] | str]:
-        """Get recent session logs (placeholder)"""
-        # TODO: Implement session logging to SQLite
-        return {"sessions": [], "message": "Session logging not yet implemented"}
+    async def get_sessions(self) -> dict[str, Any]:
+        """Return recent MCP session summaries from local SQLite.
+
+        Response shape:
+        {
+          "sessions": [
+            {
+              "session_id": str,
+              "correlation_id": str,
+              "tool_calls": list[dict[str, Any]],
+              "data_access_summary": dict[str, Any]
+            },
+            ...
+          ]
+        }
+        """
+        try:
+            with create_db_session() as db_session:
+                # Fetch latest 100 sessions by primary key desc
+                results = (
+                    db_session.query(MCPSessionModel)
+                    .order_by(MCPSessionModel.id.desc())
+                    .limit(100)
+                    .all()
+                )
+
+                sessions: list[dict[str, Any]] = []
+                for row_model in results:
+                    row = cast(Any, row_model)
+                    tool_calls_val = row.tool_calls
+                    data_access_summary_val = row.data_access_summary
+                    sessions.append(
+                        {
+                            "session_id": row.session_id,
+                            "correlation_id": row.correlation_id,
+                            "tool_calls": tool_calls_val
+                            if isinstance(tool_calls_val, list)
+                            else [],
+                            "data_access_summary": data_access_summary_val
+                            if isinstance(data_access_summary_val, dict)
+                            else {},
+                        }
+                    )
+
+                return {"sessions": sessions}
+        except Exception as e:
+            log.error(f"Failed to fetch sessions: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e

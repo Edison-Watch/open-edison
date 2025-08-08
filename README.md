@@ -115,6 +115,24 @@ make lint
 make format
 ```
 
+### Website (Sessions Dashboard)
+
+A minimal React + Vite frontend is included at `open-edison/frontend/`.
+
+Run it with a single command from the repo root:
+
+```bash
+make website
+```
+
+This will install frontend deps (first run) and start the dev server. Open the URL shown (typically `http://localhost:5173` or `5174`).
+
+Notes:
+
+- The dashboard reads session data directly from the SQLite database `edison.db` in the repo root via sql.js.
+- The Configs tab provides JSON editors (with syntax highlighting) for `config.json`, `tool_permissions.json`, `resource_permissions.json`, and `prompt_permissions.json`.
+- You can Save changes directly while the dev server is running; writes are constrained to the project root.
+
 ## Docker
 
 ```bash

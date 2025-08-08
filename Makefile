@@ -187,3 +187,26 @@ desktop_ext_test: ## Test the desktop extension configuration
 	fi
 	@cd desktop_ext && node test_connection.js
 	@echo "$(GREEN)✅Desktop extension test completed.$(RESET)"
+
+########################################################
+# Frontend Website
+########################################################
+
+.PHONY: website website_dev website_build website_install
+
+website_install: ## Install frontend dependencies
+	@echo "$(YELLOW)📦 Installing frontend deps...$(RESET)"
+	@cd frontend && npm install
+	@echo "$(GREEN)✅ Frontend deps installed$(RESET)"
+
+website_dev: ## Run the frontend dev server (opens on port 5174 if 5173 busy)
+	@echo "$(YELLOW)▶️  Starting frontend dev server...$(RESET)"
+	@cd frontend && (npm run dev || npm run dev -- --port 5174)
+
+website_build: ## Build the frontend for production
+	@echo "$(YELLOW)🏗️  Building frontend...$(RESET)"
+	@cd frontend && npm run build
+	@echo "$(GREEN)✅ Frontend build complete$(RESET)"
+
+website: website_install website_dev ## Install and run the frontend website
+	@:
