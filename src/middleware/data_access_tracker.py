@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger as log
-
+from src.config import ConfigError
 
 def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
     if config_path.exists():
@@ -48,15 +48,14 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
                 for tool_name, tool_permissions in server_data.items():  # type: ignore
                     if not isinstance(tool_permissions, dict):
                         log.warning(
-                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}"
+                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}" # type: ignore
                         )  # type: ignore
                         continue
 
                     # Check for duplicates within the same server
                     if tool_name in server_tools[server_name]:
                         log.error(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
-                        log.error("TODO: This should block and fail")
-                        continue
+                        raise ConfigError(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
 
                     # Check for duplicates across different servers
                     if tool_name in tool_to_server:
@@ -64,8 +63,7 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
                         log.error(
                             f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
                         )
-                        log.error("TODO: This should block and fail")
-                        continue
+                        raise ConfigError(f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'")
 
                     if tool_permissions.get("enabled", False) is False:  # type: ignore
                         log.warning(
@@ -109,6 +107,9 @@ def _load_tool_permissions_cached() -> dict[str, dict[str, bool]]:
 
     try:
         return _flat_permissions_loader(config_path)
+    except ConfigError as e:
+        log.error(f"Failed to load tool permissions from {config_path}: {e}")
+        raise e
     except Exception as e:
         log.error(f"Failed to load tool permissions from {config_path}: {e}")
         return {}
@@ -121,6 +122,9 @@ def _load_resource_permissions_cached() -> dict[str, dict[str, bool]]:
 
     try:
         return _flat_permissions_loader(config_path)
+    except ConfigError as e:
+        log.error(f"Failed to load resource permissions from {config_path}: {e}")
+        raise e
     except Exception as e:
         log.error(f"Failed to load resource permissions from {config_path}: {e}")
         return {}
@@ -133,6 +137,9 @@ def _load_prompt_permissions_cached() -> dict[str, dict[str, bool]]:
 
     try:
         return _flat_permissions_loader(config_path)
+    except ConfigError as e:
+        log.error(f"Failed to load prompt permissions from {config_path}: {e}")
+        raise e
     except Exception as e:
         log.error(f"Failed to load prompt permissions from {config_path}: {e}")
         return {}
