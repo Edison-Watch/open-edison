@@ -21,20 +21,94 @@ from typing import Any
 from loguru import logger as log
 
 
+def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
+    if config_path.exists():
+        with open(config_path) as f:
+            data: dict[str, Any] = json.load(f)
+
+            # Handle new format: server -> {tool -> permissions}
+            # Convert to flat tool -> permissions format
+            flat_permissions: dict[str, dict[str, bool]] = {}
+            tool_to_server: dict[str, str] = {}
+            server_tools: dict[str, set[str]] = {}
+
+            for server_name, server_data in data.items():
+                if not isinstance(server_data, dict):
+                    log.warning(
+                        f"Invalid server data for {server_name}: expected dict, got {type(server_data)}"
+                    )
+                    continue
+
+                if server_name == "_metadata":
+                    flat_permissions["_metadata"] = server_data
+                    continue
+
+                server_tools[server_name] = set()
+
+                for tool_name, tool_permissions in server_data.items():  # type: ignore
+                    if not isinstance(tool_permissions, dict):
+                        log.warning(
+                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}"
+                        )  # type: ignore
+                        continue
+
+                    # Check for duplicates within the same server
+                    if tool_name in server_tools[server_name]:
+                        log.error(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
+                        log.error("TODO: This should block and fail")
+                        continue
+
+                    # Check for duplicates across different servers
+                    if tool_name in tool_to_server:
+                        existing_server = tool_to_server[tool_name]
+                        log.error(
+                            f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
+                        )
+                        log.error("TODO: This should block and fail")
+                        continue
+
+                    if tool_permissions.get("enabled", False) is False:  # type: ignore
+                        log.warning(
+                            f"Tool '{tool_name}' is disabled in {server_name} and will be blocked"
+                        )
+                        continue
+
+                    # Add to tracking maps
+                    tool_to_server[tool_name] = server_name
+                    server_tools[server_name].add(tool_name)  # type: ignore
+
+                    # Convert to flat format with explicit type casting
+                    tool_perms_dict: dict[str, Any] = tool_permissions  # type: ignore
+                    flat_permissions[tool_name] = {
+                        "enabled": bool(tool_perms_dict.get("enabled", True)),
+                        "write_operation": bool(tool_perms_dict.get("write_operation", False)),
+                        "read_private_data": bool(tool_perms_dict.get("read_private_data", False)),
+                        "read_untrusted_public_data": bool(
+                            tool_perms_dict.get("read_untrusted_public_data", False)
+                        ),
+                    }
+
+            log.debug(
+                f"Loaded {len(flat_permissions)} tool permissions from {len(server_tools)} servers in {config_path}"
+            )
+            # Convert sets to lists for JSON serialization
+            server_tools_serializable = {
+                server: list(tools) for server, tools in server_tools.items()
+            }
+            log.debug(f"Server tools: {json.dumps(server_tools_serializable, indent=2)}")
+            return flat_permissions
+    else:
+        log.warning(f"Tool permissions file not found at {config_path}")
+        return {}
+
+
 @lru_cache(maxsize=1)
 def _load_tool_permissions_cached() -> dict[str, dict[str, bool]]:
     """Load tool permissions from JSON configuration file with LRU caching."""
     config_path = Path(__file__).parent.parent.parent / "tool_permissions.json"
 
     try:
-        if config_path.exists():
-            with open(config_path) as f:
-                data = json.load(f)
-                log.debug(f"Loaded {len(data)} tool permissions from {config_path}")
-                return data
-        else:
-            log.warning(f"Tool permissions file not found at {config_path}")
-            return {}
+        return _flat_permissions_loader(config_path)
     except Exception as e:
         log.error(f"Failed to load tool permissions from {config_path}: {e}")
         return {}
@@ -46,14 +120,7 @@ def _load_resource_permissions_cached() -> dict[str, dict[str, bool]]:
     config_path = Path(__file__).parent.parent.parent / "resource_permissions.json"
 
     try:
-        if config_path.exists():
-            with open(config_path) as f:
-                data = json.load(f)
-                log.debug(f"Loaded {len(data)} resource permissions from {config_path}")
-                return data
-        else:
-            log.warning(f"Resource permissions file not found at {config_path}")
-            return {}
+        return _flat_permissions_loader(config_path)
     except Exception as e:
         log.error(f"Failed to load resource permissions from {config_path}: {e}")
         return {}
@@ -65,14 +132,7 @@ def _load_prompt_permissions_cached() -> dict[str, dict[str, bool]]:
     config_path = Path(__file__).parent.parent.parent / "prompt_permissions.json"
 
     try:
-        if config_path.exists():
-            with open(config_path) as f:
-                data = json.load(f)
-                log.debug(f"Loaded {len(data)} prompt permissions from {config_path}")
-                return data
-        else:
-            log.warning(f"Prompt permissions file not found at {config_path}")
-            return {}
+        return _flat_permissions_loader(config_path)
     except Exception as e:
         log.error(f"Failed to load prompt permissions from {config_path}: {e}")
         return {}
@@ -103,6 +163,7 @@ def _get_builtin_tool_permissions(name: str) -> dict[str, bool] | None:
     builtin_safe_tools = ["echo", "get_server_info", "get_security_status"]
     if name in builtin_safe_tools:
         permissions = {
+            "enabled": True,
             "write_operation": False,
             "read_private_data": False,
             "read_untrusted_public_data": False,
@@ -119,6 +180,7 @@ def _get_exact_match_permissions(
     if name in permissions_config and not name.startswith("_"):
         config_perms = permissions_config[name]
         permissions = {
+            "enabled": config_perms.get("enabled", False),
             "write_operation": config_perms.get("write_operation", False),
             "read_private_data": config_perms.get("read_private_data", False),
             "read_untrusted_public_data": config_perms.get("read_untrusted_public_data", False),
@@ -175,6 +237,7 @@ def _classify_permissions_cached(
         if pattern in permissions_config:
             config_perms = permissions_config[pattern]
             permissions = {
+                "enabled": config_perms.get("enabled", False),
                 "write_operation": config_perms.get("write_operation", False),
                 "read_private_data": config_perms.get("read_private_data", False),
                 "read_untrusted_public_data": config_perms.get("read_untrusted_public_data", False),
@@ -184,6 +247,9 @@ def _classify_permissions_cached(
 
     # No configuration found - raise error instead of defaulting to safe
     config_file = f"{type_name}_permissions.json"
+    log.error(
+        f"No security configuration found for {type_name} '{name}'. All {type_name}s must be explicitly configured in {config_file}"
+    )
     raise ValueError(
         f"No security configuration found for {type_name} '{name}'. All {type_name}s must be explicitly configured in {config_file}"
     )
@@ -296,6 +362,13 @@ class DataAccessTracker:
 
         # Get tool permissions and update trifecta flags
         permissions = self._classify_tool_permissions(tool_name)
+
+        log.debug(f"add_tool_call: Tool permissions: {permissions}")
+
+        # Check if tool is enabled
+        if permissions["enabled"] is False:
+            log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
+            raise SecurityError(f"Tool call '{tool_name}' blocked: tool is disabled")
 
         if permissions["read_private_data"]:
             self.has_private_data_access = True
