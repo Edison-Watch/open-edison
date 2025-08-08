@@ -99,12 +99,7 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code == 200
 
-        request_data = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        }
+        request_data = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 
         response = requests_session.post(f"{self.base_url}/mcp/call", json=request_data)
         assert response.status_code == 200
@@ -164,7 +159,6 @@ class TestMCPMountingE2E(BackgroundServerTemplate):
     @slow_test
     def test_mounting_error_handling(self, requests_session):
         """Test error handling in mounting operations"""
-
 
         response = requests_session.post(f"{self.base_url}/mcp/test-echo/mount")
         assert response.status_code in [200, 500]
