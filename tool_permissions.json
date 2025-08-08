@@ -111,7 +111,7 @@
     },
     "sqlite": {
         "sqlite_db_info": {
-            "enabled": false,
+            "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false
