@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger as log
+
 from src.config import ConfigError
+
 
 def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
     if config_path.exists():
@@ -48,14 +50,16 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
                 for tool_name, tool_permissions in server_data.items():  # type: ignore
                     if not isinstance(tool_permissions, dict):
                         log.warning(
-                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}" # type: ignore
+                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}"  # type: ignore
                         )  # type: ignore
                         continue
 
                     # Check for duplicates within the same server
                     if tool_name in server_tools[server_name]:
                         log.error(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
-                        raise ConfigError(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
+                        raise ConfigError(
+                            f"Duplicate tool '{tool_name}' found in server '{server_name}'"
+                        )
 
                     # Check for duplicates across different servers
                     if tool_name in tool_to_server:
@@ -63,13 +67,9 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
                         log.error(
                             f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
                         )
-                        raise ConfigError(f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'")
-
-                    if tool_permissions.get("enabled", False) is False:  # type: ignore
-                        log.warning(
-                            f"Tool '{tool_name}' is disabled in {server_name} and will be blocked"
+                        raise ConfigError(
+                            f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
                         )
-                        continue
 
                     # Add to tracking maps
                     tool_to_server[tool_name] = server_name
@@ -348,6 +348,10 @@ class DataAccessTracker:
         permissions = self._classify_by_prompt_name(prompt_name)
         log.debug(f"Classified prompt {prompt_name}: {permissions}")
         return permissions
+
+    def get_tool_permissions(self, tool_name: str) -> dict[str, bool]:
+        """Get tool permissions based on tool name."""
+        return self._classify_tool_permissions(tool_name)
 
     def add_tool_call(self, tool_name: str) -> str:
         """
