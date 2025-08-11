@@ -9,10 +9,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import subprocess as _subprocess
 from contextlib import suppress
 from pathlib import Path
-from typing import NoReturn, Any
-import subprocess as _subprocess
+from typing import Any, NoReturn
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 

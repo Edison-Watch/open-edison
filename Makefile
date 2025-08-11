@@ -153,6 +153,42 @@ build: check_rye ## Build the package
 	@echo "$(GREEN)✅Package built successfully.$(RESET)"
 
 ########################################################
+# PyPI packaging and publish
+########################################################
+
+.PHONY: clean_dist build_dist check_twine publish_testpypi test_publish publish_pypi
+
+clean_dist: ## Remove dist/ directory
+	@echo "$(YELLOW)🧹Cleaning dist directory...$(RESET)"
+	@rm -rf dist
+	@echo "$(GREEN)✅dist cleaned.$(RESET)"
+
+build_dist: check_rye clean_dist ## Build source and wheel distributions
+	@echo "$(YELLOW)📦Building sdist and wheel...$(RESET)"
+	@rye build
+	@echo "$(GREEN)✅Distributions built in dist/. $(RESET)"
+
+check_twine: check_rye ## Ensure twine is available
+	@echo "$(YELLOW)🔍Checking for twine...$(RESET)"
+	@rye run python -c "import twine, sys; print('twine', twine.__version__)" || (echo "$(RED)twine not found. Run 'rye sync' to install dev deps.$(RESET)"; exit 1)
+
+publish_testpypi: build_package check_twine ## Upload distributions to TestPyPI
+	@echo "$(YELLOW)🚀Uploading to TestPyPI...$(RESET)"
+	@echo "$(YELLOW)🔎 Validating metadata with twine check...$(RESET)"
+	@rye run python -m twine check dist/*
+	@rye run python -m twine upload --skip-existing --repository testpypi dist/* --verbose
+	@echo "$(GREEN)✅Upload to TestPyPI complete.$(RESET)"
+
+test_publish: publish_testpypi ## Alias: publish to TestPyPI
+
+publish_pypi: build_package check_twine ## Upload distributions to PyPI (production)
+	@echo "$(YELLOW)🚀Uploading to PyPI...$(RESET)"
+	@echo "$(YELLOW)🔎 Validating metadata with twine check...$(RESET)"
+	@rye run python -m twine check dist/*
+	@rye run python -m twine upload --repository pypi dist/* --verbose
+	@echo "$(GREEN)✅Upload to PyPI complete.$(RESET)"
+
+########################################################
 # Desktop Extension
 ########################################################
 
@@ -187,6 +223,18 @@ desktop_ext_test: ## Test the desktop extension configuration
 	fi
 	@cd desktop_ext && node test_connection.js
 	@echo "$(GREEN)✅Desktop extension test completed.$(RESET)"
+
+########################################################
+# Git Hooks
+########################################################
+
+.PHONY: install_git_hooks
+install_git_hooks: ## Install project git hooks (pre-push)
+	@echo "$(YELLOW)🔧 Installing git hooks...$(RESET)"
+	@mkdir -p .git/hooks
+	@cp scripts/git-hooks/pre-push .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
+	@echo "$(GREEN)✅ pre-push hook installed.$(RESET)"
 
 ########################################################
 # Frontend Website

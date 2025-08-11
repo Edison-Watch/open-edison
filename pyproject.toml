@@ -2,6 +2,7 @@
 name = "open-edison"
 version = "0.1.0"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
+readme = "README.md"
 authors = [
     { name = "Hugo Berg", email = "hugo@edison.watch" }
 ]
@@ -35,6 +36,7 @@ dev-dependencies = [
     "ruff>=0.12.3",
     "pytest>=8.3.3",
     "pytest-asyncio>=1.0.0",
+    "twine>=5.1.1",
 ]
 
 [project.optional-dependencies]

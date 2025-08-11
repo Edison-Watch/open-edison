@@ -6,17 +6,16 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
-from pathlib import Path
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from pathlib import Path
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config

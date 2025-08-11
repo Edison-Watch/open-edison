@@ -80,8 +80,6 @@ idna==3.10
     # via httpx
     # via requests
     # via yarl
-iniconfig==2.1.0
-    # via pytest
 isodate==0.7.2
     # via openapi-core
 jsonschema==4.25.0
@@ -121,14 +119,10 @@ openapi-schema-validator==0.6.3
     # via openapi-spec-validator
 openapi-spec-validator==0.7.2
     # via openapi-core
-packaging==25.0
-    # via pytest
 parse==1.20.2
     # via openapi-core
 pathable==0.4.4
     # via jsonschema-path
-pluggy==1.6.0
-    # via pytest
 propcache==0.3.2
     # via aiohttp
     # via yarl
@@ -145,15 +139,9 @@ pydantic-core==2.33.2
 pydantic-settings==2.10.1
     # via mcp
 pygments==2.19.2
-    # via pytest
     # via rich
 pyperclip==1.9.0
     # via fastmcp
-pytest==8.4.1
-    # via open-edison
-    # via pytest-asyncio
-pytest-asyncio==1.1.0
-    # via open-edison
 python-dotenv==1.1.1
     # via fastmcp
     # via open-edison
@@ -180,8 +168,6 @@ rich-rst==1.3.1
 rpds-py==0.26.0
     # via jsonschema
     # via referencing
-ruff==0.12.7
-    # via open-edison
 six==1.17.0
     # via rfc3339-validator
 sniffio==1.3.1

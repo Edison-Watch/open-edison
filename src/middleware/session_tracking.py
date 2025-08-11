@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import mcp.types as mt
@@ -20,13 +21,12 @@ from fastmcp.server.proxy import ProxyTool
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
-from pathlib import Path
 from sqlalchemy import JSON, Column, Integer, String, create_engine, event
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
-from src.middleware.data_access_tracker import DataAccessTracker
 from src.config import get_config_dir  # type: ignore[reportMissingImports]
+from src.middleware.data_access_tracker import DataAccessTracker
 
 
 @dataclass

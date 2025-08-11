@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+try:
+    import tomllib  # Python 3.11+
+except Exception:  # pragma: no cover
+    tomllib = None  # type: ignore
+
+
+ZERO_SHA = "0000000000000000000000000000000000000000"
+
+
+def color(text: str, code: str) -> str:
+    return f"\033[{code}m{text}\033[0m"
+
+
+def error(text: str) -> None:
+    print(color(text, "0;31"), file=sys.stderr)
+
+
+def info(text: str) -> None:
+    print(color(text, "0;33"))
+
+
+def ok(text: str) -> None:
+    print(color(text, "0;32"))
+
+
+def run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True, check=check)
+
+
+def get_empty_tree() -> str:
+    cp = run_git(["hash-object", "-t", "tree", "/dev/null"])
+    return cp.stdout.strip()
+
+
+def get_pyproject_at(commit_sha: str) -> Optional[bytes]:
+    try:
+        cp = subprocess.run(
+            ["git", "show", f"{commit_sha}:pyproject.toml"],
+            capture_output=True,
+            check=True,
+        )
+        return cp.stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def parse_version_toml(pyproject_bytes: bytes) -> Optional[Tuple[int, int, int]]:
+    # Prefer tomllib for correctness
+    if tomllib is not None:
+        try:
+            data = tomllib.loads(pyproject_bytes.decode("utf-8"))
+            version_str = data.get("project", {}).get("version")
+            if isinstance(version_str, str):
+                m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version_str.strip())
+                if m:
+                    return tuple(int(p) for p in m.groups())  # type: ignore[return-value]
+        except Exception:
+            pass
+    # Fallback: regex search
+    m = re.search(
+        rb"^version\s*=\s*\"(\d+)\.(\d+)\.(\d+)\"\s*$",
+        pyproject_bytes,
+        re.MULTILINE,
+    )
+    if not m:
+        return None
+    return tuple(int(p) for p in m.groups())  # type: ignore[return-value]
+
+
+def src_changed(base: str, head: str) -> bool:
+    cp = run_git(["diff", "--name-only", f"{base}..{head}", "--", "src/"], check=False)
+    return bool(cp.stdout.strip())
+
+
+def enforce_version_bump(local_sha: str, remote_sha: str) -> bool:
+    base = remote_sha if remote_sha != ZERO_SHA else get_empty_tree()
+    if not src_changed(base, local_sha):
+        return True
+
+    info("src/ changed in push range; verifying version bump in pyproject.toml...")
+
+    local_bytes = get_pyproject_at(local_sha)
+    if not local_bytes:
+        error(f"pyproject.toml not found in commit {local_sha}.")
+        return False
+    local_ver = parse_version_toml(local_bytes)
+    if local_ver is None:
+        error(f"Could not parse version from pyproject.toml at {local_sha}.")
+        return False
+
+    remote_ver: Optional[Tuple[int, int, int]] = None
+    if remote_sha != ZERO_SHA:
+        remote_bytes = get_pyproject_at(remote_sha)
+        if remote_bytes:
+            remote_ver = parse_version_toml(remote_bytes)
+
+    # If remote version is unknown (new branch or pyproject missing), allow push
+    if remote_ver is None:
+        ok(
+            f"Version check skipped (no remote version). Local version: {local_ver[0]}.{local_ver[1]}.{local_ver[2]}"
+        )
+        return True
+
+    lmaj, lmin, lpat = local_ver
+    rmaj, rmin, rpat = remote_ver
+
+    # Accept any semver increase (major, minor, or patch)
+    if (lmaj, lmin, lpat) > (rmaj, rmin, rpat):
+        ok(f"Version bump detected: {rmaj}.{rmin}.{rpat} -> {lmaj}.{lmin}.{lpat}")
+        return True
+
+    error("Version bump required: src/ changed but version did not increase.")
+    error(f"Remote: {rmaj}.{rmin}.{rpat}  Local: {lmaj}.{lmin}.{lpat}. Bump version in pyproject.toml.")
+    return False
+
+
+def main() -> int:
+    status = 0
+    # pre-push receives remote name and remote URL as argv, refs on stdin
+    _remote_name = sys.argv[1] if len(sys.argv) > 1 else ""
+    _remote_url = sys.argv[2] if len(sys.argv) > 2 else ""
+
+    for line in sys.stdin.read().splitlines():
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        local_ref, local_sha, remote_ref, remote_sha = parts[:4]
+
+        # Skip deletions
+        if local_sha == ZERO_SHA:
+            continue
+
+        if not enforce_version_bump(local_sha, remote_sha):
+            status = 1
+
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+

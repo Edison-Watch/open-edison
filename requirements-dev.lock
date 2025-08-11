@@ -52,6 +52,7 @@ dnspython==2.7.0
 docstring-parser==0.17.0
     # via cyclopts
 docutils==0.22
+    # via readme-renderer
     # via rich-rst
 email-validator==2.2.0
     # via pydantic
@@ -75,6 +76,8 @@ httpx==0.28.1
     # via open-edison
 httpx-sse==0.4.1
     # via mcp
+id==1.5.0
+    # via twine
 idna==3.10
     # via anyio
     # via email-validator
@@ -85,6 +88,12 @@ iniconfig==2.1.0
     # via pytest
 isodate==0.7.2
     # via openapi-core
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.0.1
+    # via keyring
+jaraco-functools==4.2.1
+    # via keyring
 jsonschema==4.25.0
     # via mcp
     # via openapi-core
@@ -96,6 +105,8 @@ jsonschema-path==0.3.4
 jsonschema-specifications==2025.4.1
     # via jsonschema
     # via openapi-schema-validator
+keyring==25.6.0
+    # via twine
 lazy-object-proxy==1.11.0
     # via openapi-spec-validator
 loguru==0.7.3
@@ -109,10 +120,14 @@ mcp==1.12.3
 mdurl==0.1.2
     # via markdown-it-py
 more-itertools==10.7.0
+    # via jaraco-classes
+    # via jaraco-functools
     # via openapi-core
 multidict==6.6.3
     # via aiohttp
     # via yarl
+nh3==0.3.0
+    # via readme-renderer
 nodejs-wheel-binaries==22.18.0
     # via basedpyright
 openapi-core==0.19.5
@@ -126,6 +141,7 @@ openapi-spec-validator==0.7.2
     # via openapi-core
 packaging==25.0
     # via pytest
+    # via twine
 parse==1.20.2
     # via openapi-core
 pathable==0.4.4
@@ -149,14 +165,13 @@ pydantic-settings==2.10.1
     # via mcp
 pygments==2.19.2
     # via pytest
+    # via readme-renderer
     # via rich
 pyperclip==1.9.0
     # via fastmcp
 pytest==8.4.1
-    # via open-edison
     # via pytest-asyncio
 pytest-asyncio==1.1.0
-    # via open-edison
 python-dotenv==1.1.1
     # via fastmcp
     # via open-edison
@@ -166,25 +181,34 @@ python-multipart==0.0.20
 pyyaml==6.0.2
     # via jsonschema-path
     # via open-edison
+readme-renderer==44.0
+    # via twine
 referencing==0.36.2
     # via jsonschema
     # via jsonschema-path
     # via jsonschema-specifications
 requests==2.32.4
+    # via id
     # via jsonschema-path
+    # via requests-toolbelt
+    # via twine
+requests-toolbelt==1.0.0
+    # via twine
 rfc3339-validator==0.1.4
     # via openapi-schema-validator
+rfc3986==2.0.0
+    # via twine
 rich==14.1.0
     # via cyclopts
     # via fastmcp
     # via rich-rst
+    # via twine
 rich-rst==1.3.1
     # via cyclopts
 rpds-py==0.26.0
     # via jsonschema
     # via referencing
 ruff==0.12.7
-    # via open-edison
 six==1.17.0
     # via rfc3339-validator
 sniffio==1.3.1
@@ -197,6 +221,7 @@ starlette==0.47.2
     # via fastapi
     # via mcp
     # via open-edison
+twine==6.1.0
 typing-extensions==4.14.1
     # via aiosignal
     # via aiosqlite
@@ -215,6 +240,7 @@ typing-inspection==0.4.1
     # via pydantic-settings
 urllib3==2.5.0
     # via requests
+    # via twine
 uvicorn==0.35.0
     # via mcp
     # via open-edison
