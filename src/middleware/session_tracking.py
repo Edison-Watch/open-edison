@@ -290,11 +290,10 @@ class SessionTrackingMiddleware(Middleware):
 
         return await call_next(context)  # type: ignore
 
-    async def on_resource_access(
+    async def on_read_resource(
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
-        resource_name: str,
     ) -> Any:
         """Process resource access and track security implications."""
         session_id = current_session_id_ctxvar.get()
@@ -304,8 +303,10 @@ class SessionTrackingMiddleware(Middleware):
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding resource access to session {session_id}")
-
         assert session.data_access_tracker is not None
+
+        resource_name = str(context.message.uri)
+
         log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
         _ = session.data_access_tracker.add_resource_access(resource_name)
 

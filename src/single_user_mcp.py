@@ -368,4 +368,13 @@ class SingleUserMCP(FastMCP[Any]):
 
             return security_data
 
+        @self.resource("config://app")
+        def get_app_config() -> dict[str, Any]:  # noqa: ARG001
+            """Get application configuration."""
+            return {
+                "version": config.version,
+                "mounted_servers": list(self.mounted_servers.keys()),
+                "total_mounted": len(self.mounted_servers),
+            }
+
         log.info("✅ Added built-in demo tools: echo, get_server_info, get_security_status")
