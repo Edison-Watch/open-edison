@@ -16,6 +16,8 @@ from typing import Any
 import mcp.types as mt
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
+from fastmcp.server.proxy import ProxyTool
+from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
 from pathlib import Path
@@ -196,6 +198,49 @@ class SessionTrackingMiddleware(Middleware):
         session = get_session_from_db(session_id)
         _ = current_session_id_ctxvar.set(session_id)
         return session, session_id
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[Any],  # type: ignore
+        call_next: CallNext[Any, Any],  # type: ignore
+    ) -> Any:
+        log.debug("🔍 on_list_tools")
+        # Get the original response
+        response = await call_next(context)
+        log.trace(f"🔍 on_list_tools response: {response}")
+
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            raise ValueError("No session ID found in context")
+        session = get_session_from_db(session_id)
+        log.trace(f"Getting tool permissions for session {session_id}")
+        assert session.data_access_tracker is not None
+
+        # Filter out specific tools or return empty list
+        allowed_tools: list[FunctionTool | ProxyTool | Any] = []
+        for tool in response:
+            if isinstance(tool, FunctionTool):
+                log.debug(f"🔍 on_list_tools tool is a FunctionTool and allowed: {tool}")
+                allowed_tools.append(tool)
+            elif isinstance(tool, ProxyTool):
+                permissions = session.data_access_tracker.get_tool_permissions(tool.name)
+                log.debug(
+                    f"🔍 on_list_tools tool is a ProxyTool: {tool} with permissions: {permissions}"
+                )
+                if permissions["enabled"]:
+                    allowed_tools.append(tool)
+                else:
+                    log.warning(
+                        f"🔍 on_list_tools tool is a disabled ProxyTool and is not allowed: {tool}"
+                    )
+                    continue
+            else:
+                log.warning(
+                    f"🔍 on_list_tools tool is of unknown type and will be disabled: {tool}"
+                )
+                continue
+
+        return allowed_tools  # type: ignore
 
     async def on_request(
         self,

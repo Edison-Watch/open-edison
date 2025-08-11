@@ -22,11 +22,11 @@ from loguru import logger as log
 from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.mcp_manager import MCPManager
-from src.single_user_mcp import SingleUserMCP
 from src.middleware.session_tracking import (
-    create_db_session,
     MCPSessionModel,
+    create_db_session,
 )
+from src.single_user_mcp import SingleUserMCP
 
 
 def _get_current_config():
