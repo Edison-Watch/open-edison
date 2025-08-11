@@ -6,6 +6,7 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
+from pathlib import Path
 from collections.abc import Coroutine
 from typing import Any, cast
 
@@ -13,9 +14,13 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from pathlib import Path
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
+from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.mcp_manager import MCPManager
 from src.single_user_mcp import SingleUserMCP
 from src.middleware.session_tracking import (
@@ -75,6 +80,184 @@ class OpenEdisonProxy:
         # Register all routes
         self._register_routes(app)
 
+        # If packaged frontend assets exist, mount at /dashboard
+        try:
+            # Prefer packaged assets under src/frontend_dist
+            static_dir = Path(__file__).parent / "frontend_dist"
+            if not static_dir.exists():
+                # Fallback to repo root or site-packages root (older layout)
+                static_dir = Path(__file__).parent.parent / "frontend_dist"
+            if static_dir.exists():
+                app.mount(
+                    "/dashboard",
+                    StaticFiles(directory=str(static_dir), html=True),
+                    name="dashboard",
+                )
+                assets_dir = static_dir / "assets"
+                if assets_dir.exists():
+                    app.mount(
+                        "/assets",
+                        StaticFiles(directory=str(assets_dir), html=False),
+                        name="dashboard-assets",
+                    )
+                favicon_path = static_dir / "favicon.ico"
+                if favicon_path.exists():
+
+                    async def _favicon() -> FileResponse:  # type: ignore[override]
+                        return FileResponse(str(favicon_path))
+
+                    app.add_api_route("/favicon.ico", _favicon, methods=["GET"])  # type: ignore[arg-type]
+                log.info(f"📊 Dashboard static assets mounted at /dashboard from {static_dir}")
+            else:
+                log.debug("No packaged frontend assets found; skipping static mount")
+        except Exception as mount_err:  # noqa: BLE001
+            log.warning(f"Failed to mount dashboard static assets: {mount_err}")
+
+        # Special-case: serve SQLite db and config JSONs for dashboard (prod replacement for Vite @fs)
+        def _resolve_db_path() -> Path | None:
+            try:
+                # Try configured database path first
+                db_cfg = getattr(config.logging, "database_path", None)
+                if isinstance(db_cfg, str) and db_cfg:
+                    db_path = Path(db_cfg)
+                    if db_path.is_absolute() and db_path.exists():
+                        return db_path
+                    # Check relative to config dir
+                    try:
+                        cfg_dir = _get_cfg_dir()
+                    except Exception:
+                        cfg_dir = Path.cwd()
+                    rel1 = cfg_dir / db_path
+                    if rel1.exists():
+                        return rel1
+                    # Also check relative to cwd as a fallback
+                    rel2 = Path.cwd() / db_path
+                    if rel2.exists():
+                        return rel2
+            except Exception:
+                pass
+
+            # Fallback common locations
+            try:
+                cfg_dir = _get_cfg_dir()
+            except Exception:
+                cfg_dir = Path.cwd()
+            candidates = [
+                cfg_dir / "sessions.db",
+                cfg_dir / "sessions.db",
+                Path.cwd() / "edison.db",
+                Path.cwd() / "sessions.db",
+            ]
+            for c in candidates:
+                if c.exists():
+                    return c
+            return None
+
+        async def _serve_db() -> FileResponse:  # type: ignore[override]
+            db_file = _resolve_db_path()
+            if db_file is None:
+                raise HTTPException(status_code=404, detail="Database file not found")
+            return FileResponse(str(db_file), media_type="application/octet-stream")
+
+        # Provide multiple paths the SPA might attempt (both edison.db legacy and sessions.db canonical)
+        for name in ("edison.db", "sessions.db"):
+            app.add_api_route(f"/dashboard/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(f"/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(f"/@fs/dashboard//{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(f"/@fs/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            # Also support URL-encoded '@' prefix used by some bundlers
+            app.add_api_route(f"/%40fs/dashboard//{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(f"/%40fs/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+
+        # Config files (read + write)
+        allowed_json_files = {
+            "config.json",
+            "tool_permissions.json",
+            "resource_permissions.json",
+            "prompt_permissions.json",
+        }
+
+        def _resolve_json_path(filename: str) -> Path:
+            # JSON files reside in the config directory
+            try:
+                base = _get_cfg_dir()
+            except Exception:
+                base = Path.cwd()
+            target = base / filename
+            # If missing and we ship a default in package root, bootstrap it
+            if not target.exists():
+                try:
+                    pkg_default = Path(__file__).parent.parent / filename
+                    if pkg_default.exists():
+                        target.write_text(pkg_default.read_text(encoding="utf-8"), encoding="utf-8")
+                except Exception:
+                    pass
+            return target
+
+        async def _serve_json(filename: str) -> FileResponse:  # type: ignore[override]
+            if filename not in allowed_json_files:
+                raise HTTPException(status_code=404, detail="Not found")
+            json_path = _resolve_json_path(filename)
+            if not json_path.exists():
+                # Return empty object for missing files to avoid hard failures in UI
+                return JSONResponse(content={}, media_type="application/json")
+            return FileResponse(str(json_path), media_type="application/json")
+
+        # GET endpoints for convenience
+        for name in allowed_json_files:
+            app.add_api_route(
+                f"/{name}", (lambda n=name: (lambda: _serve_json(n))), methods=["GET"]
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/dashboard/{name}", (lambda n=name: (lambda: _serve_json(n))), methods=["GET"]
+            )  # type: ignore[arg-type]
+
+        # Save endpoint to persist JSON changes
+        async def _save_json(body: dict[str, Any]) -> dict[str, str]:  # type: ignore[override]
+            try:
+                # Accept either {path, content} or {name, content}
+                name = body.get("name")
+                path_val = body.get("path")
+                content = body.get("content", "")
+                if not isinstance(content, str):
+                    raise ValueError("content must be string")
+                if isinstance(name, str) and name in allowed_json_files:
+                    target = _resolve_json_path(name)
+                elif isinstance(path_val, str):
+                    base = Path.cwd()
+                    # Normalize path but restrict to allowed filenames
+                    candidate = Path(path_val)
+                    filename = candidate.name
+                    if filename not in allowed_json_files:
+                        raise ValueError("filename not allowed")
+                    target = base / filename
+                else:
+                    raise ValueError("invalid target file")
+                # Basic validation to ensure valid JSON
+                import json as _json
+
+                _ = _json.loads(content or "{}")
+                target.write_text(content or "{}", encoding="utf-8")
+                return {"status": "ok"}
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(status_code=400, detail=f"Save failed: {e}") from e
+
+        app.add_api_route("/__save_json__", _save_json, methods=["POST"])  # type: ignore[arg-type]
+
+        # Catch-all for @fs patterns; serve known db and json filenames
+        async def _serve_fs_path(rest: str):  # type: ignore[override]
+            target = rest.strip("/")
+            # Basename-based allowlist
+            basename = Path(target).name
+            if basename in allowed_json_files:
+                return await _serve_json(basename)
+            if basename.endswith("edison.db") or basename.endswith("sessions.db"):
+                return await _serve_db()
+            raise HTTPException(status_code=404, detail="Not found")
+
+        app.add_api_route("/@fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
+        app.add_api_route("/%40fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
+
         return app
 
     async def start(self) -> None:
@@ -82,6 +265,13 @@ class OpenEdisonProxy:
         log.info("🚀 Starting Open Edison MCP Proxy Server")
         log.info(f"FastAPI management API on {self.host}:{self.port + 1}")
         log.info(f"FastMCP protocol server on {self.host}:{self.port}")
+
+        # Ensure the sessions database exists and has the required schema
+        try:
+            with create_db_session():
+                pass
+        except Exception as db_err:  # noqa: BLE001
+            log.warning(f"Failed to pre-initialize sessions database: {db_err}")
 
         # Initialize the FastMCP server (this handles starting enabled MCP servers)
         await self.single_user_mcp.initialize()

@@ -18,11 +18,13 @@ from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
-from sqlalchemy import JSON, Column, Integer, String, create_engine
+from pathlib import Path
+from sqlalchemy import JSON, Column, Integer, String, create_engine, event
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
 from src.middleware.data_access_tracker import DataAccessTracker
+from src.config import get_config_dir  # type: ignore[reportMissingImports]
 
 
 @dataclass
@@ -80,8 +82,25 @@ def get_current_session_data_tracker() -> DataAccessTracker | None:
 
 @contextmanager
 def create_db_session() -> Generator[Session, None, None]:
-    """Create a db session to our local sqlite db"""
-    engine = create_engine("sqlite:///edison.db")
+    """Create a db session to our local sqlite db (fixed location under config dir)."""
+    try:
+        cfg_dir = get_config_dir()
+    except Exception:
+        cfg_dir = Path.cwd()
+    db_path = cfg_dir / "sessions.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{db_path}")
+
+    # Ensure changes are flushed to the main database file (avoid WAL for sql.js compatibility)
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[override]
+        cur = dbapi_connection.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=DELETE")
+            cur.execute("PRAGMA synchronous=FULL")
+        finally:
+            cur.close()
+
     # Ensure tables exist
     Base.metadata.create_all(engine)  # type: ignore
     session = Session(engine)

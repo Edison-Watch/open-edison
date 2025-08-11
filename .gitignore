@@ -210,3 +210,9 @@ __marimo__/
 # SQLite database
 edison.db
 test.db
+
+# Frontend compiled files
+src/frontend_dist/
+frontend_dist/
+frontend/node_modules/
+frontend/package-lock.json

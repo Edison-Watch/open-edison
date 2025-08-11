@@ -17,11 +17,12 @@ dependencies = [
     "starlette>=0.47.1",
     "sqlalchemy>=2.0.41",
     "aiosqlite>=0.20.0",
-    "ruff>=0.12.3",
-    "pytest>=8.3.3",
-    "pytest-asyncio>=1.0.0",
 ]
 requires-python = ">= 3.12"
+
+[project.scripts]
+open-edison = "src.cli:main"
+open_edison = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,8 +31,17 @@ build-backend = "hatchling.build"
 [tool.rye]
 managed = true
 dev-dependencies = [
-    "pytest-asyncio>=1.0.0",
     "basedpyright>=1.21.0",
+    "ruff>=0.12.3",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.12.3",
+  "pytest>=8.3.3",
+  "pytest-asyncio>=1.0.0",
 ]
 
 [tool.hatch.metadata]
@@ -39,6 +49,17 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+include = [
+  "README.md",
+  "LICENSE",
+  "config.json",
+  "tool_permissions.json",
+  "resource_permissions.json",
+  "prompt_permissions.json",
+  # We only ship the built assets, not the raw frontend sources (placed under src/ for packaging)
+  "src/frontend_dist/**",
+  "docs/**",
+]
 
 [tool.ruff]
 line-length = 100
@@ -69,3 +90,4 @@ ignore = [".venv", "tests/**", "alembic", "tests"]
 reportMissingTypeStubs = true
 reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
 venvPath = ".venv"
+extraPaths = ["src"]

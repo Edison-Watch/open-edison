@@ -33,7 +33,7 @@ function useSessions(dbPath: string) {
             setLoading(true)
             setError(null)
             try {
-                const SQL = await initSqlJs({ locateFile: (f) => `https://sql.js.org/dist/${f}` })
+                const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
                 const fileResp = await fetch(`/@fs${dbPath}`)
                 if (!fileResp.ok) throw new Error(`Cannot read DB at ${dbPath}`)
                 const buf = new Uint8Array(await fileResp.arrayBuffer())
@@ -119,9 +119,8 @@ function riskLevel(flags: { privateData: boolean; untrusted: boolean; external: 
 }
 
 export function App(): React.JSX.Element {
-    // Read SQLite from the repo root relative to frontend folder
-    // e.g., ../../edison.db from frontend dir
-    const dbRelativeToProjectRoot = '/edison.db'
+    // Always read from sessions.db (canonical name)
+    const dbRelativeToProjectRoot = '/sessions.db'
     // Vite injects __PROJECT_ROOT__ from vite.config.ts define
     const dbAbsolutePath = (globalThis as any).__PROJECT_ROOT__
         ? `${(globalThis as any).__PROJECT_ROOT__}${dbRelativeToProjectRoot}`
@@ -283,8 +282,8 @@ function Timeline({ sessions, startDay, endDay, onRangeChange }: {
         const a = Math.max(0, Math.min(i1, i2))
         const b = Math.min(buckets.entries.length - 1, Math.max(i1, i2))
         if (a <= b) {
-            const s = buckets.entries[a][0]
-            const e = buckets.entries[b][0]
+            const s = buckets.entries?.[a]?.[0] ?? ''
+            const e = buckets.entries?.[b]?.[0] ?? ''
             onRangeChange(s, e)
         }
     }

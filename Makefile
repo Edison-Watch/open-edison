@@ -210,3 +210,18 @@ website_build: ## Build the frontend for production
 
 website: website_install website_dev ## Install and run the frontend website
 	@:
+
+########################################################
+# Package Build (Python wheel + packaged frontend)
+########################################################
+
+.PHONY: build_package
+build_package: ## Build frontend, package into src/frontend_dist, then build Python wheel
+	@echo "$(YELLOW)🏗️  Building frontend (vite) and packaging Python wheel...$(RESET)"
+	@cd frontend && npm install && npm run build
+	@echo "$(YELLOW)📦 Syncing built dashboard to src/frontend_dist...$(RESET)"
+	@rm -rf src/frontend_dist && mkdir -p src/frontend_dist
+	@cp -R frontend/dist/* src/frontend_dist/
+	@echo "$(YELLOW)📦 Building Python wheel...$(RESET)"
+	@rye build
+	@echo "$(GREEN)✅ build_package complete. Wheel contains packaged dashboard (frontend_dist).$(RESET)"

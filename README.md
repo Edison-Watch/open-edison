@@ -1,5 +1,7 @@
 # Open Edison
 
+Run locally in with uvx: `uvx open-edison --config-dir ~/edison-config`
+
 Open-source MCP security, aggregation, and monitoring. Provides core functionality of <https://edison.watch> for local, single-user use.
 
 ## Features
@@ -15,7 +17,26 @@ Open-source MCP security, aggregation, and monitoring. Provides core functionali
 ### Prerequisites
 
 - Python 3.12+
-- [Rye](https://rye-up.com/) for dependency management
+- For development: [Rye](https://rye-up.com/) or a virtualenv
+
+### Install from PyPI (once published)
+
+```bash
+# Using uvx
+uvx open-edison -- --help
+
+# Using pipx
+pipx install open-edison
+open-edison --help
+```
+
+Run with a custom config directory:
+
+```bash
+open-edison run --config-dir ~/edison-config
+# or via environment variable
+OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
+```
 
 ### Installation
 
@@ -56,6 +77,8 @@ make setup
 
 ```bash
 make run
+# or, from the installed package
+open-edison run
 ```
 
 The server will be available at `http://localhost:3000`.
@@ -119,10 +142,12 @@ make format
 
 A minimal React + Vite frontend is included at `open-edison/frontend/`.
 
-Run it with a single command from the repo root:
+Run it with a single command from the repo root or via the CLI:
 
 ```bash
 make website
+# or
+open-edison website
 ```
 
 This will install frontend deps (first run) and start the dev server. Open the URL shown (typically `http://localhost:5173` or `5174`).
