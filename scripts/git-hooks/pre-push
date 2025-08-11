@@ -6,14 +6,7 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
-from typing import Optional, Tuple
-
-try:
-    import tomllib  # Python 3.11+
-except Exception:  # pragma: no cover
-    tomllib = None  # type: ignore
-
+import tomllib  # Python 3.11+
 
 ZERO_SHA = "0000000000000000000000000000000000000000"
 
@@ -34,7 +27,7 @@ def ok(text: str) -> None:
     print(color(text, "0;32"))
 
 
-def run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+def run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], capture_output=True, text=True, check=check)
 
 
@@ -43,7 +36,7 @@ def get_empty_tree() -> str:
     return cp.stdout.strip()
 
 
-def get_pyproject_at(commit_sha: str) -> Optional[bytes]:
+def get_pyproject_at(commit_sha: str) -> bytes | None:
     try:
         cp = subprocess.run(
             ["git", "show", f"{commit_sha}:pyproject.toml"],
@@ -55,32 +48,65 @@ def get_pyproject_at(commit_sha: str) -> Optional[bytes]:
         return None
 
 
-def parse_version_toml(pyproject_bytes: bytes) -> Optional[Tuple[int, int, int]]:
+def parse_version_toml(pyproject_bytes: bytes) -> tuple[int, int, int] | None:
     # Prefer tomllib for correctness
-    if tomllib is not None:
-        try:
-            data = tomllib.loads(pyproject_bytes.decode("utf-8"))
-            version_str = data.get("project", {}).get("version")
-            if isinstance(version_str, str):
-                m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version_str.strip())
-                if m:
-                    return tuple(int(p) for p in m.groups())  # type: ignore[return-value]
-        except Exception:
-            pass
-    # Fallback: regex search
-    m = re.search(
-        rb"^version\s*=\s*\"(\d+)\.(\d+)\.(\d+)\"\s*$",
-        pyproject_bytes,
-        re.MULTILINE,
-    )
-    if not m:
-        return None
-    return tuple(int(p) for p in m.groups())  # type: ignore[return-value]
+    data = tomllib.loads(pyproject_bytes.decode("utf-8"))
+    version_str = data.get("project", {}).get("version")
+    if isinstance(version_str, str):
+        m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version_str.strip())
+        if m:
+            return tuple(int(p) for p in m.groups())  # type: ignore[return-value]
+    return None
 
 
 def src_changed(base: str, head: str) -> bool:
     cp = run_git(["diff", "--name-only", f"{base}..{head}", "--", "src/"], check=False)
     return bool(cp.stdout.strip())
+
+
+def write_text(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def bump_patch_in_pyproject_file(pyproject_path: str) -> tuple[int, int, int] | None:
+    text = read_text(pyproject_path)
+    pattern = re.compile(
+        r'^(version\s*=\s*")(?P<maj>\d+)\.(?P<min>\d+)\.(?P<pat>\d+)("\s*)$', re.MULTILINE
+    )
+    m = pattern.search(text)
+    if not m:
+        return None
+    maj = int(m.group("maj"))
+    min_ = int(m.group("min"))
+    pat = int(m.group("pat")) + 1
+    # Preserve trailing quote and whitespace (group 5)
+    new_text = pattern.sub(rf"\1{maj}.{min_}.{pat}\5", text, count=1)
+    write_text(pyproject_path, new_text)
+    return (maj, min_, pat)
+
+
+def git_commit_version_bump(new_version: tuple[int, int, int]) -> bool:
+    """Stage pyproject.toml and amend the last commit (fallback to new commit if needed)."""
+    version_str = f"{new_version[0]}.{new_version[1]}.{new_version[2]}"
+    try:
+        run_git(["add", "pyproject.toml"])  # stage version bump
+        # Determine if there is an existing commit to amend
+        head_ok = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], capture_output=True)
+        if head_ok.returncode == 0:
+            # Amend last commit without changing the message
+            run_git(["commit", "--amend", "--no-edit"])  # keeps message, updates tree
+        else:
+            # No previous commit; create an initial commit
+            run_git(["commit", "-m", f"chore(release): bump version to {version_str} [auto]"])
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def enforce_version_bump(local_sha: str, remote_sha: str) -> bool:
@@ -99,7 +125,7 @@ def enforce_version_bump(local_sha: str, remote_sha: str) -> bool:
         error(f"Could not parse version from pyproject.toml at {local_sha}.")
         return False
 
-    remote_ver: Optional[Tuple[int, int, int]] = None
+    remote_ver: tuple[int, int, int] | None = None
     if remote_sha != ZERO_SHA:
         remote_bytes = get_pyproject_at(remote_sha)
         if remote_bytes:
@@ -120,8 +146,21 @@ def enforce_version_bump(local_sha: str, remote_sha: str) -> bool:
         ok(f"Version bump detected: {rmaj}.{rmin}.{rpat} -> {lmaj}.{lmin}.{lpat}")
         return True
 
-    error("Version bump required: src/ changed but version did not increase.")
-    error(f"Remote: {rmaj}.{rmin}.{rpat}  Local: {lmaj}.{lmin}.{lpat}. Bump version in pyproject.toml.")
+    # Auto-bump patch in working tree and commit it
+    pyproject_path = os.path.join(os.getcwd(), "pyproject.toml")
+    bumped = bump_patch_in_pyproject_file(pyproject_path)
+    if bumped is None:
+        error("Version bump required but failed to locate version field in pyproject.toml.")
+        return False
+    if not git_commit_version_bump(bumped):
+        error("Failed to create version bump commit. Please commit manually and push again.")
+        return False
+
+    info(
+        f"Auto-bumped patch version and amended the last commit: {rmaj}.{rmin}.{rpat} -> {bumped[0]}.{bumped[1]}.{bumped[2]}"
+    )
+    # Abort current push so the user can push the new commit
+    error("Push aborted: version was auto-bumped. Please run git push again.")
     return False
 
 
@@ -137,7 +176,7 @@ def main() -> int:
         parts = line.split()
         if len(parts) < 4:
             continue
-        local_ref, local_sha, remote_ref, remote_sha = parts[:4]
+        _, local_sha, _, remote_sha = parts[:4]
 
         # Skip deletions
         if local_sha == ZERO_SHA:
@@ -151,6 +190,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
