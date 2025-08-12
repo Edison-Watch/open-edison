@@ -1,122 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import './index.css'
-import initSqlJs from 'sql.js'
 import Editor from '@monaco-editor/react'
+import { useSessions } from './hooks'
+import type { Session } from './types'
+import { Timeline } from './components/Timeline'
+import { SessionTable } from './components/SessionTable'
+import { Toggle } from './components/Toggle'
 
-type ToolCall = {
-    id: string
-    tool_name: string
-    parameters: Record<string, unknown>
-    timestamp: string
-    duration_ms?: number | null
-    status?: string
-    result?: unknown
-}
-
-type Session = {
-    session_id: string
-    correlation_id: string
-    tool_calls: ToolCall[]
-    data_access_summary: Record<string, unknown>
-}
-
-type SessionsResponse = { sessions: Session[] }
-
-function useSessions(dbPath: string) {
-    const [data, setData] = useState<SessionsResponse | null>(null)
-    const [loading, setLoading] = useState<boolean>(true)
-    const [error, setError] = useState<string | null>(null)
-
-    useEffect(() => {
-        let active = true
-        const fetchSessions = async () => {
-            setLoading(true)
-            setError(null)
-            try {
-                const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
-                const fileResp = await fetch(`/@fs${dbPath}`)
-                if (!fileResp.ok) throw new Error(`Cannot read DB at ${dbPath}`)
-                const buf = new Uint8Array(await fileResp.arrayBuffer())
-                const db = new SQL.Database(buf as any as BufferSource)
-                const query = `SELECT session_id, correlation_id, tool_calls, data_access_summary FROM mcp_sessions ORDER BY id DESC LIMIT 200;`
-                const result = db.exec(query)
-                const sessions: Session[] = []
-                if (result.length > 0) {
-                    const cols = result[0].columns
-                    const rows = result[0].values
-                    for (const row of rows) {
-                        const record: any = {}
-                        cols.forEach((c: string, i: number) => (record[c] = row[i]))
-                        const toolCalls = (() => {
-                            try { return Array.isArray(record.tool_calls) ? record.tool_calls : JSON.parse(record.tool_calls ?? '[]') } catch { return [] }
-                        })()
-                        const summary = (() => {
-                            try { return typeof record.data_access_summary === 'object' ? record.data_access_summary : JSON.parse(record.data_access_summary ?? '{}') } catch { return {} }
-                        })()
-                        sessions.push({
-                            session_id: String(record.session_id),
-                            correlation_id: String(record.correlation_id ?? ''),
-                            tool_calls: toolCalls,
-                            data_access_summary: summary,
-                        })
-                    }
-                }
-                if (active) setData({ sessions })
-            } catch (e) {
-                if (active) setError(e instanceof Error ? e.message : 'Unknown error')
-            } finally {
-                if (active) setLoading(false)
-            }
-        }
-        void fetchSessions()
-        const id = setInterval(fetchSessions, 5_000)
-        return () => {
-            active = false
-            clearInterval(id)
-        }
-    }, [dbPath])
-
-    return { data, loading, error }
-}
-
-function formatDate(iso: string | undefined): string {
-    if (!iso) return ''
-    try {
-        return new Date(iso).toLocaleString()
-    } catch {
-        return iso
-    }
-}
-
-function shortenMiddle(value: string, head: number = 6, tail: number = 4): string {
-    if (!value) return ''
-    if (value.length <= head + tail + 1) return value
-    return `${value.slice(0, head)}…${value.slice(-tail)}`
-}
-
-function getSecurityFlags(summary: Record<string, unknown> | undefined): {
-    privateData: boolean
-    untrusted: boolean
-    external: boolean
-} {
-    const s: any = summary || {}
-    const t = s.lethal_trifecta || s.trifecta || {}
-    return {
-        privateData: Boolean(t.has_private_data_access),
-        untrusted: Boolean(t.has_untrusted_content_exposure),
-        external: Boolean(t.has_external_communication),
-    }
-}
-
-function riskLevel(flags: { privateData: boolean; untrusted: boolean; external: boolean }): {
-    label: 'Low' | 'Medium' | 'High'
-    colorClass: string
-} {
-    const count = Number(flags.privateData) + Number(flags.untrusted) + Number(flags.external)
-    if (count >= 2) return { label: 'High', colorClass: 'text-rose-400' }
-    if (count === 1) return { label: 'Medium', colorClass: 'text-amber-400' }
-    return { label: 'Low', colorClass: 'text-green-400' }
-}
 
 export function App(): React.JSX.Element {
     // Always read from sessions.db (canonical name)
@@ -167,7 +57,7 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs'>('sessions')
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager'>('sessions')
 
     return (
         <div className="mx-auto max-w-[1400px] p-6 space-y-4">
@@ -179,7 +69,8 @@ export function App(): React.JSX.Element {
                 <div className="flex gap-2 items-center">
                     <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setView('sessions')}>Sessions</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setView('configs')}>Configs</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setView('configs')}>Configs</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setView('manager')}>Configuration Manager</button>
                     </div>
                     <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
                         {theme === 'light' ? 'Dark' : 'Light'} mode
@@ -249,79 +140,18 @@ export function App(): React.JSX.Element {
 
                     <SessionTable sessions={filtered} />
                 </div>
-            ) : (
+            ) : view === 'configs' ? (
                 <JsonEditors projectRoot={projectRoot} />
+            ) : (
+                <ConfigurationManager projectRoot={projectRoot} />
             )}
         </div>
     )
 }
 
-function Timeline({ sessions, startDay, endDay, onRangeChange }: {
-    sessions: (Session & { ts?: number; day?: string })[]
-    startDay: string
-    endDay: string
-    onRangeChange: (start: string, end: string) => void
-}) {
-    const buckets = useMemo(() => {
-        const map = new Map<string, number>()
-        for (const s of sessions) {
-            const day = (s as any).day as string | undefined
-            if (!day) continue
-            map.set(day, (map.get(day) ?? 0) + 1)
-        }
-        const entries = Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-        const max = entries.reduce((m, [, v]) => Math.max(m, v), 1)
-        const indexOf = (d: string) => entries.findIndex(([key]) => key === d)
-        return { entries, max, indexOf }
-    }, [sessions])
+// Removed local Timeline (now imported)
 
-    const dragging = useRef<boolean>(false)
-    const startIdxRef = useRef<number>(-1)
-
-    const setSelectionByIndex = (i1: number, i2: number) => {
-        const a = Math.max(0, Math.min(i1, i2))
-        const b = Math.min(buckets.entries.length - 1, Math.max(i1, i2))
-        if (a <= b) {
-            const s = buckets.entries?.[a]?.[0] ?? ''
-            const e = buckets.entries?.[b]?.[0] ?? ''
-            onRangeChange(s, e)
-        }
-    }
-
-    if (buckets.entries.length === 0) return null
-
-    return (
-        <div className="card select-none">
-            <div className="text-xs text-app-muted mb-2">Timeline (drag to select)</div>
-            <div
-                className="flex items-end gap-1"
-                onMouseLeave={() => { dragging.current = false; startIdxRef.current = -1 }}
-                onMouseUp={() => { dragging.current = false; startIdxRef.current = -1 }}
-            >
-                {buckets.entries.map(([day, count], idx) => {
-                    const h = Math.max(6, (count / buckets.max) * 64)
-                    const inSelection = (!startDay || !endDay)
-                        ? false
-                        : day >= startDay && day <= endDay
-                    return (
-                        <div key={day} className="flex flex-col items-center">
-                            <div
-                                className={`rounded-t w-4 cursor-pointer ${inSelection ? 'bg-app-accent' : 'bg-app-border hover:bg-app-accent/60'}`}
-                                style={{ height: `${h}px` }}
-                                onMouseDown={() => { dragging.current = true; startIdxRef.current = idx; setSelectionByIndex(idx, idx) }}
-                                onMouseEnter={() => { if (dragging.current && startIdxRef.current !== -1) setSelectionByIndex(startIdxRef.current, idx) }}
-                                onClick={() => { if (!dragging.current) setSelectionByIndex(idx, idx) }}
-                                title={`${day}: ${count}`}
-                            />
-                            <div className="text-[10px] text-app-muted mt-1">{day.slice(5)}</div>
-                        </div>
-                    )
-                })}
-            </div>
-        </div>
-    )
-}
-
+/* Removed local SessionTable (now imported)
 function SessionTable({ sessions }: { sessions: Session[] }) {
     const [openId, setOpenId] = useState<string | null>(null)
     return (
@@ -445,6 +275,7 @@ function SessionTable({ sessions }: { sessions: Session[] }) {
         </div>
     )
 }
+*/
 
 function JsonEditors({ projectRoot }: { projectRoot: string }) {
     const files = useMemo(() => (
@@ -599,4 +430,529 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
 }
 
 
+
+// Removed local Toggle (now imported)
+
+function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
+    type MCPServerDefault = {
+        name: string
+        description?: string
+        command: string
+        args?: string[]
+        env?: Record<string, string>
+        api_key_env?: string | null
+        tools?: Record<string, PermissionFlags>
+        resources?: Record<string, PermissionFlags>
+        prompts?: Record<string, PermissionFlags>
+    }
+    type ConfigFile = {
+        server: { host: string; port: number; api_key?: string }
+        logging?: Record<string, unknown>
+        mcp_servers: Array<{
+            name: string
+            command: string
+            args?: string[]
+            env?: Record<string, string>
+            enabled?: boolean
+            roots?: string[]
+        }>
+    }
+    type PermissionFlags = {
+        enabled: boolean
+        write_operation: boolean
+        read_private_data: boolean
+        read_untrusted_public_data: boolean
+        description?: string
+    }
+    type ToolPerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
+    type ResourcePerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
+    type PromptPerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
+
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string>('')
+    const [defaults, setDefaults] = useState<MCPServerDefault[]>([])
+    const [config, setConfig] = useState<ConfigFile | null>(null)
+    const [toolPerms, setToolPerms] = useState<ToolPerms | null>(null)
+    const [resourcePerms, setResourcePerms] = useState<ResourcePerms | null>(null)
+    const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
+    const [saving, setSaving] = useState(false)
+    const [saveMsg, setSaveMsg] = useState('')
+    const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
+    const [selectedServer, setSelectedServer] = useState<string | null>(null)
+
+    // Persist view mode across reloads
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('cm_view_mode')
+            if (saved === 'section' || saved === 'tiles') setViewMode(saved)
+        } catch { /* ignore */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    useEffect(() => {
+        try { localStorage.setItem('cm_view_mode', viewMode) } catch { /* ignore */ }
+    }, [viewMode])
+    // Baselines for Save only changes
+    const [origConfig, setOrigConfig] = useState<ConfigFile | null>(null)
+    const [origToolPerms, setOrigToolPerms] = useState<ToolPerms | null>(null)
+    const [origResourcePerms, setOrigResourcePerms] = useState<ResourcePerms | null>(null)
+    const [origPromptPerms, setOrigPromptPerms] = useState<PromptPerms | null>(null)
+
+    const defaultsPath = `${projectRoot}/frontend/configurations/mcp_servers_defaults.json`
+    const configPath = `${projectRoot}/config.json`
+    const toolPath = `${projectRoot}/tool_permissions.json`
+    const resourcePath = `${projectRoot}/resource_permissions.json`
+    const promptPath = `${projectRoot}/prompt_permissions.json`
+
+    useEffect(() => {
+        let active = true
+        const loadAll = async () => {
+            setLoading(true)
+            setError('')
+            try {
+                const [d, c, t, r, p] = await Promise.all([
+                    fetch(`/@fs${defaultsPath}`),
+                    fetch(`/@fs${configPath}`),
+                    fetch(`/@fs${toolPath}`),
+                    fetch(`/@fs${resourcePath}`),
+                    fetch(`/@fs${promptPath}`),
+                ])
+                if (!d.ok) throw new Error('Failed to load mcp_servers_defaults.json')
+                if (!c.ok) throw new Error('Failed to load config.json')
+                if (!t.ok) throw new Error('Failed to load tool_permissions.json')
+                if (!r.ok) throw new Error('Failed to load resource_permissions.json')
+                if (!p.ok) throw new Error('Failed to load prompt_permissions.json')
+                const dJson = await d.json()
+                const cJson = await c.json()
+                const tJson = await t.json()
+                const rJson = await r.json()
+                const pJson = await p.json()
+                if (!active) return
+                const defs = Array.isArray(dJson?.servers) ? (dJson.servers as MCPServerDefault[]) : []
+                setDefaults(defs)
+                setConfig(cJson as ConfigFile)
+                setOrigConfig(cJson as ConfigFile)
+                // Prefill tool/resource/prompt permissions from defaults if missing in the respective files
+                const mergedTools = mergePermsFromDefaults(tJson as ToolPerms, defs, 'tools')
+                const mergedResources = mergePermsFromDefaults(rJson as ResourcePerms, defs, 'resources')
+                const mergedPrompts = mergePermsFromDefaults(pJson as PromptPerms, defs, 'prompts')
+                setToolPerms(mergedTools)
+                setResourcePerms(mergedResources)
+                setPromptPerms(mergedPrompts)
+                setOrigToolPerms(tJson as ToolPerms)
+                setOrigResourcePerms(rJson as ResourcePerms)
+                setOrigPromptPerms(pJson as PromptPerms)
+            } catch (e) {
+                if (!active) return
+                setError(e instanceof Error ? e.message : 'Failed to load data')
+            } finally {
+                if (active) setLoading(false)
+            }
+        }
+        void loadAll()
+        return () => { active = false }
+    }, [projectRoot])
+
+    function mergePermsFromDefaults<T extends Record<string, any>>(
+        filePerms: T,
+        defs: MCPServerDefault[],
+        kind: 'tools' | 'resources' | 'prompts'
+    ): T {
+        const output: any = { ...(filePerms || {}) }
+        for (const def of defs) {
+            const entries = (def as any)[kind] as Record<string, PermissionFlags> | undefined
+            if (!entries || Object.keys(entries).length === 0) continue
+            if (!output[def.name]) output[def.name] = {}
+            for (const [itemName, flags] of Object.entries(entries)) {
+                if (!output[def.name][itemName]) {
+                    output[def.name][itemName] = { ...flags }
+                }
+            }
+        }
+        return output
+    }
+
+    function buildConfigSaveObject(original: ConfigFile, current: ConfigFile): ConfigFile {
+        // Start from original and update only changed/new servers
+        const originalServers = original.mcp_servers || []
+        const currentServers = current.mcp_servers || []
+        const resultServers = originalServers.map(s => ({ ...s }))
+        for (const cur of currentServers) {
+            const idx = resultServers.findIndex(s => s.name === cur.name)
+            if (idx === -1) {
+                resultServers.push(cur)
+            } else {
+                const orig = resultServers[idx]!
+                if (!shallowEqualServer(orig, cur)) {
+                    resultServers[idx] = cur
+                }
+            }
+        }
+        return { ...original, mcp_servers: resultServers }
+    }
+
+    function shallowEqualServer(a: ConfigFile['mcp_servers'][number], b: ConfigFile['mcp_servers'][number]): boolean {
+        const envA = a.env || {}
+        const envB = b.env || {}
+        const argsA = a.args || []
+        const argsB = b.args || []
+        return a.name === b.name
+            && a.command === b.command
+            && JSON.stringify(argsA) === JSON.stringify(argsB)
+            && JSON.stringify(envA) === JSON.stringify(envB)
+            && Boolean(a.enabled) === Boolean(b.enabled)
+    }
+
+    function buildPermsSaveObject<T extends Record<string, any>>(
+        original: T,
+        currentMerged: T,
+        defs: MCPServerDefault[],
+        kind: 'tools' | 'resources' | 'prompts'
+    ): T {
+        const result: any = deepClone(original)
+        const defaultsByServer: Record<string, Record<string, PermissionFlags>> = {}
+        for (const d of defs) {
+            const entries = (d as any)[kind] as Record<string, PermissionFlags> | undefined
+            if (entries) defaultsByServer[d.name] = entries
+        }
+        for (const [group, items] of Object.entries(currentMerged as any)) {
+            if (group === '_metadata') continue
+            for (const [item, flags] of Object.entries(items as any)) {
+                const origGroup = (original as any)[group] || {}
+                const hadInOrig = Object.prototype.hasOwnProperty.call(origGroup, item)
+                const baseline: PermissionFlags | undefined = hadInOrig
+                    ? (origGroup as any)[item]
+                    : defaultsByServer[group]?.[item]
+                if (!baseline) {
+                    const shouldAdd = Boolean((flags as PermissionFlags).enabled)
+                        || Boolean((flags as any).write_operation)
+                        || Boolean((flags as any).read_private_data)
+                        || Boolean((flags as any).read_untrusted_public_data)
+                    if (shouldAdd) {
+                        if (!result[group]) result[group] = {}
+                        result[group][item] = flags
+                    }
+                } else if (!shallowEqualPerms(flags as PermissionFlags, baseline)) {
+                    if (!result[group]) result[group] = {}
+                    result[group][item] = flags
+                }
+            }
+        }
+        return result
+    }
+
+    function shallowEqualPerms(a: PermissionFlags, b: PermissionFlags): boolean {
+        return Boolean(a?.enabled) === Boolean(b?.enabled)
+            && Boolean(a?.write_operation) === Boolean(b?.write_operation)
+            && Boolean(a?.read_private_data) === Boolean(b?.read_private_data)
+            && Boolean(a?.read_untrusted_public_data) === Boolean(b?.read_untrusted_public_data)
+    }
+
+    function deepClone<T>(obj: T): T {
+        return JSON.parse(JSON.stringify(obj))
+    }
+
+    const upsertServer = (srvName: string, updater: (existing: ConfigFile['mcp_servers'][number] | undefined, def?: MCPServerDefault) => ConfigFile['mcp_servers'][number]) => {
+        if (!config) return
+        const currentList = config.mcp_servers || []
+        const idx = currentList.findIndex(s => s.name === srvName)
+        const def = defaults.find(d => d.name === srvName)
+        const updated = updater(currentList[idx], def)
+        let nextList = [...currentList]
+        if (idx === -1) nextList.push(updated)
+        else nextList[idx] = updated
+        setConfig({ ...config, mcp_servers: nextList })
+    }
+
+    const toggleServer = (srvName: string, enabled: boolean) => {
+        upsertServer(srvName, (existing, def) => ({
+            name: srvName,
+            command: existing?.command ?? def?.command ?? '',
+            args: existing?.args ?? def?.args ?? [],
+            env: existing?.env ?? (def?.env ?? {}),
+            enabled,
+            roots: existing?.roots ?? [],
+        }))
+    }
+
+    const setServerApiKey = (srvName: string, envKey: string, value: string) => {
+        upsertServer(srvName, (existing, def) => ({
+            name: srvName,
+            command: existing?.command ?? def?.command ?? '',
+            args: existing?.args ?? def?.args ?? [],
+            env: { ...(existing?.env ?? def?.env ?? {}), [envKey]: value },
+            enabled: existing?.enabled ?? false,
+            roots: existing?.roots ?? [],
+        }))
+    }
+
+    const saveAll = async (onlyChanges: boolean) => {
+        setSaving(true)
+        setSaveMsg('')
+        try {
+            const post = (path: string, content: string) => fetch('/__save_json__', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, content })
+            })
+            const cfgToSave = onlyChanges && origConfig && config
+                ? buildConfigSaveObject(origConfig, config)
+                : config
+            const toolsToSave = onlyChanges && toolPerms && origToolPerms
+                ? buildPermsSaveObject(origToolPerms, toolPerms, defaults, 'tools')
+                : toolPerms
+            const resourcesToSave = onlyChanges && resourcePerms && origResourcePerms
+                ? buildPermsSaveObject(origResourcePerms, resourcePerms, defaults, 'resources')
+                : resourcePerms
+            const promptsToSave = onlyChanges && promptPerms && origPromptPerms
+                ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
+                : promptPerms
+            const responses = await Promise.all([
+                post(configPath, JSON.stringify(cfgToSave, null, 4)),
+                post(toolPath, JSON.stringify(toolsToSave, null, 4)),
+                post(resourcePath, JSON.stringify(resourcesToSave, null, 4)),
+                post(promptPath, JSON.stringify(promptsToSave, null, 4)),
+            ])
+            const notOk = responses.find(r => !r.ok)
+            if (notOk) throw new Error('One or more files failed to save')
+            setSaveMsg(onlyChanges ? 'Saved changes' : 'Saved')
+        } catch (e) {
+            setSaveMsg(e instanceof Error ? e.message : 'Save failed')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const renderPermGroup = (
+        title: string,
+        data: ToolPerms | ResourcePerms | PromptPerms | null,
+        setData: React.Dispatch<React.SetStateAction<any>>,
+        collapsible: boolean = false,
+        innerCollapsible: boolean = true,
+    ) => {
+        if (!data) return null
+        const groups = Object.entries(data).filter(([k]) => k !== '_metadata') as Array<[string, Record<string, PermissionFlags>]> 
+        const isServerEnabled = (name: string) => Boolean(config?.mcp_servers?.find(s => s.name === name)?.enabled)
+        const inner = (
+                <div className="space-y-2">
+                    {groups.length === 0 && <div className="text-xs text-app-muted">No entries</div>}
+                    {groups.map(([groupName, entries]) => (
+                        <div key={groupName} className="border border-app-border rounded p-2">
+                            {innerCollapsible ? (
+                                <details open={isServerEnabled(groupName)}>
+                                    <summary className="text-xs text-app-muted cursor-pointer select-none">
+                                        {groupName}
+                                    </summary>
+                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {Object.entries(entries).map(([itemName, flags]) => (
+                                            <div key={itemName} className="border border-app-border rounded p-2 bg-app-bg/50">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
+                                                    <div className="text-xs flex items-center gap-2">
+                                                        <Toggle checked={!!flags.enabled} onChange={(v) => {
+                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
+                                                        }} />
+                                                        <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-xs text-app-muted mt-1">{flags.description || 'No description provided'}</div>
+                                                <div className="mt-2 grid grid-cols-1 xs:grid-cols-3 sm:grid-cols-3 gap-3">
+                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
+                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
+                                                        }} />
+                                                        <span>write_operation</span>
+                                                    </label>
+                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
+                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
+                                                        }} />
+                                                        <span>read_private_data</span>
+                                                    </label>
+                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
+                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
+                                                        }} />
+                                                        <span>read_untrusted_public_data</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </details>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {Object.entries(entries).map(([itemName, flags]) => (
+                                        <div key={itemName} className="border border-app-border rounded p-2 bg-app-bg/50">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
+                                                <div className="text-xs flex items-center gap-2">
+                                                    <Toggle checked={!!flags.enabled} onChange={(v) => {
+                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
+                                                    }} />
+                                                    <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-app-muted mt-1">{flags.description || 'No description provided'}</div>
+                                            <div className="mt-2 grid grid-cols-1 xs:grid-cols-3 sm:grid-cols-3 gap-3">
+                                                <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                    <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
+                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
+                                                    }} />
+                                                    <span>write_operation</span>
+                                                </label>
+                                                <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                    <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
+                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
+                                                    }} />
+                                                    <span>read_private_data</span>
+                                                </label>
+                                                <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                    <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
+                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
+                                                    }} />
+                                                    <span>read_untrusted_public_data</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+        )
+        return (
+            <div className="card">
+                {collapsible ? (
+                    <details open>
+                        <summary className="text-sm font-semibold cursor-pointer select-none">{title}</summary>
+                        <div className="mt-2">{inner}</div>
+                    </details>
+                ) : (
+                    <>
+                        <div className="text-sm font-semibold mb-2">{title}</div>
+                        {inner}
+                    </>
+                )}
+            </div>
+        )
+    }
+
+    if (loading) return <div className="card">Loading…</div>
+    if (error) return <div className="card danger">{error}</div>
+    if (!config) return <div className="card">No config loaded</div>
+
+    return (
+        <div className="space-y-4">
+            <div className="card">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="text-sm font-semibold">Servers</div>
+                        <div className="text-xs text-app-muted">Click a tile to edit. Toggle enable and set API keys as needed.</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
+                            <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
+                            <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
+                        </div>
+                        <button className="button" disabled={saving} onClick={() => saveAll(false)}>{saving ? 'Saving…' : 'Save all'}</button>
+                        <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save only changes'}</button>
+                        {saveMsg && <span className="text-xs text-app-muted">{saveMsg}</span>}
+                    </div>
+                </div>
+                {viewMode === 'section' ? (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {defaults.map(def => {
+                        const existing = (config.mcp_servers || []).find(s => s.name === def.name)
+                        const enabled = !!existing?.enabled
+                        const apiKeyEnv = def.api_key_env || undefined
+                        const apiVal = apiKeyEnv ? (existing?.env?.[apiKeyEnv] ?? '') : ''
+                        return (
+                            <div key={def.name} className="border border-app-border rounded p-3 bg-app-bg/50">
+                                <details open>
+                                    <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
+                                        <div>
+                                            <div className="font-semibold">{def.name}</div>
+                                            <div className="text-xs text-app-muted mt-0.5">{def.description || 'No description provided'}</div>
+                                        </div>
+                                        <div className="text-xs flex items-center gap-2">
+                                            <Toggle checked={enabled} onChange={(v) => toggleServer(def.name, v)} />
+                                            <span>{enabled ? 'Enabled' : 'Disabled'}</span>
+                                        </div>
+                                    </summary>
+                                    <div className="mt-2">
+                                        {apiKeyEnv && (
+                                            <div className="mt-1">
+                                                <label className="text-xs text-app-muted">{apiKeyEnv}</label>
+                                                <input
+                                                    className="button !w-full !text-left !py-2 !px-3"
+                                                    type="password"
+                                                    placeholder={`Enter ${apiKeyEnv}`}
+                                                    value={apiVal}
+                                                    onChange={(e) => setServerApiKey(def.name, apiKeyEnv, e.target.value)}
+                                                />
+                                            </div>
+                                        )}
+                                        <details className="mt-2">
+                                            <summary className="text-xs cursor-pointer">Command</summary>
+                                            <div className="text-xs font-mono mt-1">
+                                                <div><span className="text-app-muted">cmd:</span> {existing?.command || def.command}</div>
+                                                <div><span className="text-app-muted">args:</span> {(existing?.args || def.args || []).join(' ')}</div>
+                                            </div>
+                                        </details>
+                                    </div>
+                                </details>
+                            </div>
+                        )
+                    })}
+                </div>
+                ) : (
+                <>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {defaults.map(def => {
+                            const existing = (config.mcp_servers || []).find(s => s.name === def.name)
+                            const enabled = !!existing?.enabled
+                            const selected = selectedServer === def.name
+                            return (
+                                <button key={def.name} className={`text-left border rounded p-3 transition-colors ${selected ? 'border-app-accent bg-app-accent/5' : 'border-app-border bg-app-bg/50 hover:bg-app-border/20'}`} onClick={() => setSelectedServer(def.name)}>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <div className="font-semibold">{def.name}</div>
+                                            <div className="text-xs text-app-muted mt-0.5">{def.description || 'No description provided'}</div>
+                                        </div>
+                                        <span className={`text-xs ${enabled ? 'text-blue-400' : 'text-app-muted'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
+                                    </div>
+                                </button>
+                            )
+                        })}
+                    </div>
+                    {selectedServer && (
+                        <div className="mt-4 space-y-3">
+                            {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer), setToolPerms, false, false)}
+                            {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer), setResourcePerms, false, false)}
+                            {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer), setPromptPerms, false, false)}
+                        </div>
+                    )}
+                </>
+                )}
+            </div>
+
+            {viewMode === 'section' && (
+                <>
+                    {renderPermGroup('Tools', toolPerms, setToolPerms, true, true)}
+                    {renderPermGroup('Resources', resourcePerms, setResourcePerms, true, true)}
+                    {renderPermGroup('Prompts', promptPerms, setPromptPerms, true, true)}
+                </>
+            )}
+        </div>
+    )
+}
+
+function filterPerms<T extends Record<string, any> | null>(data: T, server: string): T {
+    if (!data) return data
+    const result: any = { ...(data || {}) }
+    for (const key of Object.keys(result)) {
+        if (key === '_metadata') continue
+        if (key !== server) delete result[key]
+    }
+    return result
+}
 
