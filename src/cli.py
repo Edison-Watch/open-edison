@@ -12,7 +12,8 @@ import os
 import subprocess as _subprocess
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
+import sys
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
@@ -40,10 +41,62 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     # Website runs from packaged assets by default; no extra website flags
 
-    # No subcommands currently, but kept for future extension
-    _ = parser.add_subparsers(dest="command", required=False)
+    # Subcommands (extensible)
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
-    # No website subcommand; dashboard served from packaged assets
+    # import-mcp: import MCP servers from other tools into config.json
+    sp_import = subparsers.add_parser(
+        "import-mcp",
+        help="Import MCP servers from other tools (Cursor, Windsurf, Cline, Claude Desktop, etc.)",
+        description=(
+            "Import MCP server configurations from other tools into Open Edison config.json.\n"
+            "Use --source to choose the tool and optional flags to control merging."
+        ),
+    )
+    sp_import.add_argument(
+        "--source",
+        choices=[
+            "cursor",
+            "windsurf",
+            "cline",
+            "claude-desktop",
+            "vscode",
+            "claude-code",
+            "gemini-cli",
+            "codex",
+            "interactive",
+        ],
+        default="interactive",
+        help="Source application to import from",
+    )
+    sp_import.add_argument(
+        "--project-dir",
+        type=Path,
+        help="When --source=cursor, path to the project containing .cursor/mcp.json",
+    )
+    sp_import.add_argument(
+        "--config-dir",
+        type=Path,
+        help=(
+            "Directory containing target config.json (default: OPEN_EDISON_CONFIG_DIR or repo root)."
+        ),
+    )
+    sp_import.add_argument(
+        "--merge",
+        choices=["skip", "overwrite", "rename"],
+        default="skip",
+        help="Merge policy for duplicate server names",
+    )
+    sp_import.add_argument(
+        "--enable-imported",
+        action="store_true",
+        help="Enable imported servers (default: disabled)",
+    )
+    sp_import.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show changes without writing to config.json",
+    )
 
     return parser.parse_args(argv)
 
@@ -171,6 +224,44 @@ def main(argv: list[str] | None = None) -> NoReturn:
     if getattr(args, "command", None) == "website":
         exit_code = _run_website(port=args.port, website_dir=getattr(args, "dir", None))
         raise SystemExit(exit_code)
+
+    if getattr(args, "command", None) == "import-mcp":
+        # Defer-import importer package (lives under repository scripts/)
+        importer_pkg = Path(__file__).parent.parent / "scripts" / "mcp_importer"
+        try:
+            if str(importer_pkg) not in sys.path:
+                sys.path.insert(0, str(importer_pkg))
+            from mcp_importer.cli import run_cli  # type: ignore
+        except Exception as imp_exc:  # noqa: BLE001
+            log.error(
+                "Failed to load MCP importer package from {}: {}",
+                importer_pkg,
+                imp_exc,
+            )
+            raise SystemExit(1) from imp_exc
+
+        importer_argv: list[str] = []
+        if args.source:
+            importer_argv += ["--source", str(args.source)]
+        if getattr(args, "project_dir", None):
+            importer_argv += [
+                "--project-dir",
+                str(Path(args.project_dir).expanduser().resolve()),
+            ]
+        if getattr(args, "config_dir", None):
+            importer_argv += [
+                "--config-dir",
+                str(Path(args.config_dir).expanduser().resolve()),
+            ]
+        if args.merge:
+            importer_argv += ["--merge", str(args.merge)]
+        if bool(getattr(args, "enable_imported", False)):
+            importer_argv += ["--enable-imported"]
+        if bool(getattr(args, "dry_run", False)):
+            importer_argv += ["--dry-run"]
+
+        rc_val: int = int(cast(Any, run_cli)(importer_argv))
+        raise SystemExit(rc_val)
 
     # default: run server (top-level flags)
     try:
