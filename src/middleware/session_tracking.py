@@ -305,6 +305,7 @@ class SessionTrackingMiddleware(Middleware):
         log.trace(f"Adding resource access to session {session_id}")
         assert session.data_access_tracker is not None
 
+        # Get the resource name from the context
         resource_name = str(context.message.uri)
 
         log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
@@ -322,11 +323,10 @@ class SessionTrackingMiddleware(Middleware):
         log.trace(f"Resource access {resource_name} added to session {session_id}")
         return await call_next(context)
 
-    async def on_prompt_access(
+    async def on_get_prompt(
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
-        prompt_name: str,
     ) -> Any:
         """Process prompt access and track security implications."""
         session_id = current_session_id_ctxvar.get()
@@ -336,8 +336,10 @@ class SessionTrackingMiddleware(Middleware):
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding prompt access to session {session_id}")
-
         assert session.data_access_tracker is not None
+
+        prompt_name = context.message.name
+
         log.debug(f"🔍 Analyzing prompt {prompt_name} for security implications")
         _ = session.data_access_tracker.add_prompt_access(prompt_name)
 
