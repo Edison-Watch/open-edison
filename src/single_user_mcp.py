@@ -53,6 +53,8 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Add built-in demo tools
         self._setup_demo_tools()
+        self._setup_demo_resources()
+        self._setup_demo_prompts()
 
     def _convert_to_fastmcp_config(self, enabled_servers: list[MCPServerConfig]) -> dict[str, Any]:
         """
@@ -369,3 +371,33 @@ class SingleUserMCP(FastMCP[Any]):
             return security_data
 
         log.info("✅ Added built-in demo tools: echo, get_server_info, get_security_status")
+
+    def _setup_demo_resources(self) -> None:
+        """Set up built-in demo resources for testing."""
+
+        @self.resource("config://app")
+        def get_app_config() -> dict[str, Any]:  # noqa: ARG001
+            """Get application configuration."""
+            return {
+                "version": config.version,
+                "mounted_servers": list(self.mounted_servers.keys()),
+                "total_mounted": len(self.mounted_servers),
+            }
+
+        log.info("✅ Added built-in demo resources: config://app")
+
+    def _setup_demo_prompts(self) -> None:
+        """Set up built-in demo prompts for testing."""
+
+        @self.prompt()
+        def summarize_text(text: str) -> str:
+            """Create a prompt to summarize the given text."""
+            return f"""
+        Please provide a concise, one-paragraph summary of the following text:
+
+        {text}
+
+        Focus on the main points and key takeaways.
+        """
+
+        log.info("✅ Added built-in demo prompts: summarize_text")

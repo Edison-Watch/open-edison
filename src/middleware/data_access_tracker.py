@@ -353,6 +353,14 @@ class DataAccessTracker:
         """Get tool permissions based on tool name."""
         return self._classify_tool_permissions(tool_name)
 
+    def get_resource_permissions(self, resource_name: str) -> dict[str, bool]:
+        """Get resource permissions based on resource name."""
+        return self._classify_resource_permissions(resource_name)
+
+    def get_prompt_permissions(self, prompt_name: str) -> dict[str, bool]:
+        """Get prompt permissions based on prompt name."""
+        return self._classify_prompt_permissions(prompt_name)
+
     def add_tool_call(self, tool_name: str) -> str:
         """
         Add a tool call and update trifecta flags based on tool classification.
