@@ -2,7 +2,7 @@
 
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
-Open-source MCP security, aggregation, and monitoring. Provides core functionality of <https://edison.watch> for local, single-user use.
+Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments.
 
 ## Features
 
