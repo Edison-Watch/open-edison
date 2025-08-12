@@ -14,9 +14,11 @@ from datetime import datetime
 from typing import Any
 
 import mcp.types as mt
+from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.resources import FunctionResource
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
-from fastmcp.server.proxy import ProxyTool
+from fastmcp.server.proxy import ProxyPrompt, ProxyResource, ProxyTool
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
@@ -180,6 +182,21 @@ class SessionTrackingMiddleware(Middleware):
         _ = current_session_id_ctxvar.set(session_id)
         return session, session_id
 
+    # General hooks for on_request, on_message, etc.
+    async def on_request(
+        self,
+        context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
+        call_next: CallNext[mt.Request[Any, Any], Any],  # type: ignore
+    ) -> Any:
+        """
+        Process the request and track tool calls.
+        """
+        # Get or create session stats
+        _, _session_id = self._get_or_create_session_stats(context)
+
+        return await call_next(context)  # type: ignore
+
+    # Hooks for Tools
     async def on_list_tools(
         self,
         context: MiddlewareContext[Any],  # type: ignore
@@ -200,41 +217,30 @@ class SessionTrackingMiddleware(Middleware):
         # Filter out specific tools or return empty list
         allowed_tools: list[FunctionTool | ProxyTool | Any] = []
         for tool in response:
+            log.trace(f"🔍 Processing tool listing {tool.name}")
             if isinstance(tool, FunctionTool):
-                log.debug(f"🔍 on_list_tools tool is a FunctionTool and allowed: {tool}")
-                allowed_tools.append(tool)
+                log.trace("🔍 Tool is built-in")
+                log.trace(f"🔍 Tool is a FunctionTool: {tool}")
             elif isinstance(tool, ProxyTool):
-                permissions = session.data_access_tracker.get_tool_permissions(tool.name)
-                log.debug(
-                    f"🔍 on_list_tools tool is a ProxyTool: {tool} with permissions: {permissions}"
-                )
-                if permissions["enabled"]:
-                    allowed_tools.append(tool)
-                else:
-                    log.warning(
-                        f"🔍 on_list_tools tool is a disabled ProxyTool and is not allowed: {tool}"
-                    )
-                    continue
+                log.trace("🔍 Tool is a user-mounted tool")
+                log.trace(f"🔍 Tool is a ProxyTool: {tool}")
+            else:
+                log.warning("🔍 Tool is of unknown type and will be disabled")
+                log.trace(f"🔍 Tool is a unknown type: {tool}")
+                continue
+
+            log.trace(f"🔍 Getting permissions for tool {tool.name}")
+            permissions = session.data_access_tracker.get_tool_permissions(tool.name)
+            log.trace(f"🔍 Tool permissions: {permissions}")
+            if permissions["enabled"]:
+                allowed_tools.append(tool)
             else:
                 log.warning(
-                    f"🔍 on_list_tools tool is of unknown type and will be disabled: {tool}"
+                    f"🔍 Tool {tool.name} is disabled on not configured and will not be allowed"
                 )
                 continue
 
         return allowed_tools  # type: ignore
-
-    async def on_request(
-        self,
-        context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
-        call_next: CallNext[mt.Request[Any, Any], Any],  # type: ignore
-    ) -> Any:
-        """
-        Process the request and track tool calls.
-        """
-        # Get or create session stats
-        _, _session_id = self._get_or_create_session_stats(context)
-
-        return await call_next(context)  # type: ignore
 
     async def on_call_tool(
         self,
@@ -290,6 +296,54 @@ class SessionTrackingMiddleware(Middleware):
 
         return await call_next(context)  # type: ignore
 
+    # Hooks for Resources
+    async def on_list_resources(
+        self,
+        context: MiddlewareContext[Any],  # type: ignore
+        call_next: CallNext[Any, Any],  # type: ignore
+    ) -> Any:
+        """Process resource access and track security implications."""
+        log.trace("🔍 on_list_resources")
+        # Get the original response
+        response = await call_next(context)
+        log.trace(f"🔍 on_list_resources response: {response}")
+
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            raise ValueError("No session ID found in context")
+        session = get_session_from_db(session_id)
+        log.trace(f"Getting tool permissions for session {session_id}")
+        assert session.data_access_tracker is not None
+
+        # Filter out specific tools or return empty list
+        allowed_resources: list[FunctionResource | ProxyResource | Any] = []
+        for resource in response:
+            resource_name = str(resource.uri)
+            log.trace(f"🔍 Processing resource listing {resource_name}")
+            if isinstance(resource, FunctionResource):
+                log.trace("🔍 Resource is built-in")
+                log.trace(f"🔍 Resource is a FunctionResource: {resource}")
+            elif isinstance(resource, ProxyResource):
+                log.trace("🔍 Resource is a user-mounted tool")
+                log.trace(f"🔍 Resource is a ProxyResource: {resource}")
+            else:
+                log.warning("🔍 Resource is of unknown type and will be disabled")
+                log.trace(f"🔍 Resource is a unknown type: {resource}")
+                continue
+
+            log.trace(f"🔍 Getting permissions for resource {resource_name}")
+            permissions = session.data_access_tracker.get_resource_permissions(resource_name)
+            log.trace(f"🔍 Resource permissions: {permissions}")
+            if permissions["enabled"]:
+                allowed_resources.append(resource)
+            else:
+                log.warning(
+                    f"🔍 Resource {resource_name} is disabled on not configured and will not be allowed"
+                )
+                continue
+
+        return allowed_resources  # type: ignore
+
     async def on_read_resource(
         self,
         context: MiddlewareContext[Any],  # type: ignore
@@ -322,6 +376,54 @@ class SessionTrackingMiddleware(Middleware):
 
         log.trace(f"Resource access {resource_name} added to session {session_id}")
         return await call_next(context)
+
+    # Hooks for Prompts
+    async def on_list_prompts(
+        self,
+        context: MiddlewareContext[Any],  # type: ignore
+        call_next: CallNext[Any, Any],  # type: ignore
+    ) -> Any:
+        """Process resource access and track security implications."""
+        log.debug("🔍 on_list_prompts")
+        # Get the original response
+        response = await call_next(context)
+        log.debug(f"🔍 on_list_prompts response: {response}")
+
+        session_id = current_session_id_ctxvar.get()
+        if session_id is None:
+            raise ValueError("No session ID found in context")
+        session = get_session_from_db(session_id)
+        log.trace(f"Getting prompt permissions for session {session_id}")
+        assert session.data_access_tracker is not None
+
+        # Filter out specific tools or return empty list
+        allowed_prompts: list[ProxyPrompt | Any] = []
+        for prompt in response:
+            prompt_name = str(prompt.name)
+            log.trace(f"🔍 Processing prompt listing {prompt_name}")
+            if isinstance(prompt, FunctionPrompt):
+                log.trace("🔍 Prompt is built-in")
+                log.trace(f"🔍 Prompt is a FunctionPrompt: {prompt}")
+            elif isinstance(prompt, ProxyPrompt):
+                log.trace("🔍 Prompt is a user-mounted tool")
+                log.trace(f"🔍 Prompt is a ProxyPrompt: {prompt}")
+            else:
+                log.warning("🔍 Prompt is of unknown type and will be disabled")
+                log.trace(f"🔍 Prompt is a unknown type: {prompt}")
+                continue
+
+            log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
+            permissions = session.data_access_tracker.get_prompt_permissions(prompt_name)
+            log.trace(f"🔍 Prompt permissions: {permissions}")
+            if permissions["enabled"]:
+                allowed_prompts.append(prompt)
+            else:
+                log.warning(
+                    f"🔍 Prompt {prompt_name} is disabled on not configured and will not be allowed"
+                )
+                continue
+
+        return allowed_prompts  # type: ignore
 
     async def on_get_prompt(
         self,
