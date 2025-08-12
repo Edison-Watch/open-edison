@@ -1,0 +1,170 @@
+{
+    "_metadata": {
+        "description": "Tool security classifications for Open Edison data access tracker",
+        "last_updated": "2025-08-07"
+    },
+    "builtin": {
+        "echo": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        },
+        "get_server_info": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        },
+        "get_security_status": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        }
+    },
+    "filesystem": {
+        "filesystem_read_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_read_text_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_read_media_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_read_multiple_files": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_write_file": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_edit_file": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_create_directory": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_list_directory": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_list_directory_with_sizes": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_directory_tree": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_move_file": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_search_files": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_get_file_info": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "filesystem_list_allowed_directories": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        }
+    },
+    "sqlite": {
+        "sqlite_db_info": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_query": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_list_tables": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_get_table_schema": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_create_record": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_read_records": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_update_records": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        },
+        "sqlite_delete_records": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        }
+    },
+    "test_server": {
+        "test_server/*": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false
+        }
+    }
+}
