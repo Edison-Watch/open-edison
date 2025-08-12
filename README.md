@@ -1,6 +1,6 @@
 # Open Edison
 
-Run locally in with uvx: `uvx open-edison --config-dir ~/edison-config`
+Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 Open-source MCP security, aggregation, and monitoring. Provides core functionality of <https://edison.watch> for local, single-user use.
 
