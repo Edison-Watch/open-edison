@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
-import subprocess
 
 
 def read_text(path: Path) -> str:

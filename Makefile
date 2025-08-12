@@ -188,6 +188,10 @@ publish_pypi: build_package check_twine ## Upload distributions to PyPI (product
 	@rye run python -m twine upload --repository pypi dist/* --verbose
 	@echo "$(GREEN)✅Upload to PyPI complete.$(RESET)"
 
+# Aliases for publishing to real PyPI
+.PHONY: publish release
+publish: publish_pypi ## Alias: publish to PyPI (production)
+
 ########################################################
 # Desktop Extension
 ########################################################
@@ -300,7 +304,7 @@ website: website_install website_dev ## Install and run the frontend website
 ########################################################
 
 .PHONY: build_package
-build_package: ## Build frontend, package into src/frontend_dist, then build Python wheel
+build_package: check_rye clean_dist ## Build frontend, package into src/frontend_dist, then build Python wheel
 	@echo "$(YELLOW)🏗️  Building frontend (vite) and packaging Python wheel...$(RESET)"
 	@cd frontend && npm install && npm run build
 	@echo "$(YELLOW)📦 Syncing built dashboard to src/frontend_dist...$(RESET)"

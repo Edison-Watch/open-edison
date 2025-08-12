@@ -16,10 +16,10 @@ from typing import Any, NoReturn
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
-log: Any = _log
-
 from .config import Config, get_config_dir
 from .server import OpenEdisonProxy
+
+log: Any = _log
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -40,14 +40,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     # Website runs from packaged assets by default; no extra website flags
 
-    subparsers = parser.add_subparsers(dest="command", required=False)
+    # No subcommands currently, but kept for future extension
+    _ = parser.add_subparsers(dest="command", required=False)
 
     # No website subcommand; dashboard served from packaged assets
 
     return parser.parse_args(argv)
 
 
-def _spawn_frontend_dev(
+def _spawn_frontend_dev(  # noqa: C901 - pragmatic complexity for env probing
     port: int,
     override_dir: Path | None = None,
     config_dir: Path | None = None,
@@ -176,7 +177,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
         asyncio.run(_run_server(args))
         raise SystemExit(0)
     except KeyboardInterrupt:
-        raise SystemExit(0)
+        raise SystemExit(0) from None
     except Exception as exc:  # noqa: BLE001
         log.error(f"Fatal error: {exc}")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

@@ -6,14 +6,14 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from loguru import logger as log
@@ -59,7 +59,7 @@ class OpenEdisonProxy:
         # Initialize FastAPI app for management
         self.fastapi_app: FastAPI = self._create_fastapi_app()
 
-    def _create_fastapi_app(self) -> FastAPI:
+    def _create_fastapi_app(self) -> FastAPI:  # noqa: C901 - centralized app wiring
         """Create and configure FastAPI application"""
         app = FastAPI(
             title="Open Edison MCP Proxy",
@@ -193,7 +193,7 @@ class OpenEdisonProxy:
                     pass
             return target
 
-        async def _serve_json(filename: str) -> FileResponse:  # type: ignore[override]
+        async def _serve_json(filename: str) -> Response:  # type: ignore[override]
             if filename not in allowed_json_files:
                 raise HTTPException(status_code=404, detail="Not found")
             json_path = _resolve_json_path(filename)
@@ -202,14 +202,16 @@ class OpenEdisonProxy:
                 return JSONResponse(content={}, media_type="application/json")
             return FileResponse(str(json_path), media_type="application/json")
 
+        def _json_endpoint_factory(name: str) -> Callable[[], Awaitable[Response]]:
+            async def endpoint() -> Response:
+                return await _serve_json(name)
+
+            return endpoint
+
         # GET endpoints for convenience
         for name in allowed_json_files:
-            app.add_api_route(
-                f"/{name}", (lambda n=name: (lambda: _serve_json(n))), methods=["GET"]
-            )  # type: ignore[arg-type]
-            app.add_api_route(
-                f"/dashboard/{name}", (lambda n=name: (lambda: _serve_json(n))), methods=["GET"]
-            )  # type: ignore[arg-type]
+            app.add_api_route(f"/{name}", _json_endpoint_factory(name), methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(f"/dashboard/{name}", _json_endpoint_factory(name), methods=["GET"])  # type: ignore[arg-type]
 
         # Save endpoint to persist JSON changes
         async def _save_json(body: dict[str, Any]) -> dict[str, str]:  # type: ignore[override]
@@ -250,7 +252,7 @@ class OpenEdisonProxy:
             basename = Path(target).name
             if basename in allowed_json_files:
                 return await _serve_json(basename)
-            if basename.endswith("edison.db") or basename.endswith("sessions.db"):
+            if basename.endswith(("edison.db", "sessions.db")):
                 return await _serve_db()
             raise HTTPException(status_code=404, detail="Not found")
 

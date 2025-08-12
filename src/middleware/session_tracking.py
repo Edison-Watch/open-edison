@@ -97,13 +97,13 @@ def create_db_session() -> Generator[Session, None, None]:
 
     # Ensure changes are flushed to the main database file (avoid WAL for sql.js compatibility)
     @event.listens_for(engine, "connect")
-    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[override]
-        cur = dbapi_connection.cursor()
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def]
+        cur = dbapi_connection.cursor()  # type: ignore[attr-defined]
         try:
-            cur.execute("PRAGMA journal_mode=DELETE")
-            cur.execute("PRAGMA synchronous=FULL")
+            cur.execute("PRAGMA journal_mode=DELETE")  # type: ignore[attr-defined]
+            cur.execute("PRAGMA synchronous=FULL")  # type: ignore[attr-defined]
         finally:
-            cur.close()
+            cur.close()  # type: ignore[attr-defined]
 
     # Ensure tables exist
     Base.metadata.create_all(engine)  # type: ignore
