@@ -1,29 +1,29 @@
 # Open Edison
 
-Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
+Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
-Open-source MCP security, aggregation, and monitoring. Provides core functionality of <https://edison.watch> for local, single-user use.
+Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 ## Features
 
 - **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
 - **JSON configuration** - Easy to configure and manage your MCP servers
-- **Session tracking** - (Coming soon) Track and monitor your MCP interactions
+- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
+- **Session tracking** - Track and monitor your MCP interactions
 - **Simple API** - REST API for managing MCP servers and proxying requests
 - **Docker support** - Run in a container for easy deployment
 
 ## Quick Start
 
-### Prerequisites
+### Install from PyPI
 
-- Python 3.12+
-- For development: [Rye](https://rye-up.com/) or a virtualenv
+#### Prerequisites
 
-### Install from PyPI (once published)
+- Pipx/uvx
 
 ```bash
 # Using uvx
-uvx open-edison -- --help
+uvx open-edison --help
 
 # Using pipx
 pipx install open-edison
@@ -38,7 +38,7 @@ open-edison run --config-dir ~/edison-config
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
 
-### Installation
+### Run from source
 
 1. Clone the repository:
 
@@ -82,6 +82,15 @@ open-edison run
 ```
 
 The server will be available at `http://localhost:3000`.
+
+### Run with Docker
+
+```bash
+# After cloning the repo
+make run_docker
+```
+
+The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
 
 ## MCP Connection
 

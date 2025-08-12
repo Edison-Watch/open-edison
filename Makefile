@@ -135,13 +135,13 @@ DOCKER_IMAGE_TAG = $(shell git rev-parse --short HEAD)
 
 docker_build: ## Build the Docker image
 	@echo "$(YELLOW)🔍Building Docker image...$(RESET)"
-	@docker build -t $(DOCKER_IMAGE_NAME) .
-	@echo "$(GREEN)✅Docker image built.$(RESET)"
+	@docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) -t $(DOCKER_IMAGE_NAME):latest .
+	@echo "$(GREEN)✅Docker image built and tagged as :$(DOCKER_IMAGE_TAG) and :latest.$(RESET)"
 
 docker_run: docker_build ## Run the Docker image
 	@echo "$(YELLOW)🔍Running Docker image...$(RESET)"
-	@docker run -p 3000:3000 -p 3001:3001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME)
-	@echo "$(GREEN)✅Docker image running on port 3000 and 3001.$(RESET)"
+	@docker run -p 3000:3000 -p 3001:3001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest
+	@echo "$(GREEN)✅Docker image running on ports 3000 and 3001.$(RESET)"
 
 ########################################################
 # Package for distribution

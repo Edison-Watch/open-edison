@@ -52,7 +52,7 @@
                 "./test.db"
             ],
             "env": {},
-            "enabled": true,
+            "enabled": false,
             "roots": []
         }
     ]
