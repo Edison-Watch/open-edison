@@ -31,7 +31,7 @@ def _new_mcp_server_config(
     )
 
 
-class ImportErrorDetails(Exception):
+class ImportErrorDetails(Exception):  # noqa: N818
     def __init__(self, message: str, path: Path | None = None):
         super().__init__(message)
         self.path = path
@@ -39,14 +39,14 @@ class ImportErrorDetails(Exception):
 
 def safe_read_json(path: Path) -> dict[str, Any]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             loaded = json.load(f)
             if not isinstance(loaded, dict):
                 raise ImportErrorDetails(f"Expected JSON object at {path}", path)
             data: dict[str, Any] = cast(dict[str, Any], loaded)
             return data
     except Exception as e:
-        raise ImportErrorDetails(f"Failed to read JSON from {path}: {e}", path)
+        raise ImportErrorDetails(f"Failed to read JSON from {path}: {e}", path) from e
 
 
 def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:
@@ -91,36 +91,51 @@ def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool)
     )
 
 
-def parse_mcp_like_json(data: dict[str, Any], default_enabled: bool = True) -> list[Any]:
+def _collect_from_dict(node_dict: dict[str, Any], default_enabled: bool) -> list[Any]:
     results: list[Any] = []
+    for name_key, spec_obj in node_dict.items():
+        if isinstance(spec_obj, dict):
+            results.append(_coerce_server_entry(str(name_key), spec_obj, default_enabled))
+    return results
 
-    # Map of name -> spec
+
+def _collect_from_list(node_list: list[Any], default_enabled: bool) -> list[Any]:
+    results: list[Any] = []
+    for spec_obj in node_list:
+        if isinstance(spec_obj, dict) and "name" in spec_obj:
+            name_val_obj = spec_obj.get("name")
+            name_str = str(name_val_obj) if name_val_obj is not None else ""
+            results.append(_coerce_server_entry(name_str, spec_obj, default_enabled))
+    return results
+
+
+def _collect_top_level(data: dict[str, Any], default_enabled: bool) -> list[Any]:
+    results: list[Any] = []
     for key in ("mcpServers", "servers"):
         node = data.get(key)
         if isinstance(node, dict):
-            node_dict: dict[str, Any] = node
-            for name_key, spec_obj in node_dict.items():
-                if isinstance(spec_obj, dict):
-                    spec_dict: dict[str, Any] = spec_obj
-                    results.append(_coerce_server_entry(str(name_key), spec_dict, default_enabled))
-            if results:
-                return results
-        if isinstance(node, list):
-            for spec_obj in node:
-                if isinstance(spec_obj, dict) and "name" in spec_obj:
-                    spec_dict = cast(dict[str, Any], spec_obj)
-                    name_val_obj = spec_dict.get("name")
-                    name_str = str(name_val_obj) if name_val_obj is not None else ""
-                    results.append(_coerce_server_entry(name_str, spec_dict, default_enabled))
-            if results:
-                return results
-
-    # Heuristic for nested settings
-    for k, v in data.items():
-        if "mcp" in k.lower() and isinstance(v, dict):
-            nested = parse_mcp_like_json(v, default_enabled=default_enabled)
-            results.extend(nested)
-
-    if not results:
-        log.debug("No MCP-like entries detected in provided data")
+            results.extend(_collect_from_dict(node, default_enabled))
+        elif isinstance(node, list):
+            results.extend(_collect_from_list(node, default_enabled))
     return results
+
+
+def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
+    results: list[Any] = []
+    for k, v in data.items():
+        if "mcp" in str(k).lower() and isinstance(v, dict):
+            results.extend(parse_mcp_like_json(v, default_enabled=default_enabled))
+    return results
+
+
+def parse_mcp_like_json(data: dict[str, Any], default_enabled: bool = True) -> list[Any]:
+    # First, try top-level keys
+    top_level = _collect_top_level(data, default_enabled)
+    if top_level:
+        return top_level
+
+    # Then, try nested structures heuristically
+    nested = _collect_nested(data, default_enabled)
+    if not nested:
+        log.debug("No MCP-like entries detected in provided data")
+    return nested

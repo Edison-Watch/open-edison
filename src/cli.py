@@ -10,10 +10,10 @@ import argparse
 import asyncio
 import os
 import subprocess as _subprocess
+import sys
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, NoReturn, cast
-import sys
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
@@ -218,7 +218,7 @@ def _run_website(port: int, website_dir: Path | None = None) -> int:
     return 0 if proc is not None else 1
 
 
-def main(argv: list[str] | None = None) -> NoReturn:
+def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
     args = _parse_args(argv)
 
     if getattr(args, "command", None) == "website":

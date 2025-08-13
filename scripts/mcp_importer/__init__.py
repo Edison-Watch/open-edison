@@ -8,10 +8,6 @@ Submodules:
 - cli: command-line entrypoint
 """
 
-__all__ = [
-    "paths",
-    "parsers",
-    "importers",
-    "merge",
-    "cli",
-]
+from . import cli, importers, merge, parsers, paths  # noqa: F401
+
+__all__ = ["paths", "parsers", "importers", "merge", "cli"]

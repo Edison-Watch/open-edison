@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from loguru import logger as log
 
+from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
 from .paths import (
     find_claude_desktop_file,
     find_cline_files,
@@ -12,7 +14,6 @@ from .paths import (
     find_vscode_settings,
     find_windsurf_files,
 )
-from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
 
 MCPServerConfigT = Any
 
@@ -24,8 +25,7 @@ def import_from_cursor(project_dir: Path) -> list[MCPServerConfigT]:
             "Cursor project .cursor/mcp.json not found. Provide --project-dir.", project_dir
         )
     data = safe_read_json(files[0])
-    servers = parse_mcp_like_json(data, default_enabled=True)
-    return servers
+    return parse_mcp_like_json(data, default_enabled=True)
 
 
 def import_from_windsurf() -> list[MCPServerConfigT]:

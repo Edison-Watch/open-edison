@@ -3,22 +3,22 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from loguru import logger as log
 
-# Ensure import of src config
+# Ensure import of src config (place src on sys.path before import)
 THIS_FILE = Path(__file__).resolve()
 REPO_ROOT = THIS_FILE.parents[2]
 SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from config import Config, get_config_dir  # type: ignore
+from config import Config, get_config_dir  # type: ignore  # noqa: E402
 
-from .importers import IMPORTERS
-from .merge import MergePolicy, merge_servers
+from .importers import IMPORTERS  # noqa: E402
+from .merge import MergePolicy, merge_servers  # noqa: E402
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -66,15 +66,11 @@ def prompt_source_choice() -> str:
         print("Invalid selection. Try again.")
 
 
-def run_cli(argv: list[str] | None = None) -> int:
+def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    source: str
-    if args.source == "interactive":
-        source = prompt_source_choice()
-    else:
-        source = args.source
+    source: str = prompt_source_choice() if args.source == "interactive" else args.source
 
     importer = IMPORTERS.get(source)
     if not importer:
@@ -113,8 +109,8 @@ def run_cli(argv: list[str] | None = None) -> int:
         enable_imported=bool(args.enable_imported),
     )
 
-    existing_names: set[str] = set(str(getattr(s, "name", "")) for s in config_obj.mcp_servers)
-    merged_names: set[str] = set(str(getattr(s, "name", "")) for s in merged)
+    existing_names: set[str] = {str(getattr(s, "name", "")) for s in config_obj.mcp_servers}
+    merged_names: set[str] = {str(getattr(s, "name", "")) for s in merged}
     added = merged_names - existing_names
     replaced: set[str] = set()
     if args.merge == MergePolicy.OVERWRITE:

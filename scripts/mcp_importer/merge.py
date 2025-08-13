@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from loguru import logger as log
-
 from typing import Any
+
+from loguru import logger as log
 
 MCPServerConfigT = Any
 

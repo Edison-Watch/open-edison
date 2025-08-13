@@ -11,7 +11,7 @@ import sys
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger as log
 
@@ -122,12 +122,24 @@ class MCPServerConfig:
 
 
 @dataclass
+class TelemetryConfig:
+    """Telemetry configuration"""
+
+    enabled: bool = True
+    # If not provided, exporter may use environment variables or defaults
+    otlp_endpoint: str | None = None
+    headers: dict[str, str] | None = None
+    export_interval_ms: int = 60000
+
+
+@dataclass
 class Config:
     """Main configuration class"""
 
     server: ServerConfig
     logging: LoggingConfig
     mcp_servers: list[MCPServerConfig]
+    telemetry: TelemetryConfig | None = None
 
     @property
     def version(self) -> str:
@@ -171,6 +183,32 @@ class Config:
         mcp_servers_data = data.get("mcp_servers", [])  # type: ignore
         server_data = data.get("server", {})  # type: ignore
         logging_data = data.get("logging", {})  # type: ignore
+        telemetry_data_obj: object = data.get("telemetry", {})
+
+        # Parse telemetry config with explicit typing to satisfy strict type checker
+        td: dict[str, object] = {}
+        if isinstance(telemetry_data_obj, dict):
+            for k_any, v_any in cast(dict[Any, Any], telemetry_data_obj).items():
+                td[str(k_any)] = v_any
+        tel_enabled: bool = bool(td.get("enabled", True))
+        otlp_raw: object = td.get("otlp_endpoint")
+        otlp_endpoint: str | None = (
+            str(otlp_raw) if isinstance(otlp_raw, str) and otlp_raw else None
+        )
+        headers_val: object = td.get("headers")
+        headers_dict: dict[str, str] | None = None
+        if isinstance(headers_val, dict):
+            headers_dict = {}
+            for k_any, v_any in cast(dict[Any, Any], headers_val).items():
+                headers_dict[str(k_any)] = str(v_any)
+        interval_raw: object = td.get("export_interval_ms")
+        export_interval_ms: int = interval_raw if isinstance(interval_raw, int) else 60000
+        telemetry_cfg = TelemetryConfig(
+            enabled=tel_enabled,
+            otlp_endpoint=otlp_endpoint,
+            headers=headers_dict,
+            export_interval_ms=export_interval_ms,
+        )
 
         return cls(
             server=ServerConfig(**server_data),  # type: ignore
@@ -179,6 +217,7 @@ class Config:
                 MCPServerConfig(**server_item)  # type: ignore
                 for server_item in mcp_servers_data  # type: ignore
             ],
+            telemetry=telemetry_cfg,
         )
 
     def save(self, config_path: Path | None = None) -> None:
@@ -194,6 +233,9 @@ class Config:
             "server": asdict(self.server),
             "logging": asdict(self.logging),
             "mcp_servers": [asdict(server) for server in self.mcp_servers],
+            "telemetry": asdict(
+                self.telemetry if self.telemetry is not None else TelemetryConfig()
+            ),
         }
 
         # Ensure directory exists
@@ -217,6 +259,10 @@ class Config:
                     enabled=False,
                 )
             ],
+            telemetry=TelemetryConfig(
+                enabled=True,
+                otlp_endpoint=("https://otel-collector-production-e7a6.up.railway.app/v1/metrics"),
+            ),
         )
 
 

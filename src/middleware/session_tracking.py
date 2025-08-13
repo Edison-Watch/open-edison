@@ -29,6 +29,11 @@ from sqlalchemy.sql import select
 
 from src.config import get_config_dir  # type: ignore[reportMissingImports]
 from src.middleware.data_access_tracker import DataAccessTracker
+from src.telemetry import (
+    record_prompt_used,
+    record_resource_used,
+    record_tool_call,
+)
 
 
 @dataclass
@@ -285,6 +290,8 @@ class SessionTrackingMiddleware(Middleware):
         assert session.data_access_tracker is not None
         log.debug(f"🔍 Analyzing tool {context.message.name} for security implications")
         _ = session.data_access_tracker.add_tool_call(context.message.name)
+        # Telemetry: record tool call
+        record_tool_call(context.message.name)
 
         # Update database session
         with create_db_session() as db_session:
@@ -383,6 +390,7 @@ class SessionTrackingMiddleware(Middleware):
 
         log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
         _ = session.data_access_tracker.add_resource_access(resource_name)
+        record_resource_used(resource_name)
 
         # Update database session
         with create_db_session() as db_session:
@@ -463,6 +471,7 @@ class SessionTrackingMiddleware(Middleware):
 
         log.debug(f"🔍 Analyzing prompt {prompt_name} for security implications")
         _ = session.data_access_tracker.add_prompt_access(prompt_name)
+        record_prompt_used(prompt_name)
 
         # Update database session
         with create_db_session() as db_session:

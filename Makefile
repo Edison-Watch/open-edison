@@ -89,7 +89,7 @@ test: check_rye ## Run all project tests
 # Linting and Code Quality
 ########################################################
 
-lint: check_rye ## Lint code with Ruff
+lint: check_rye ## Lint code with Ruff (src only)
 	@echo "$(YELLOW)🔍Linting project with Ruff...$(RESET)"
 	@rye run ruff check .
 	@echo "$(GREEN)✅Ruff linting completed.$(RESET)"
@@ -109,7 +109,7 @@ basedpyright_check: check_rye ## Run type checking with Basedpyright
 	@rye run basedpyright .
 	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
 
-ci: lint basedpyright_check ## Run CI checks (lint, type check)
+ci: sync lint basedpyright_check test ## Run CI checks (sync deps, lint, type check, tests)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################

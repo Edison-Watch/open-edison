@@ -21,6 +21,12 @@ from typing import Any
 from loguru import logger as log
 
 from src.config import ConfigError
+from src.telemetry import (
+    record_private_data_access,
+    record_tool_call_blocked,
+    record_untrusted_public_data,
+    record_write_operation,
+)
 
 
 def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
@@ -377,6 +383,7 @@ class DataAccessTracker:
         # Check if trifecta is already achieved before processing this call
         if self.is_trifecta_achieved():
             log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta already achieved")
+            record_tool_call_blocked(tool_name, "trifecta")
             raise SecurityError(f"Tool call '{tool_name}' blocked: lethal trifecta achieved")
 
         # Get tool permissions and update trifecta flags
@@ -387,19 +394,23 @@ class DataAccessTracker:
         # Check if tool is enabled
         if permissions["enabled"] is False:
             log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
+            record_tool_call_blocked(tool_name, "disabled")
             raise SecurityError(f"Tool call '{tool_name}' blocked: tool is disabled")
 
         if permissions["read_private_data"]:
             self.has_private_data_access = True
             log.info(f"🔒 Private data access detected: {tool_name}")
+            record_private_data_access("tool", tool_name)
 
         if permissions["read_untrusted_public_data"]:
             self.has_untrusted_content_exposure = True
             log.info(f"🌐 Untrusted content exposure detected: {tool_name}")
+            record_untrusted_public_data("tool", tool_name)
 
         if permissions["write_operation"]:
             self.has_external_communication = True
             log.info(f"✍️ Write operation detected: {tool_name}")
+            record_write_operation("tool", tool_name)
 
         # Log if trifecta is achieved after this call
         if self.is_trifecta_achieved():
@@ -435,14 +446,17 @@ class DataAccessTracker:
         if permissions["read_private_data"]:
             self.has_private_data_access = True
             log.info(f"🔒 Private data access detected via resource: {resource_name}")
+            record_private_data_access("resource", resource_name)
 
         if permissions["read_untrusted_public_data"]:
             self.has_untrusted_content_exposure = True
             log.info(f"🌐 Untrusted content exposure detected via resource: {resource_name}")
+            record_untrusted_public_data("resource", resource_name)
 
         if permissions["write_operation"]:
             self.has_external_communication = True
             log.info(f"✍️ Write operation detected via resource: {resource_name}")
+            record_write_operation("resource", resource_name)
 
         # Log if trifecta is achieved after this access
         if self.is_trifecta_achieved():
@@ -474,14 +488,17 @@ class DataAccessTracker:
         if permissions["read_private_data"]:
             self.has_private_data_access = True
             log.info(f"🔒 Private data access detected via prompt: {prompt_name}")
+            record_private_data_access("prompt", prompt_name)
 
         if permissions["read_untrusted_public_data"]:
             self.has_untrusted_content_exposure = True
             log.info(f"🌐 Untrusted content exposure detected via prompt: {prompt_name}")
+            record_untrusted_public_data("prompt", prompt_name)
 
         if permissions["write_operation"]:
             self.has_external_communication = True
             log.info(f"✍️ Write operation detected via prompt: {prompt_name}")
+            record_write_operation("prompt", prompt_name)
 
         # Log if trifecta is achieved after this access
         if self.is_trifecta_achieved():

@@ -26,6 +26,7 @@ from src.middleware.session_tracking import (
     create_db_session,
 )
 from src.single_user_mcp import SingleUserMCP
+from src.telemetry import initialize_telemetry, set_servers_installed
 
 
 def _get_current_config():
@@ -267,6 +268,8 @@ class OpenEdisonProxy:
         log.info(f"FastAPI management API on {self.host}:{self.port + 1}")
         log.info(f"FastMCP protocol server on {self.host}:{self.port}")
 
+        initialize_telemetry()
+
         # Ensure the sessions database exists and has the required schema
         try:
             with create_db_session():
@@ -276,6 +279,10 @@ class OpenEdisonProxy:
 
         # Initialize the FastMCP server (this handles starting enabled MCP servers)
         await self.single_user_mcp.initialize()
+
+        # Emit snapshot of enabled servers
+        enabled_count = len([s for s in config.mcp_servers if s.enabled])
+        set_servers_installed(enabled_count)
 
         # Add CORS middleware to FastAPI
         self.fastapi_app.add_middleware(

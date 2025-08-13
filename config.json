@@ -54,6 +54,42 @@
             "env": {},
             "enabled": false,
             "roots": []
+        },
+        {
+            "name": "supabase",
+            "command": "",
+            "args": [],
+            "env": {
+                "SUPABASE_URL": "https://your-supabase-url.supabase.co",
+                "SUPABASE_API_KEY": "your-supabase-api-key",
+                "SUPABASE_DATABASE": "your-database-name"
+            },
+            "enabled": false
+        },
+        {
+            "name": "google_drive",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-gdrive"
+            ],
+            "env": {
+                "GOOGLE_CLIENT_ID": "your-client-id",
+                "GOOGLE_CLIENT_SECRET": "your-client-secret",
+                "GOOGLE_REFRESH_TOKEN": "your-refresh-token"
+            },
+            "enabled": false
+        },
+        {
+            "name": "atlassian",
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.atlassian.com/v1/sse"
+            ],
+            "env": {},
+            "enabled": false
         }
     ]
 }

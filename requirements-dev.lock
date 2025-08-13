@@ -65,6 +65,11 @@ fastmcp==2.11.1
 frozenlist==1.7.0
     # via aiohttp
     # via aiosignal
+googleapis-common-protos==1.70.0
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+grpcio==1.74.0
+    # via opentelemetry-exporter-otlp-proto-grpc
 h11==0.16.0
     # via httpcore
     # via uvicorn
@@ -84,6 +89,8 @@ idna==3.10
     # via httpx
     # via requests
     # via yarl
+importlib-metadata==8.7.0
+    # via opentelemetry-api
 iniconfig==2.1.0
     # via pytest
 isodate==0.7.2
@@ -139,6 +146,31 @@ openapi-schema-validator==0.6.3
     # via openapi-spec-validator
 openapi-spec-validator==0.7.2
     # via openapi-core
+opentelemetry-api==1.36.0
+    # via open-edison
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+    # via opentelemetry-sdk
+    # via opentelemetry-semantic-conventions
+opentelemetry-exporter-otlp==1.36.0
+    # via open-edison
+opentelemetry-exporter-otlp-proto-common==1.36.0
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-grpc==1.36.0
+    # via opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-http==1.36.0
+    # via opentelemetry-exporter-otlp
+opentelemetry-proto==1.36.0
+    # via opentelemetry-exporter-otlp-proto-common
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-sdk==1.36.0
+    # via open-edison
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-semantic-conventions==0.57b0
+    # via opentelemetry-sdk
 packaging==25.0
     # via pytest
     # via twine
@@ -151,6 +183,9 @@ pluggy==1.6.0
 propcache==0.3.2
     # via aiohttp
     # via yarl
+protobuf==6.31.1
+    # via googleapis-common-protos
+    # via opentelemetry-proto
 pycparser==2.22
     # via cffi
 pydantic==2.11.7
@@ -190,6 +225,7 @@ referencing==0.36.2
 requests==2.32.4
     # via id
     # via jsonschema-path
+    # via opentelemetry-exporter-otlp-proto-http
     # via requests-toolbelt
     # via twine
 requests-toolbelt==1.0.0
@@ -229,6 +265,11 @@ typing-extensions==4.14.1
     # via exceptiongroup
     # via fastapi
     # via openapi-core
+    # via opentelemetry-api
+    # via opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-http
+    # via opentelemetry-sdk
+    # via opentelemetry-semantic-conventions
     # via pydantic
     # via pydantic-core
     # via referencing
@@ -248,3 +289,5 @@ werkzeug==3.1.1
     # via openapi-core
 yarl==1.20.1
     # via aiohttp
+zipp==3.23.0
+    # via importlib-metadata
