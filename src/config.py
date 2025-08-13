@@ -15,6 +15,9 @@ from typing import Any, cast
 
 from loguru import logger as log
 
+# Default OTLP metrics endpoint for central dev collector.
+DEFAULT_OTLP_METRICS_ENDPOINT = "https://otel-collector-production-e7a6.up.railway.app/v1/metrics"
+
 # Get the path to the repository/package root directory (module src/ parent)
 root_dir = Path(__file__).parent.parent
 
@@ -195,6 +198,9 @@ class Config:
         otlp_endpoint: str | None = (
             str(otlp_raw) if isinstance(otlp_raw, str) and otlp_raw else None
         )
+        # If not provided in config, use our central dev collector by default
+        if not otlp_endpoint:
+            otlp_endpoint = DEFAULT_OTLP_METRICS_ENDPOINT
         headers_val: object = td.get("headers")
         headers_dict: dict[str, str] | None = None
         if isinstance(headers_val, dict):
@@ -261,7 +267,7 @@ class Config:
             ],
             telemetry=TelemetryConfig(
                 enabled=True,
-                otlp_endpoint=("https://otel-collector-production-e7a6.up.railway.app/v1/metrics"),
+                otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
             ),
         )
 

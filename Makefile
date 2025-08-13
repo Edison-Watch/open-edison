@@ -12,6 +12,7 @@ RESET=\033[0m
 
 PYTHON=rye run python
 TEST=rye run pytest
+PYTEST_ARGS ?=
 PROJECT_ROOT=.
 
 .PHONY: help
@@ -80,10 +81,26 @@ TEST_TARGETS = tests/
 
 # Tests
 .PHONY: test
-test: check_rye ## Run all project tests
+test: check_rye ## Run project tests (use PYTEST_ARGS to pass extra flags, e.g. PYTEST_ARGS='-k pattern')
 	@echo "$(GREEN)🧪Running tests...$(RESET)"
-	$(TEST) $(TEST_TARGETS)
+	$(TEST) $(PYTEST_ARGS) $(TEST_TARGETS)
 	@echo "$(GREEN)✅Tests passed.$(RESET)"
+
+# Run a specific test/file by passing node id via T, e.g.:
+# make test_one T="tests/test_telemetry_e2e.py::test_real_otlp_export"
+.PHONY: test_one
+test_one: check_rye ## Run a single test: make test_one T="path::node::id"
+	@if [ -z "$(T)" ]; then \
+		echo "$(RED)Provide T=path_or_node_id (e.g. tests/test_foo.py::test_bar)$(RESET)"; \
+		exit 2; \
+	fi
+	@echo "$(GREEN)🧪Running single test $(T)...$(RESET)"
+	$(TEST) $(T)
+
+.PHONY: test_e2e
+test_e2e: check_rye ## Run the real telemetry e2e test (exports metrics)
+	@echo "$(GREEN)🧪Running telemetry e2e test...$(RESET)"
+	EDISON_OTEL_E2E=1 $(TEST) tests/test_telemetry_e2e.py::test_real_otlp_export
 
 ########################################################
 # Linting and Code Quality

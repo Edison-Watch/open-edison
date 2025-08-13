@@ -8,6 +8,12 @@ Events/metrics captured (high level, install-unique ID for deaggregation):
 - tool_calls_total (counter)
 - tool_calls_blocked_total (counter)
 - servers_installed_total (up-down counter / gauge)
+- tool_calls_metadata_total (counter)
+- resource_used_total (counter)
+- prompt_used_total (counter)
+- private_data_access_calls_total (counter)
+- untrusted_public_data_calls_total (counter)
+- write_operation_calls_total (counter)
 
 Configuration: see `TelemetryConfig` in `src.config`.
 """
@@ -15,6 +21,7 @@ Configuration: see `TelemetryConfig` in `src.config`.
 from __future__ import annotations
 
 import json
+import os
 import traceback
 import uuid
 from collections.abc import Callable
@@ -27,11 +34,13 @@ from opentelemetry import metrics as ot_metrics
 from opentelemetry.exporter.otlp.proto.http import metric_exporter as otlp_metric_exporter
 from opentelemetry.sdk import metrics as ot_sdk_metrics
 from opentelemetry.sdk.metrics import export as ot_metrics_export
+from opentelemetry.sdk.resources import Resource  # type: ignore[reportMissingTypeStubs]
 
 from src.config import TelemetryConfig, config, get_config_dir
 
 _initialized: bool = False
 _install_id: str | None = None
+_provider: Any | None = None
 _tool_calls_counter: Any | None = None
 _tool_calls_blocked_counter: Any | None = None
 _servers_installed_gauge: Any | None = None
@@ -112,7 +121,12 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
 
     Safe to call multiple times; only first call initializes.
     """
-    global _initialized, _tool_calls_counter, _tool_calls_blocked_counter, _servers_installed_gauge
+    global \
+        _initialized, \
+        _provider, \
+        _tool_calls_counter, \
+        _tool_calls_blocked_counter, \
+        _servers_installed_gauge
 
     if _initialized:
         return
@@ -127,6 +141,17 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
     exporter_kwargs: dict[str, Any] = {}
     if telemetry_cfg.otlp_endpoint:
         exporter_kwargs["endpoint"] = telemetry_cfg.otlp_endpoint
+    # Allow environment variables to provide endpoint when not set in config
+    env_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT") or os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+    )
+    if "endpoint" not in exporter_kwargs and env_endpoint:
+        exporter_kwargs["endpoint"] = env_endpoint
+    # If no endpoint is available from config or env, skip initialization quietly
+    if "endpoint" not in exporter_kwargs:
+        log.debug("No OTLP endpoint configured (config or env); skipping telemetry init")
+        _initialized = True
+        return
     if telemetry_cfg.headers:
         exporter_kwargs["headers"] = telemetry_cfg.headers
 
@@ -148,7 +173,16 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
 
     # Provider/meter
     try:
-        provider: Any = ot_sdk_metrics.MeterProvider(metric_readers=[reader])
+        # Attach a resource so metrics include service identifiers
+        resource = Resource.create(
+            {
+                "service.name": "open-edison",
+                "service.namespace": "open-edison",
+                "telemetry.sdk.language": "python",
+            }
+        )
+        provider: Any = ot_sdk_metrics.MeterProvider(metric_readers=[reader], resource=resource)
+        _provider = provider
         ot_metrics.set_meter_provider(provider)
         meter: Any = ot_metrics.get_meter("open-edison")
     except Exception:  # noqa: BLE001
@@ -157,15 +191,16 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
 
     # Instruments
     try:
-        _tool_calls_counter = meter.create_counter("tool_calls_total")
-        _tool_calls_blocked_counter = meter.create_counter("tool_calls_blocked_total")
-        _servers_installed_gauge = meter.create_up_down_counter("servers_installed_total")
-        _tool_calls_metadata_counter = meter.create_counter("tool_calls_metadata_total")
-        _resource_used_counter = meter.create_counter("resource_used_total")
-        _prompt_used_counter = meter.create_counter("prompt_used_total")
-        _private_data_access_counter = meter.create_counter("private_data_access_calls_total")
-        _untrusted_public_data_counter = meter.create_counter("untrusted_public_data_calls_total")
-        _write_operation_counter = meter.create_counter("write_operation_calls_total")
+        # Do not suffix counters with _total; Prometheus exporter appends it
+        _tool_calls_counter = meter.create_counter("tool_calls")
+        _tool_calls_blocked_counter = meter.create_counter("tool_calls_blocked")
+        _servers_installed_gauge = meter.create_up_down_counter("servers_installed")
+        _tool_calls_metadata_counter = meter.create_counter("tool_calls_metadata")
+        _resource_used_counter = meter.create_counter("resource_used")
+        _prompt_used_counter = meter.create_counter("prompt_used")
+        _private_data_access_counter = meter.create_counter("private_data_access_calls")
+        _untrusted_public_data_counter = meter.create_counter("untrusted_public_data_calls")
+        _write_operation_counter = meter.create_counter("write_operation_calls")
     except Exception:  # noqa: BLE001
         log.error("Metrics instrument creation failed\n{}", traceback.format_exc())
         return
@@ -173,6 +208,29 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
     _ = _ensure_install_id()
     _initialized = True
     log.info("📈 Telemetry initialized")
+
+
+def force_flush_metrics(timeout_ms: int = 5000) -> bool:
+    """Force-flush metrics synchronously if a provider is initialized.
+
+    Returns True on success, False otherwise.
+    """
+    try:
+        provider = _provider
+        if provider is None:
+            return False
+        # Some providers expose force_flush(timeout_millis=...), others as force_flush() -> bool
+        if hasattr(provider, "force_flush"):
+            try:
+                # Try with timeout argument first
+                result = provider.force_flush(timeout_millis=timeout_ms)  # type: ignore[misc]
+            except TypeError:
+                result = provider.force_flush()
+            return bool(result)
+        return False
+    except Exception:  # noqa: BLE001
+        log.error("Force flush failed\n{}", traceback.format_exc())
+        return False
 
 
 def _common_attrs(extra: dict[str, Any] | None = None) -> dict[str, Any]:
