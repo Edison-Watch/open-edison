@@ -86,7 +86,7 @@ def bump_patch_in_pyproject_file(pyproject_path: str) -> tuple[int, int, int] | 
     min_ = int(m.group("min"))
     pat = int(m.group("pat")) + 1
     # Preserve trailing quote and whitespace (group 5)
-    new_text = pattern.sub(rf"\1{maj}.{min_}.{pat}\5", text, count=1)
+    new_text = pattern.sub(rf"\g<1>{maj}.{min_}.{pat}\g<5>", text, count=1)
     write_text(pyproject_path, new_text)
     return (maj, min_, pat)
 
