@@ -315,7 +315,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
     const [active, setActive] = useState<FileKey>('config')
     const [content, setContent] = useState<Record<FileKey, string>>({} as any)
     const [error, setError] = useState<string>('')
-    const [status, setStatus] = useState<string>('')
+    const [statusMsg, setStatusMsg] = useState<string>('')
     const [loadingKey, setLoadingKey] = useState<FileKey | null>(null)
 
     useEffect(() => {
@@ -361,10 +361,10 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                 body: JSON.stringify({ path: file.path, content: content[active] ?? '' })
             })
             if (!resp.ok) throw new Error('Local save helper not running or error saving')
-            setStatus('Saved')
+            setStatusMsg('Saved')
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save. You can use Download to save manually.')
-            setStatus('')
+            setStatusMsg('')
         }
     }
 
@@ -403,7 +403,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                         <div className="flex gap-2 items-center">
                             <button className="button" onClick={saveToDisk}>Save</button>
                             <button className="button" onClick={download}>Download</button>
-                            {status && <span className="text-xs text-app-muted">{status}</span>}
+                            {statusMsg && <span className="text-xs text-app-muted">{statusMsg}</span>}
                         </div>
                     </div>
                     {error && <div className="text-rose-400 text-sm mb-2">{error}</div>}
@@ -474,6 +474,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [saveMsg, setSaveMsg] = useState('')
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
     const [selectedServer, setSelectedServer] = useState<string | null>(null)
+    const [validateInProgress, setValidateInProgress] = useState<string | null>(null)
+    const [validateErrors, setValidateErrors] = useState<Record<string, string>>({})
 
     // Persist view mode across reloads
     useEffect(() => {
@@ -492,10 +494,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [origResourcePerms, setOrigResourcePerms] = useState<ResourcePerms | null>(null)
     const [origPromptPerms, setOrigPromptPerms] = useState<PromptPerms | null>(null)
 
-    const configPath = `${projectRoot}/config.json`
-    const toolPath = `${projectRoot}/tool_permissions.json`
-    const resourcePath = `${projectRoot}/resource_permissions.json`
-    const promptPath = `${projectRoot}/prompt_permissions.json`
+    const CONFIG_NAME = 'config.json'
+    const TOOL_NAME = 'tool_permissions.json'
+    const RESOURCE_NAME = 'resource_permissions.json'
+    const PROMPT_NAME = 'prompt_permissions.json'
 
     useEffect(() => {
         let active = true
@@ -504,10 +506,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setError('')
             try {
                 const [c, t, r, p] = await Promise.all([
-                    fetch(`/@fs${configPath}`),
-                    fetch(`/@fs${toolPath}`),
-                    fetch(`/@fs${resourcePath}`),
-                    fetch(`/@fs${promptPath}`),
+                    fetch(`/` + CONFIG_NAME),
+                    fetch(`/` + TOOL_NAME),
+                    fetch(`/` + RESOURCE_NAME),
+                    fetch(`/` + PROMPT_NAME),
                 ])
                 if (!c.ok) throw new Error('Failed to load config.json')
                 if (!t.ok) throw new Error('Failed to load tool_permissions.json')
@@ -518,23 +520,36 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 const rJson = await r.json()
                 const pJson = await p.json()
                 if (!active) return
-                // Derive server defaults from union of permission files and config servers
+                // Derive server defaults prioritizing config.json servers, then add extras from permissions
                 const configServers: string[] = Array.isArray((cJson as any)?.mcp_servers)
-                    ? ((cJson as any).mcp_servers as Array<{ name: string }>).map((s) => s.name)
+                    ? ((cJson as any).mcp_servers as Array<{ name: string }>).map((s) => String(s.name || '').trim())
                     : []
                 const keysFrom = (obj: any) => Object.keys(obj || {}).filter((k) => k !== '_metadata' && k !== 'builtin')
-                const names = Array.from(new Set<string>([
-                    ...configServers,
+                const permNames = new Set<string>([
                     ...keysFrom(tJson),
                     ...keysFrom(rJson),
                     ...keysFrom(pJson),
-                ])).sort()
-                const defs: MCPServerDefault[] = names.map((name) => ({
+                ].map((n) => String(n || '').trim()))
+
+                // Start with config servers, in declared order
+                const defsOrdered: MCPServerDefault[] = configServers.map((name) => ({
                     name,
                     tools: (tJson as any)?.[name],
                     resources: (rJson as any)?.[name],
                     prompts: (pJson as any)?.[name],
                 }))
+                // Append permission-only servers not present in config
+                for (const extra of Array.from(permNames)) {
+                    if (!configServers.map((n) => n.toLowerCase()).includes(extra.toLowerCase())) {
+                        defsOrdered.push({
+                            name: extra,
+                            tools: (tJson as any)?.[extra],
+                            resources: (rJson as any)?.[extra],
+                            prompts: (pJson as any)?.[extra],
+                        })
+                    }
+                }
+                const defs: MCPServerDefault[] = defsOrdered
                 setDefaults(defs)
                 setConfig(cJson as ConfigFile)
                 setOrigConfig(cJson as ConfigFile)
@@ -666,8 +681,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         setSaving(true)
         setSaveMsg('')
         try {
-            const post = (path: string, content: string) => fetch('/__save_json__', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, content })
+            const post = (name: string, content: string) => fetch('/__save_json__', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
             })
             const cfgToSave = onlyChanges && origConfig && config
                 ? buildConfigSaveObject(origConfig, config)
@@ -682,10 +697,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
                 : promptPerms
             const responses = await Promise.all([
-                post(configPath, JSON.stringify(cfgToSave, null, 4)),
-                post(toolPath, JSON.stringify(toolsToSave, null, 4)),
-                post(resourcePath, JSON.stringify(resourcesToSave, null, 4)),
-                post(promptPath, JSON.stringify(promptsToSave, null, 4)),
+                post(CONFIG_NAME, JSON.stringify(cfgToSave, null, 4)),
+                post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
+                post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
+                post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
             ])
             const notOk = responses.find(r => !r.ok)
             if (notOk) throw new Error('One or more files failed to save')
@@ -696,6 +711,79 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setSaving(false)
         }
     }
+
+    async function validateAndImport(serverName: string) {
+        setSaveMsg('')
+        setValidateInProgress(serverName)
+        try {
+            const cfg = (config?.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === serverName.toLowerCase())
+            if (!cfg) throw new Error('Server not found in config.json')
+            const body = {
+                name: cfg.name,
+                command: cfg.command || '',
+                args: Array.isArray(cfg.args) ? cfg.args : [],
+                env: cfg.env || {},
+                roots: Array.isArray(cfg.roots) ? cfg.roots : undefined,
+                timeout_s: 20,
+            }
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+            const resp = await fetch('/mcp/validate', { method: 'POST', headers, body: JSON.stringify(body) })
+            const data = await resp.json() as any
+            if (!resp.ok || data?.valid === false) {
+                const msg = (data && typeof data.error === 'string') ? data.error : `Validate failed (${resp.status})`
+                throw new Error(msg)
+            }
+
+            const toPerm = (desc?: string): PermissionFlags => ({ enabled: false, write_operation: false, read_private_data: false, read_untrusted_public_data: false, description: desc, acl: 'PUBLIC' } as PermissionFlags)
+
+            setToolPerms(prev => {
+                const next = { ...(prev || {}) } as any
+                const server = next[serverName] || {}
+                for (const t of data.tools || []) { if (!server[t.name]) server[t.name] = toPerm(t.description) }
+                next[serverName] = server
+                return next
+            })
+            setResourcePerms(prev => {
+                const next = { ...(prev || {}) } as any
+                const server = next[serverName] || {}
+                for (const r of data.resources || []) { const key = r.uri; if (!server[key]) server[key] = toPerm(r.description) }
+                next[serverName] = server
+                return next
+            })
+            setPromptPerms(prev => {
+                const next = { ...(prev || {}) } as any
+                const server = next[serverName] || {}
+                for (const p of data.prompts || []) { if (!server[p.name]) server[p.name] = toPerm(p.description) }
+                next[serverName] = server
+                return next
+            })
+            setSaveMsg('Imported initial permissions from validation (not yet saved)')
+            setValidateErrors(prev => { const next = { ...prev }; delete next[serverName]; return next })
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Validation failed'
+            setValidateErrors(prev => ({ ...prev, [serverName]: msg }))
+        } finally {
+            setValidateInProgress(null)
+        }
+    }
+
+    async function quickStart(serverName: string) {
+        await validateAndImport(serverName)
+        toggleServer(serverName, true)
+        setSaveMsg('Quick-start: imported permissions and enabled (not yet saved)')
+    }
+
+    const countEntries = (obj: Record<string, any> | null | undefined) => {
+        if (!obj) return 0
+        return Object.keys(obj).filter((k) => k !== '_metadata').length
+    }
+    const getCounts = (name: string) => ({
+        tools: countEntries((toolPerms as any)?.[name]),
+        resources: countEntries((resourcePerms as any)?.[name]),
+        prompts: countEntries((promptPerms as any)?.[name]),
+    })
 
     const renderPermGroup = (
         title: string,
@@ -771,6 +859,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     </select>
                                                 </div>
                                             </div>
+                                            {/* Validate & import permissions if this server has no entries yet */}
+                                            {(!toolPerms?.[groupName] && !resourcePerms?.[groupName] && !promptPerms?.[groupName]) && (
+                                                <div className="mt-2">
+                                                    <button className="button" onClick={() => validateAndImport(groupName)}>Validate & import</button>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -879,9 +973,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 </div>
                 {viewMode === 'section' ? (
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {defaults.map(def => {
+                        {Array.from(new Set([
+                            ...((config.mcp_servers || []).map(s => (s.name || '').trim())),
+                            ...defaults.map(d => (d.name || '').trim())
+                        ])).map((srvName) => {
+                            const def = defaults.find(d => (d.name || '').trim().toLowerCase() === srvName.toLowerCase()) || { name: srvName } as MCPServerDefault
                             const existing = (config.mcp_servers || []).find(
-                                s => (s.name || '').trim().toLowerCase() === (def.name || '').trim().toLowerCase()
+                                s => (s.name || '').trim().toLowerCase() === srvName.toLowerCase()
                             )
                             const enabled = !!existing?.enabled
                             // API key defaults removed; manage via config.json env
@@ -891,7 +989,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                         <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
                                             <div>
                                                 <div className="font-semibold">{def.name}</div>
-                                                <div className="text-xs text-app-muted mt-0.5">Derived from permissions files</div>
+                                                {(() => {
+                                                    const c = getCounts(def.name); const err = validateErrors[def.name]; return (
+                                                        <div className="text-xs mt-0.5">
+                                                            <span className="text-app-muted">{c.tools} tools · {c.resources} resources · {c.prompts} prompts</span>
+                                                            {validateInProgress === def.name && <span className="ml-2 text-app-muted">(validating…)</span>}
+                                                            {err && <div className="text-rose-400 mt-1">{err}</div>}
+                                                        </div>
+                                                    )
+                                                })()}
                                             </div>
                                             <div className="text-xs flex items-center gap-2">
                                                 <Toggle checked={enabled} onChange={(v) => toggleServer(def.name, v)} />
@@ -905,14 +1011,18 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                 <div className="text-xs font-mono mt-1">
                                                     {existing ? (
                                                         <>
-                                                            <div><span className="text-app-muted">cmd:</span> {existing.command || '(not set)'}</div>
-                                                            <div><span className="text-app-muted">args:</span> {(existing.args || []).join(' ')}</div>
+                                                            <div><span className="text-app-muted">cmd:</span> {(existing.command ?? '').trim() || '(not set)'}</div>
+                                                            <div><span className="text-app-muted">args:</span> {(Array.isArray(existing.args) ? existing.args : []).join(' ')}</div>
                                                         </>
                                                     ) : (
                                                         <div className="text-app-muted">Not configured</div>
                                                     )}
                                                 </div>
                                             </details>
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                <button className="button" onClick={() => validateAndImport(def.name)}>Validate & import</button>
+                                                <button className="button" onClick={() => quickStart(def.name)}>Quick start</button>
+                                            </div>
                                         </div>
                                     </details>
                                 </div>
@@ -923,7 +1033,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     <>
                         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {defaults.map(def => {
-                                const existing = (config.mcp_servers || []).find(s => s.name === def.name)
+                                const existing = (config.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === (def.name || '').trim().toLowerCase())
                                 const enabled = !!existing?.enabled
                                 const selected = selectedServer === def.name
                                 return (

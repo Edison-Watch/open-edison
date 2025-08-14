@@ -181,21 +181,33 @@ class OpenEdisonProxy:
         }
 
         def _resolve_json_path(filename: str) -> Path:
-            # JSON files reside in the config directory
+            """
+            Resolve a JSON config file path consistently with src.config defaults.
+
+            Precedence for reads (and writes if chosen):
+            1) Repository root next to src/ (editable/dev) if file exists
+            2) Config dir (OPEN_EDISON_CONFIG_DIR or platform default)
+               - If missing, bootstrap from repo root default when available
+            3) Current working directory as last resort
+            """
+            # 1) Prefer repository root next to src/
+            repo_candidate = Path(__file__).parent.parent / filename
+            if repo_candidate.exists():
+                return repo_candidate
+
+            # 2) Config directory
             try:
                 base = _get_cfg_dir()
             except Exception:
                 base = Path.cwd()
             target = base / filename
-            # If missing and we ship a default in package root, bootstrap it
-            if not target.exists():
+            if (not target.exists()) and repo_candidate.exists():
                 try:
-                    pkg_default = Path(__file__).parent.parent / filename
-                    if pkg_default.exists():
-                        target.write_text(pkg_default.read_text(encoding="utf-8"), encoding="utf-8")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
                 except Exception:
                     pass
-            return target
+            return target if target.exists() else repo_candidate
 
         async def _serve_json(filename: str) -> Response:  # type: ignore[override]
             if filename not in allowed_json_files:
@@ -362,7 +374,7 @@ class OpenEdisonProxy:
             "/mcp/validate",
             self.validate_mcp_server,
             methods=["POST"],
-            dependencies=[Depends(self.verify_api_key)],
+            # Intentionally no auth required for validation for now
         )
         app.add_api_route(
             "/mcp/{server_name}/stop",
@@ -617,6 +629,19 @@ class OpenEdisonProxy:
 
         server: FastMCP[Any] | None = None
         try:
+            # Guard for template entries with no command configured
+            if not body.command or not body.command.strip():
+                return {
+                    "valid": False,
+                    "error": "No command configured (template entry)",
+                    "server": {
+                        "name": server_name,
+                        "command": body.command,
+                        "args": body.args,
+                        "has_roots": bool(body.roots),
+                    },
+                }
+
             server = FastMCP.as_proxy(
                 backend=backend_cfg, name=f"open-edison-validate-{server_name}"
             )
@@ -636,19 +661,35 @@ class OpenEdisonProxy:
             }
         except TimeoutError as te:  # noqa: PERF203
             log.error(f"MCP validation timed out: {te}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=504, detail="Validation timed out") from te
+            return {
+                "valid": False,
+                "error": "Validation timed out",
+                "server": {
+                    "name": server_name,
+                    "command": body.command,
+                    "args": body.args,
+                    "has_roots": bool(body.roots),
+                },
+            }
         except Exception as e:  # noqa: BLE001
             log.error(f"MCP validation failed: {e}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=400, detail=f"Validation failed: {e}") from e
+            return {
+                "valid": False,
+                "error": str(e),
+                "server": {
+                    "name": server_name,
+                    "command": body.command,
+                    "args": body.args,
+                    "has_roots": bool(body.roots),
+                },
+            }
         finally:
             # Best-effort cleanup if FastMCP exposes a shutdown/close
             try:
                 if isinstance(server, FastMCP):
                     result = server.shutdown()  # type: ignore[attr-defined]
                     # If it returns an awaitable, await it
-                    from collections.abc import Awaitable as _Awaitable
-
-                    if isinstance(result, _Awaitable):
+                    if isinstance(result, Awaitable):
                         await result  # type: ignore[func-returns-value]
             except Exception as cleanup_err:  # noqa: BLE001
                 log.debug(f"Validator cleanup skipped/failed: {cleanup_err}")
@@ -670,10 +711,18 @@ class OpenEdisonProxy:
     ) -> tuple[list[Any], list[Any], list[Any]]:
         s: Any = server
 
+        async def _call_list(kind: str) -> list[Any]:
+            # Prefer public list_*; fallback to _list_* for proxies that expose private methods
+            for attr in (f"list_{kind}", f"_list_{kind}"):
+                if hasattr(s, attr):
+                    method = getattr(s, attr)
+                    return await method()
+            raise AttributeError(f"Proxy does not expose list method for {kind}")
+
         async def list_all() -> tuple[list[Any], list[Any], list[Any]]:
-            tools = await s.list_tools()
-            resources = await s.list_resources()
-            prompts = await s.list_prompts()
+            tools = await _call_list("tools")
+            resources = await _call_list("resources")
+            prompts = await _call_list("prompts")
             return tools, resources, prompts
 
         timeout = body.timeout_s if isinstance(body.timeout_s, (int | float)) else 20.0

@@ -10,5 +10,6 @@
             "read_private_data": false,
             "read_untrusted_public_data": false
         }
-    }
+    },
+    "sqlite": {}
 }

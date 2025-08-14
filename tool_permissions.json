@@ -182,6 +182,70 @@
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
+        },
+        "db_info": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Get information about the SQLite database including path, existence, size, and table count",
+            "acl": "PUBLIC"
+        },
+        "query": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Execute a raw SQL query against the database with optional parameter values",
+            "acl": "PUBLIC"
+        },
+        "list_tables": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "List all user tables in the SQLite database (excludes system tables)",
+            "acl": "PUBLIC"
+        },
+        "get_table_schema": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Get the schema information for a specific table including column details",
+            "acl": "PUBLIC"
+        },
+        "create_record": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Insert a new record into a table with specified data",
+            "acl": "PUBLIC"
+        },
+        "read_records": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Read records from a table with optional conditions, limit, and offset",
+            "acl": "PUBLIC"
+        },
+        "update_records": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Update records in a table based on specified conditions",
+            "acl": "PUBLIC"
+        },
+        "delete_records": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "description": "Delete records from a table based on specified conditions",
+            "acl": "PUBLIC"
         }
     },
     "test_server": {

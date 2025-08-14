@@ -55,3 +55,26 @@ class TestServerAPI(TestTemplate):
         assert proxy.host == "localhost"
         assert proxy.port == 3001
         assert proxy.fastapi_app is not None
+
+    def test_config_endpoint_prefers_repo_root(self, test_client):
+        """GET /config.json should prefer repo root config when present."""
+        import json
+
+        # Load config via endpoint
+        resp = test_client.get("/config.json")
+        assert resp.status_code == 200
+        data = json.loads(resp.text)
+        assert isinstance(data, dict)
+        # The repo contains a config.json with multiple mcp_servers; ensure count >= 2
+        mcp = data.get("mcp_servers", [])
+        assert isinstance(mcp, list)
+        assert len(mcp) >= 2
+
+    def test_config_host_matches_repo(self, test_client):
+        import json
+
+        resp = test_client.get("/config.json")
+        assert resp.status_code == 200
+        data = json.loads(resp.text)
+        server = data.get("server", {})
+        assert server.get("host") in {"0.0.0.0", "localhost"}

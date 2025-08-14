@@ -40,9 +40,6 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
     const acl = s.acl || {}
     const level = (acl.highest_acl_level || acl.level || '').toString().toUpperCase()
     if (level === 'PRIVATE' || level === 'SECRET' || level === 'PUBLIC') return level
-    // Fallback heuristic: if read_private_data detected, consider PRIVATE
-    const t = s.lethal_trifecta || s.trifecta || {}
-    if (t.has_private_data_access) return 'PRIVATE'
     return 'PUBLIC'
   }
   const aclBadge = (level: 'PUBLIC' | 'PRIVATE' | 'SECRET') => {
