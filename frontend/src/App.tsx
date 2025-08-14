@@ -436,11 +436,6 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
 function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     type MCPServerDefault = {
         name: string
-        description?: string
-        command: string
-        args?: string[]
-        env?: Record<string, string>
-        api_key_env?: string | null
         tools?: Record<string, PermissionFlags>
         resources?: Record<string, PermissionFlags>
         prompts?: Record<string, PermissionFlags>
@@ -497,7 +492,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [origResourcePerms, setOrigResourcePerms] = useState<ResourcePerms | null>(null)
     const [origPromptPerms, setOrigPromptPerms] = useState<PromptPerms | null>(null)
 
-    const defaultsPath = `${projectRoot}/frontend/configurations/mcp_servers_defaults.json`
     const configPath = `${projectRoot}/config.json`
     const toolPath = `${projectRoot}/tool_permissions.json`
     const resourcePath = `${projectRoot}/resource_permissions.json`
@@ -509,35 +503,44 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setLoading(true)
             setError('')
             try {
-                const [d, c, t, r, p] = await Promise.all([
-                    fetch(`/@fs${defaultsPath}`),
+                const [c, t, r, p] = await Promise.all([
                     fetch(`/@fs${configPath}`),
                     fetch(`/@fs${toolPath}`),
                     fetch(`/@fs${resourcePath}`),
                     fetch(`/@fs${promptPath}`),
                 ])
-                if (!d.ok) throw new Error('Failed to load mcp_servers_defaults.json')
                 if (!c.ok) throw new Error('Failed to load config.json')
                 if (!t.ok) throw new Error('Failed to load tool_permissions.json')
                 if (!r.ok) throw new Error('Failed to load resource_permissions.json')
                 if (!p.ok) throw new Error('Failed to load prompt_permissions.json')
-                const dJson = await d.json()
                 const cJson = await c.json()
                 const tJson = await t.json()
                 const rJson = await r.json()
                 const pJson = await p.json()
                 if (!active) return
-                const defs = Array.isArray(dJson?.servers) ? (dJson.servers as MCPServerDefault[]) : []
+                // Derive server defaults from union of permission files and config servers
+                const configServers: string[] = Array.isArray((cJson as any)?.mcp_servers)
+                    ? ((cJson as any).mcp_servers as Array<{ name: string }>).map((s) => s.name)
+                    : []
+                const keysFrom = (obj: any) => Object.keys(obj || {}).filter((k) => k !== '_metadata' && k !== 'builtin')
+                const names = Array.from(new Set<string>([
+                    ...configServers,
+                    ...keysFrom(tJson),
+                    ...keysFrom(rJson),
+                    ...keysFrom(pJson),
+                ])).sort()
+                const defs: MCPServerDefault[] = names.map((name) => ({
+                    name,
+                    tools: (tJson as any)?.[name],
+                    resources: (rJson as any)?.[name],
+                    prompts: (pJson as any)?.[name],
+                }))
                 setDefaults(defs)
                 setConfig(cJson as ConfigFile)
                 setOrigConfig(cJson as ConfigFile)
-                // Prefill tool/resource/prompt permissions from defaults if missing in the respective files
-                const mergedTools = mergePermsFromDefaults(tJson as ToolPerms, defs, 'tools')
-                const mergedResources = mergePermsFromDefaults(rJson as ResourcePerms, defs, 'resources')
-                const mergedPrompts = mergePermsFromDefaults(pJson as PromptPerms, defs, 'prompts')
-                setToolPerms(mergedTools)
-                setResourcePerms(mergedResources)
-                setPromptPerms(mergedPrompts)
+                setToolPerms(tJson as ToolPerms)
+                setResourcePerms(rJson as ResourcePerms)
+                setPromptPerms(pJson as PromptPerms)
                 setOrigToolPerms(tJson as ToolPerms)
                 setOrigResourcePerms(rJson as ResourcePerms)
                 setOrigPromptPerms(pJson as PromptPerms)
@@ -552,24 +555,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         return () => { active = false }
     }, [projectRoot])
 
-    function mergePermsFromDefaults<T extends Record<string, any>>(
-        filePerms: T,
-        defs: MCPServerDefault[],
-        kind: 'tools' | 'resources' | 'prompts'
-    ): T {
-        const output: any = { ...(filePerms || {}) }
-        for (const def of defs) {
-            const entries = (def as any)[kind] as Record<string, PermissionFlags> | undefined
-            if (!entries || Object.keys(entries).length === 0) continue
-            if (!output[def.name]) output[def.name] = {}
-            for (const [itemName, flags] of Object.entries(entries)) {
-                if (!output[def.name][itemName]) {
-                    output[def.name][itemName] = { ...flags }
-                }
-            }
-        }
-        return output
-    }
+    // Removed mergePermsFromDefaults: permission files are the source of truth now
 
     function buildConfigSaveObject(original: ConfigFile, current: ConfigFile): ConfigFile {
         // Start from original and update only changed/new servers
@@ -664,26 +650,17 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     }
 
     const toggleServer = (srvName: string, enabled: boolean) => {
-        upsertServer(srvName, (existing, def) => ({
+        upsertServer(srvName, (existing) => ({
             name: srvName,
-            command: existing?.command ?? def?.command ?? '',
-            args: existing?.args ?? def?.args ?? [],
-            env: existing?.env ?? (def?.env ?? {}),
+            command: existing?.command ?? '',
+            args: existing?.args ?? [],
+            env: existing?.env ?? {},
             enabled,
             roots: existing?.roots ?? [],
         }))
     }
 
-    const setServerApiKey = (srvName: string, envKey: string, value: string) => {
-        upsertServer(srvName, (existing, def) => ({
-            name: srvName,
-            command: existing?.command ?? def?.command ?? '',
-            args: existing?.args ?? def?.args ?? [],
-            env: { ...(existing?.env ?? def?.env ?? {}), [envKey]: value },
-            enabled: existing?.enabled ?? false,
-            roots: existing?.roots ?? [],
-        }))
-    }
+    // Removed setServerApiKey: API key defaults are no longer provided here
 
     const saveAll = async (onlyChanges: boolean) => {
         setSaving(true)
@@ -728,57 +705,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         innerCollapsible: boolean = true,
     ) => {
         if (!data) return null
-        const groups = Object.entries(data).filter(([k]) => k !== '_metadata') as Array<[string, Record<string, PermissionFlags>]> 
+        const groups = Object.entries(data).filter(([k]) => k !== '_metadata') as Array<[string, Record<string, PermissionFlags>]>
         const isServerEnabled = (name: string) => Boolean(config?.mcp_servers?.find(s => s.name === name)?.enabled)
         const inner = (
-                <div className="space-y-2">
-                    {groups.length === 0 && <div className="text-xs text-app-muted">No entries</div>}
-                    {groups.map(([groupName, entries]) => (
-                        <div key={groupName} className="border border-app-border rounded p-2">
-                            {innerCollapsible ? (
-                                <details open={isServerEnabled(groupName)}>
-                                    <summary className="text-xs text-app-muted cursor-pointer select-none">
-                                        {groupName}
-                                    </summary>
-                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        {Object.entries(entries).map(([itemName, flags]) => (
-                                            <div key={itemName} className="border border-app-border rounded p-2 bg-app-bg/50">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
-                                                    <div className="text-xs flex items-center gap-2">
-                                                        <Toggle checked={!!flags.enabled} onChange={(v) => {
-                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
-                                                        }} />
-                                                        <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-xs text-app-muted mt-1">{flags.description || 'No description provided'}</div>
-                                                <div className="mt-2 grid grid-cols-1 xs:grid-cols-3 sm:grid-cols-3 gap-3">
-                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
-                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
-                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
-                                                        }} />
-                                                        <span>write_operation</span>
-                                                    </label>
-                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
-                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
-                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
-                                                        }} />
-                                                        <span>read_private_data</span>
-                                                    </label>
-                                                    <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
-                                                        <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
-                                                            setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
-                                                        }} />
-                                                        <span>read_untrusted_public_data</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </details>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-2">
+                {groups.length === 0 && <div className="text-xs text-app-muted">No entries</div>}
+                {groups.map(([groupName, entries]) => (
+                    <div key={groupName} className="border border-app-border rounded p-2">
+                        {innerCollapsible ? (
+                            <details open={isServerEnabled(groupName)}>
+                                <summary className="text-xs text-app-muted cursor-pointer select-none">
+                                    {groupName}
+                                </summary>
+                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {Object.entries(entries).map(([itemName, flags]) => (
                                         <div key={itemName} className="border border-app-border rounded p-2 bg-app-bg/50">
                                             <div className="flex items-center justify-between gap-2">
@@ -791,7 +730,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                 </div>
                                             </div>
                                             <div className="text-xs text-app-muted mt-1">{flags.description || 'No description provided'}</div>
-                                            <div className="mt-2 grid grid-cols-1 xs:grid-cols-3 sm:grid-cols-3 gap-3">
+                                            <div className="mt-2 grid grid-cols-1 gap-2">
                                                 <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                     <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
                                                         setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
@@ -810,14 +749,94 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     }} />
                                                     <span>read_untrusted_public_data</span>
                                                 </label>
+                                                <div className="text-xs border border-app-border rounded px-2 py-1 bg-app-bg/50 flex items-center justify-between">
+                                                    <label className="text-xs text-app-muted mr-2">Access level</label>
+                                                    <select
+                                                        className="text-xs bg-app-bg border border-app-border rounded px-2 py-1"
+                                                        value={(flags as any).acl ?? 'PUBLIC'}
+                                                        onChange={(e) => {
+                                                            const val = (e.target.value || 'PUBLIC') as 'PUBLIC' | 'PRIVATE' | 'SECRET'
+                                                            setData((prev: any) => ({
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: { ...prev[groupName][itemName], acl: val }
+                                                                }
+                                                            }))
+                                                        }}
+                                                    >
+                                                        <option value="PUBLIC">Public</option>
+                                                        <option value="PRIVATE">Private</option>
+                                                        <option value="SECRET">SECRET</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                            </details>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {Object.entries(entries).map(([itemName, flags]) => (
+                                    <div key={itemName} className="border border-app-border rounded p-2 bg-app-bg/50">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
+                                            <div className="text-xs flex items-center gap-2">
+                                                <Toggle checked={!!flags.enabled} onChange={(v) => {
+                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
+                                                }} />
+                                                <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-app-muted mt-1">{flags.description || 'No description provided'}</div>
+                                        <div className="mt-2 grid grid-cols-1 gap-2">
+                                            <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
+                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
+                                                }} />
+                                                <span>write_operation</span>
+                                            </label>
+                                            <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
+                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
+                                                }} />
+                                                <span>read_private_data</span>
+                                            </label>
+                                            <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
+                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
+                                                }} />
+                                                <span>read_untrusted_public_data</span>
+                                            </label>
+                                            <div className="text-xs border border-app-border rounded px-2 py-1 bg-app-bg/50 flex items-center justify-between">
+                                                <label className="text-xs text-app-muted mr-2">Access level</label>
+                                                <select
+                                                    className="text-xs bg-app-bg border border-app-border rounded px-2 py-1"
+                                                    value={(flags as any).acl ?? 'PUBLIC'}
+                                                    onChange={(e) => {
+                                                        const val = (e.target.value || 'PUBLIC') as 'PUBLIC' | 'PRIVATE' | 'SECRET'
+                                                        setData((prev: any) => ({
+                                                            ...prev,
+                                                            [groupName]: {
+                                                                ...prev[groupName],
+                                                                [itemName]: { ...prev[groupName][itemName], acl: val }
+                                                            }
+                                                        }))
+                                                    }}
+                                                >
+                                                    <option value="PUBLIC">Public</option>
+                                                    <option value="PRIVATE">Private</option>
+                                                    <option value="SECRET">Secret</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
         )
         return (
             <div className="card">
@@ -859,79 +878,75 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     </div>
                 </div>
                 {viewMode === 'section' ? (
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {defaults.map(def => {
-                        const existing = (config.mcp_servers || []).find(s => s.name === def.name)
-                        const enabled = !!existing?.enabled
-                        const apiKeyEnv = def.api_key_env || undefined
-                        const apiVal = apiKeyEnv ? (existing?.env?.[apiKeyEnv] ?? '') : ''
-                        return (
-                            <div key={def.name} className="border border-app-border rounded p-3 bg-app-bg/50">
-                                <details open>
-                                    <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
-                                        <div>
-                                            <div className="font-semibold">{def.name}</div>
-                                            <div className="text-xs text-app-muted mt-0.5">{def.description || 'No description provided'}</div>
-                                        </div>
-                                        <div className="text-xs flex items-center gap-2">
-                                            <Toggle checked={enabled} onChange={(v) => toggleServer(def.name, v)} />
-                                            <span>{enabled ? 'Enabled' : 'Disabled'}</span>
-                                        </div>
-                                    </summary>
-                                    <div className="mt-2">
-                                        {apiKeyEnv && (
-                                            <div className="mt-1">
-                                                <label className="text-xs text-app-muted">{apiKeyEnv}</label>
-                                                <input
-                                                    className="button !w-full !text-left !py-2 !px-3"
-                                                    type="password"
-                                                    placeholder={`Enter ${apiKeyEnv}`}
-                                                    value={apiVal}
-                                                    onChange={(e) => setServerApiKey(def.name, apiKeyEnv, e.target.value)}
-                                                />
-                                            </div>
-                                        )}
-                                        <details className="mt-2">
-                                            <summary className="text-xs cursor-pointer">Command</summary>
-                                            <div className="text-xs font-mono mt-1">
-                                                <div><span className="text-app-muted">cmd:</span> {existing?.command || def.command}</div>
-                                                <div><span className="text-app-muted">args:</span> {(existing?.args || def.args || []).join(' ')}</div>
-                                            </div>
-                                        </details>
-                                    </div>
-                                </details>
-                            </div>
-                        )
-                    })}
-                </div>
-                ) : (
-                <>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {defaults.map(def => {
-                            const existing = (config.mcp_servers || []).find(s => s.name === def.name)
+                            const existing = (config.mcp_servers || []).find(
+                                s => (s.name || '').trim().toLowerCase() === (def.name || '').trim().toLowerCase()
+                            )
                             const enabled = !!existing?.enabled
-                            const selected = selectedServer === def.name
+                            // API key defaults removed; manage via config.json env
                             return (
-                                <button key={def.name} className={`text-left border rounded p-3 transition-colors ${selected ? 'border-app-accent bg-app-accent/5' : 'border-app-border bg-app-bg/50 hover:bg-app-border/20'}`} onClick={() => setSelectedServer(def.name)}>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div>
-                                            <div className="font-semibold">{def.name}</div>
-                                            <div className="text-xs text-app-muted mt-0.5">{def.description || 'No description provided'}</div>
+                                <div key={def.name} className="border border-app-border rounded p-3 bg-app-bg/50">
+                                    <details open>
+                                        <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
+                                            <div>
+                                                <div className="font-semibold">{def.name}</div>
+                                                <div className="text-xs text-app-muted mt-0.5">Derived from permissions files</div>
+                                            </div>
+                                            <div className="text-xs flex items-center gap-2">
+                                                <Toggle checked={enabled} onChange={(v) => toggleServer(def.name, v)} />
+                                                <span>{enabled ? 'Enabled' : 'Disabled'}</span>
+                                            </div>
+                                        </summary>
+                                        <div className="mt-2">
+                                            {/* No API key field by default; configure in config.json env */}
+                                            <details className="mt-2">
+                                                <summary className="text-xs cursor-pointer">Command</summary>
+                                                <div className="text-xs font-mono mt-1">
+                                                    {existing ? (
+                                                        <>
+                                                            <div><span className="text-app-muted">cmd:</span> {existing.command || '(not set)'}</div>
+                                                            <div><span className="text-app-muted">args:</span> {(existing.args || []).join(' ')}</div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="text-app-muted">Not configured</div>
+                                                    )}
+                                                </div>
+                                            </details>
                                         </div>
-                                        <span className={`text-xs ${enabled ? 'text-blue-400' : 'text-app-muted'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
-                                    </div>
-                                </button>
+                                    </details>
+                                </div>
                             )
                         })}
                     </div>
-                    {selectedServer && (
-                        <div className="mt-4 space-y-3">
-                            {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer), setToolPerms, false, false)}
-                            {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer), setResourcePerms, false, false)}
-                            {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer), setPromptPerms, false, false)}
+                ) : (
+                    <>
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {defaults.map(def => {
+                                const existing = (config.mcp_servers || []).find(s => s.name === def.name)
+                                const enabled = !!existing?.enabled
+                                const selected = selectedServer === def.name
+                                return (
+                                    <button key={def.name} className={`text-left border rounded p-3 transition-colors ${selected ? 'border-app-accent bg-app-accent/5' : 'border-app-border bg-app-bg/50 hover:bg-app-border/20'}`} onClick={() => setSelectedServer(def.name)}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="font-semibold">{def.name}</div>
+                                                <div className="text-xs text-app-muted mt-0.5">Derived from permissions files</div>
+                                            </div>
+                                            <span className={`text-xs ${enabled ? 'text-blue-400' : 'text-app-muted'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
+                                        </div>
+                                    </button>
+                                )
+                            })}
                         </div>
-                    )}
-                </>
+                        {selectedServer && (
+                            <div className="mt-4 space-y-3">
+                                {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer), setToolPerms, false, false)}
+                                {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer), setResourcePerms, false, false)}
+                                {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer), setPromptPerms, false, false)}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 

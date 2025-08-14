@@ -6,6 +6,7 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
+import traceback
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any, cast
@@ -16,7 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from fastmcp import FastMCP
 from loguru import logger as log
+from pydantic import BaseModel, Field
 
 from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
@@ -262,6 +265,18 @@ class OpenEdisonProxy:
 
         return app
 
+    def _build_backend_config_top(
+        self, server_name: str, body: "OpenEdisonProxy._ValidateRequest"
+    ) -> dict[str, Any]:
+        backend_entry: dict[str, Any] = {
+            "command": body.command,
+            "args": body.args,
+            "env": body.env or {},
+        }
+        if body.roots:
+            backend_entry["roots"] = body.roots
+        return {"mcpServers": {server_name: backend_entry}}
+
     async def start(self) -> None:
         """Start the Open Edison proxy server"""
         log.info("🚀 Starting Open Edison MCP Proxy Server")
@@ -340,6 +355,12 @@ class OpenEdisonProxy:
         app.add_api_route(
             "/mcp/{server_name}/start",
             self.start_mcp_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/validate",
+            self.validate_mcp_server,
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
@@ -565,3 +586,114 @@ class OpenEdisonProxy:
         except Exception as e:
             log.error(f"Failed to fetch sessions: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e
+
+    # ---- MCP validation ----
+    class _ValidateRequest(BaseModel):
+        name: str | None = Field(None, description="Optional server name label")
+        command: str = Field(..., description="Executable to run, e.g. 'npx' or 'uvx'")
+        args: list[str] = Field(default_factory=list, description="Arguments to the command")
+        env: dict[str, str] | None = Field(
+            default=None,
+            description="Environment variables for the subprocess (values should already exist)",
+        )
+        roots: list[str] | None = Field(
+            default=None, description="Optional allowed roots for the MCP server"
+        )
+        timeout_s: float | None = Field(20.0, description="Overall timeout for validation")
+
+    async def validate_mcp_server(self, body: _ValidateRequest) -> dict[str, Any]:  # noqa: C901
+        """
+        Validate an MCP server by launching it via FastMCP and listing capabilities.
+
+        Returns tools, resources, and prompts if successful.
+        """
+
+        server_name = body.name or "validation"
+        backend_cfg = self._build_backend_config_top(server_name, body)
+
+        log.info(
+            f"Validating MCP server command for '{server_name}': {body.command} {' '.join(body.args)}"
+        )
+
+        server: FastMCP[Any] | None = None
+        try:
+            server = FastMCP.as_proxy(
+                backend=backend_cfg, name=f"open-edison-validate-{server_name}"
+            )
+            tools, resources, prompts = await self._list_all_capabilities(server, body)
+
+            return {
+                "valid": True,
+                "server": {
+                    "name": server_name,
+                    "command": body.command,
+                    "args": body.args,
+                    "has_roots": bool(body.roots),
+                },
+                "tools": [self._safe_tool(t) for t in tools],
+                "resources": [self._safe_resource(r) for r in resources],
+                "prompts": [self._safe_prompt(p) for p in prompts],
+            }
+        except TimeoutError as te:  # noqa: PERF203
+            log.error(f"MCP validation timed out: {te}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=504, detail="Validation timed out") from te
+        except Exception as e:  # noqa: BLE001
+            log.error(f"MCP validation failed: {e}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=400, detail=f"Validation failed: {e}") from e
+        finally:
+            # Best-effort cleanup if FastMCP exposes a shutdown/close
+            try:
+                if isinstance(server, FastMCP):
+                    result = server.shutdown()  # type: ignore[attr-defined]
+                    # If it returns an awaitable, await it
+                    from collections.abc import Awaitable as _Awaitable
+
+                    if isinstance(result, _Awaitable):
+                        await result  # type: ignore[func-returns-value]
+            except Exception as cleanup_err:  # noqa: BLE001
+                log.debug(f"Validator cleanup skipped/failed: {cleanup_err}")
+
+    def _build_backend_config(
+        self, server_name: str, body: "OpenEdisonProxy._ValidateRequest"
+    ) -> dict[str, Any]:
+        backend_entry: dict[str, Any] = {
+            "command": body.command,
+            "args": body.args,
+            "env": body.env or {},
+        }
+        if body.roots:
+            backend_entry["roots"] = body.roots
+        return {"mcpServers": {server_name: backend_entry}}
+
+    async def _list_all_capabilities(
+        self, server: FastMCP[Any], body: "OpenEdisonProxy._ValidateRequest"
+    ) -> tuple[list[Any], list[Any], list[Any]]:
+        s: Any = server
+
+        async def list_all() -> tuple[list[Any], list[Any], list[Any]]:
+            tools = await s.list_tools()
+            resources = await s.list_resources()
+            prompts = await s.list_prompts()
+            return tools, resources, prompts
+
+        timeout = body.timeout_s if isinstance(body.timeout_s, (int | float)) else 20.0
+        return await asyncio.wait_for(list_all(), timeout=timeout)
+
+    def _safe_tool(self, t: Any) -> dict[str, Any]:
+        name = getattr(t, "name", None)
+        description = getattr(t, "description", None)
+        return {"name": str(name) if name is not None else "", "description": description}
+
+    def _safe_resource(self, r: Any) -> dict[str, Any]:
+        uri = getattr(r, "uri", None)
+        try:
+            uri_str = str(uri) if uri is not None else ""
+        except Exception:
+            uri_str = ""
+        description = getattr(r, "description", None)
+        return {"uri": uri_str, "description": description}
+
+    def _safe_prompt(self, p: Any) -> dict[str, Any]:
+        name = getattr(p, "name", None)
+        description = getattr(p, "description", None)
+        return {"name": str(name) if name is not None else "", "description": description}

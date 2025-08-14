@@ -35,6 +35,20 @@ function riskLevel(flags: { privateData: boolean; untrusted: boolean; external: 
 
 export function SessionTable({ sessions }: { sessions: Session[] }) {
   const [openId, setOpenId] = useState<string | null>(null)
+  const getHighestAcl = (summary: Record<string, unknown> | undefined): 'PUBLIC' | 'PRIVATE' | 'SECRET' => {
+    const s: any = summary || {}
+    const acl = s.acl || {}
+    const level = (acl.highest_acl_level || acl.level || '').toString().toUpperCase()
+    if (level === 'PRIVATE' || level === 'SECRET' || level === 'PUBLIC') return level
+    // Fallback heuristic: if read_private_data detected, consider PRIVATE
+    const t = s.lethal_trifecta || s.trifecta || {}
+    if (t.has_private_data_access) return 'PRIVATE'
+    return 'PUBLIC'
+  }
+  const aclBadge = (level: 'PUBLIC' | 'PRIVATE' | 'SECRET') => {
+    const color = level === 'SECRET' ? 'text-rose-400' : level === 'PRIVATE' ? 'text-amber-400' : 'text-green-400'
+    return <span className={color}>{level}</span>
+  }
   return (
     <div className="card">
       <table className="w-full border-collapse">
@@ -44,6 +58,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
             <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Session</th>
             <th colSpan={3} className="border-b border-app-border py-1 text-center text-xs text-app-muted align-bottom">Data access</th>
             <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Risk</th>
+            <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">ACL</th>
             <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Tool calls</th>
             <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom"></th>
           </tr>
@@ -77,6 +92,9 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
                   </td>
                   <td className="border-b border-app-border py-2">
                     {(() => { const r = riskLevel(sec); return <span className={r.colorClass}>{r.label}</span> })()}
+                  </td>
+                  <td className="border-b border-app-border py-2">
+                    {aclBadge(getHighestAcl(s.data_access_summary as any))}
                   </td>
                   <td className="border-b border-app-border py-2">{s.tool_calls.length}</td>
                   <td className="border-b border-app-border py-2">

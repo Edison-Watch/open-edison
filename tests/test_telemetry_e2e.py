@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from src.config import TelemetryConfig  # type: ignore[reportMissingImports]
 from src import telemetry as tel  # type: ignore[reportMissingImports]
+from src.config import TelemetryConfig  # type: ignore[reportMissingImports]
 
 
 @pytest.mark.skipif(

@@ -28,7 +28,6 @@ from src.telemetry import (
     record_write_operation,
 )
 
-
 ACL_RANK: dict[str, int] = {"PUBLIC": 0, "PRIVATE": 1, "SECRET": 2}
 
 # Default flat permissions applied when fields are missing in config

@@ -26,7 +26,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 
 # Run the Open Edison MCP proxy server
 .PHONY: run
-run: check_rye ## Run the Open Edison MCP Proxy Server
+run: check_rye frontend_pack ## Build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
 	rye run python main.py
 
@@ -315,6 +315,19 @@ website_build: ## Build the frontend for production
 
 website: website_install website_dev ## Install and run the frontend website
 	@:
+
+########################################################
+# Frontend packaging into src/frontend_dist for runtime
+########################################################
+
+.PHONY: frontend_pack
+frontend_pack: ## Build the frontend and sync to src/frontend_dist for the server to serve
+	@echo "$(YELLOW)🏗️  Building frontend (vite) for runtime...$(RESET)"
+	@cd frontend && npm install && npm run build
+	@echo "$(YELLOW)📦 Syncing built dashboard to src/frontend_dist...$(RESET)"
+	@rm -rf src/frontend_dist && mkdir -p src/frontend_dist
+	@cp -R frontend/dist/* src/frontend_dist/
+	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
 
 ########################################################
 # Package Build (Python wheel + packaged frontend)

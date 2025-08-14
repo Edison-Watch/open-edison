@@ -22,6 +22,7 @@ export type PermissionFlags = {
   write_operation: boolean
   read_private_data: boolean
   read_untrusted_public_data: boolean
+  acl?: 'PUBLIC' | 'PRIVATE' | 'SECRET'
   description?: string
 }
 

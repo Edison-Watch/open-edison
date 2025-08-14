@@ -116,7 +116,7 @@ def telemetry_recorder(func: Callable[P, R]) -> Callable[P, R | None]:  # noqa: 
     return wrapper
 
 
-def initialize_telemetry(override: TelemetryConfig | None = None) -> None:
+def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # noqa: C901
     """Initialize telemetry if enabled in config.
 
     Safe to call multiple times; only first call initializes.
