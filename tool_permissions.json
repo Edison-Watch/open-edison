@@ -27,98 +27,98 @@
         }
     },
     "filesystem": {
-        "filesystem_read_file": {
+        "read_file": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_read_text_file": {
+        "read_text_file": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_read_media_file": {
+        "read_media_file": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_read_multiple_files": {
+        "read_multiple_files": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_write_file": {
+        "write_file": {
             "enabled": true,
             "write_operation": true,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_edit_file": {
+        "edit_file": {
             "enabled": true,
             "write_operation": true,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_create_directory": {
+        "create_directory": {
             "enabled": true,
             "write_operation": true,
             "read_private_data": false,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_list_directory": {
+        "list_directory": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_list_directory_with_sizes": {
+        "list_directory_with_sizes": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_directory_tree": {
+        "directory_tree": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_move_file": {
+        "move_file": {
             "enabled": true,
             "write_operation": true,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_search_files": {
+        "search_files": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_get_file_info": {
+        "get_file_info": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": true,
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         },
-        "filesystem_list_allowed_directories": {
+        "list_allowed_directories": {
             "enabled": true,
             "write_operation": false,
             "read_private_data": false,
