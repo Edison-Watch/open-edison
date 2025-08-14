@@ -14,7 +14,7 @@ names (with server-name/path prefixes) to their security classifications:
 
 import json
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -29,14 +29,70 @@ from src.telemetry import (
 )
 
 
-def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
+ACL_RANK: dict[str, int] = {"PUBLIC": 0, "PRIVATE": 1, "SECRET": 2}
+
+# Default flat permissions applied when fields are missing in config
+DEFAULT_PERMISSIONS: dict[str, Any] = {
+    "enabled": False,
+    "write_operation": False,
+    "read_private_data": False,
+    "read_untrusted_public_data": False,
+    "acl": "PUBLIC",
+}
+
+
+def _normalize_acl(value: Any, *, default: str = "PUBLIC") -> str:
+    """Normalize ACL string, defaulting and uppercasing; validate against known values."""
+    try:
+        if value is None:
+            return default
+        acl = str(value).upper().strip()
+        if acl not in ACL_RANK:
+            # Fallback to default if invalid
+            return default
+        return acl
+    except Exception:
+        return default
+
+
+def _apply_permission_defaults(config_perms: dict[str, Any]) -> dict[str, Any]:
+    """Merge provided config flags with DEFAULT_PERMISSIONS, including ACL derivation."""
+    # Start from defaults
+    merged: dict[str, Any] = dict(DEFAULT_PERMISSIONS)
+    # Booleans
+    enabled = bool(config_perms.get("enabled", merged["enabled"]))
+    write_operation = bool(config_perms.get("write_operation", merged["write_operation"]))
+    read_private_data = bool(config_perms.get("read_private_data", merged["read_private_data"]))
+    read_untrusted_public_data = bool(
+        config_perms.get("read_untrusted_public_data", merged["read_untrusted_public_data"])  # type: ignore[reportUnknownArgumentType]
+    )
+
+    # ACL: explicit value wins; otherwise default PRIVATE if read_private_data True, else default
+    if "acl" in config_perms and config_perms.get("acl") is not None:
+        acl = _normalize_acl(config_perms.get("acl"), default=str(merged["acl"]))
+    else:
+        acl = _normalize_acl("PRIVATE" if read_private_data else str(merged["acl"]))
+
+    merged.update(
+        {
+            "enabled": enabled,
+            "write_operation": write_operation,
+            "read_private_data": read_private_data,
+            "read_untrusted_public_data": read_untrusted_public_data,
+            "acl": acl,
+        }
+    )
+    return merged
+
+
+def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, Any]]:
     if config_path.exists():
         with open(config_path) as f:
             data: dict[str, Any] = json.load(f)
 
             # Handle new format: server -> {tool -> permissions}
             # Convert to flat tool -> permissions format
-            flat_permissions: dict[str, dict[str, bool]] = {}
+            flat_permissions: dict[str, dict[str, Any]] = {}
             tool_to_server: dict[str, str] = {}
             server_tools: dict[str, set[str]] = {}
 
@@ -83,14 +139,7 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
 
                     # Convert to flat format with explicit type casting
                     tool_perms_dict: dict[str, Any] = tool_permissions  # type: ignore
-                    flat_permissions[tool_name] = {
-                        "enabled": bool(tool_perms_dict.get("enabled", True)),
-                        "write_operation": bool(tool_perms_dict.get("write_operation", False)),
-                        "read_private_data": bool(tool_perms_dict.get("read_private_data", False)),
-                        "read_untrusted_public_data": bool(
-                            tool_perms_dict.get("read_untrusted_public_data", False)
-                        ),
-                    }
+                    flat_permissions[tool_name] = _apply_permission_defaults(tool_perms_dict)
 
             log.debug(
                 f"Loaded {len(flat_permissions)} tool permissions from {len(server_tools)} servers in {config_path}"
@@ -106,8 +155,8 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, bool]]:
         return {}
 
 
-@lru_cache(maxsize=1)
-def _load_tool_permissions_cached() -> dict[str, dict[str, bool]]:
+@cache
+def _load_tool_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load tool permissions from JSON configuration file with LRU caching."""
     config_path = Path(__file__).parent.parent.parent / "tool_permissions.json"
 
@@ -121,8 +170,8 @@ def _load_tool_permissions_cached() -> dict[str, dict[str, bool]]:
         return {}
 
 
-@lru_cache(maxsize=1)
-def _load_resource_permissions_cached() -> dict[str, dict[str, bool]]:
+@cache
+def _load_resource_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load resource permissions from JSON configuration file with LRU caching."""
     config_path = Path(__file__).parent.parent.parent / "resource_permissions.json"
 
@@ -136,8 +185,8 @@ def _load_resource_permissions_cached() -> dict[str, dict[str, bool]]:
         return {}
 
 
-@lru_cache(maxsize=1)
-def _load_prompt_permissions_cached() -> dict[str, dict[str, bool]]:
+@cache
+def _load_prompt_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load prompt permissions from JSON configuration file with LRU caching."""
     config_path = Path(__file__).parent.parent.parent / "prompt_permissions.json"
 
@@ -151,53 +200,43 @@ def _load_prompt_permissions_cached() -> dict[str, dict[str, bool]]:
         return {}
 
 
-@lru_cache(maxsize=128)
-def _classify_tool_permissions_cached(tool_name: str) -> dict[str, bool]:
+@cache
+def _classify_tool_permissions_cached(tool_name: str) -> dict[str, Any]:
     """Classify tool permissions with LRU caching."""
     return _classify_permissions_cached(tool_name, _load_tool_permissions_cached(), "tool")
 
 
-@lru_cache(maxsize=128)
-def _classify_resource_permissions_cached(resource_name: str) -> dict[str, bool]:
+@cache
+def _classify_resource_permissions_cached(resource_name: str) -> dict[str, Any]:
     """Classify resource permissions with LRU caching."""
     return _classify_permissions_cached(
         resource_name, _load_resource_permissions_cached(), "resource"
     )
 
 
-@lru_cache(maxsize=128)
-def _classify_prompt_permissions_cached(prompt_name: str) -> dict[str, bool]:
+@cache
+def _classify_prompt_permissions_cached(prompt_name: str) -> dict[str, Any]:
     """Classify prompt permissions with LRU caching."""
     return _classify_permissions_cached(prompt_name, _load_prompt_permissions_cached(), "prompt")
 
 
-def _get_builtin_tool_permissions(name: str) -> dict[str, bool] | None:
+def _get_builtin_tool_permissions(name: str) -> dict[str, Any] | None:
     """Get permissions for built-in safe tools."""
     builtin_safe_tools = ["echo", "get_server_info", "get_security_status"]
     if name in builtin_safe_tools:
-        permissions = {
-            "enabled": True,
-            "write_operation": False,
-            "read_private_data": False,
-            "read_untrusted_public_data": False,
-        }
+        permissions = _apply_permission_defaults({"enabled": True})
         log.debug(f"Built-in safe tool {name}: {permissions}")
         return permissions
     return None
 
 
 def _get_exact_match_permissions(
-    name: str, permissions_config: dict[str, dict[str, bool]], type_name: str
-) -> dict[str, bool] | None:
+    name: str, permissions_config: dict[str, dict[str, Any]], type_name: str
+) -> dict[str, Any] | None:
     """Check for exact match permissions."""
     if name in permissions_config and not name.startswith("_"):
         config_perms = permissions_config[name]
-        permissions = {
-            "enabled": config_perms.get("enabled", False),
-            "write_operation": config_perms.get("write_operation", False),
-            "read_private_data": config_perms.get("read_private_data", False),
-            "read_untrusted_public_data": config_perms.get("read_untrusted_public_data", False),
-        }
+        permissions = _apply_permission_defaults(config_perms)
         log.debug(f"Found exact match for {type_name} {name}: {permissions}")
         return permissions
     return None
@@ -230,8 +269,8 @@ def _get_wildcard_patterns(name: str, type_name: str) -> list[str]:
 
 
 def _classify_permissions_cached(
-    name: str, permissions_config: dict[str, dict[str, bool]], type_name: str
-) -> dict[str, bool]:
+    name: str, permissions_config: dict[str, dict[str, Any]], type_name: str
+) -> dict[str, Any]:
     """Generic permission classification with pattern matching support."""
     # Built-in safe tools that don't need external config (only for tools)
     if type_name == "tool":
@@ -249,12 +288,7 @@ def _classify_permissions_cached(
     for pattern in wildcard_patterns:
         if pattern in permissions_config:
             config_perms = permissions_config[pattern]
-            permissions = {
-                "enabled": config_perms.get("enabled", False),
-                "write_operation": config_perms.get("write_operation", False),
-                "read_private_data": config_perms.get("read_private_data", False),
-                "read_untrusted_public_data": config_perms.get("read_untrusted_public_data", False),
-            }
+            permissions = _apply_permission_defaults(config_perms)
             log.debug(f"Found wildcard match for {type_name} {name} using {pattern}: {permissions}")
             return permissions
 
@@ -283,6 +317,8 @@ class DataAccessTracker:
     has_private_data_access: bool = False
     has_untrusted_content_exposure: bool = False
     has_external_communication: bool = False
+    # ACL tracking: the most restrictive ACL encountered during this session via reads
+    highest_acl_level: str = "PUBLIC"
 
     def is_trifecta_achieved(self) -> bool:
         """Check if the lethal trifecta has been achieved."""
@@ -292,31 +328,31 @@ class DataAccessTracker:
             and self.has_external_communication
         )
 
-    def _load_tool_permissions(self) -> dict[str, dict[str, bool]]:
+    def _load_tool_permissions(self) -> dict[str, dict[str, Any]]:
         """Load tool permissions from JSON configuration file with caching."""
         return _load_tool_permissions_cached()
 
-    def _load_resource_permissions(self) -> dict[str, dict[str, bool]]:
+    def _load_resource_permissions(self) -> dict[str, dict[str, Any]]:
         """Load resource permissions from JSON configuration file with caching."""
         return _load_resource_permissions_cached()
 
-    def _load_prompt_permissions(self) -> dict[str, dict[str, bool]]:
+    def _load_prompt_permissions(self) -> dict[str, dict[str, Any]]:
         """Load prompt permissions from JSON configuration file with caching."""
         return _load_prompt_permissions_cached()
 
-    def _classify_by_tool_name(self, tool_name: str) -> dict[str, bool]:
+    def _classify_by_tool_name(self, tool_name: str) -> dict[str, Any]:
         """Classify permissions based on external JSON configuration only."""
         return _classify_tool_permissions_cached(tool_name)
 
-    def _classify_by_resource_name(self, resource_name: str) -> dict[str, bool]:
+    def _classify_by_resource_name(self, resource_name: str) -> dict[str, Any]:
         """Classify resource permissions based on external JSON configuration only."""
         return _classify_resource_permissions_cached(resource_name)
 
-    def _classify_by_prompt_name(self, prompt_name: str) -> dict[str, bool]:
+    def _classify_by_prompt_name(self, prompt_name: str) -> dict[str, Any]:
         """Classify prompt permissions based on external JSON configuration only."""
         return _classify_prompt_permissions_cached(prompt_name)
 
-    def _classify_tool_permissions(self, tool_name: str) -> dict[str, bool]:
+    def _classify_tool_permissions(self, tool_name: str) -> dict[str, Any]:
         """
         Classify tool permissions based on tool name.
 
@@ -329,7 +365,7 @@ class DataAccessTracker:
         log.debug(f"Classified tool {tool_name}: {permissions}")
         return permissions
 
-    def _classify_resource_permissions(self, resource_name: str) -> dict[str, bool]:
+    def _classify_resource_permissions(self, resource_name: str) -> dict[str, Any]:
         """
         Classify resource permissions based on resource name.
 
@@ -342,7 +378,7 @@ class DataAccessTracker:
         log.debug(f"Classified resource {resource_name}: {permissions}")
         return permissions
 
-    def _classify_prompt_permissions(self, prompt_name: str) -> dict[str, bool]:
+    def _classify_prompt_permissions(self, prompt_name: str) -> dict[str, Any]:
         """
         Classify prompt permissions based on prompt name.
 
@@ -355,15 +391,15 @@ class DataAccessTracker:
         log.debug(f"Classified prompt {prompt_name}: {permissions}")
         return permissions
 
-    def get_tool_permissions(self, tool_name: str) -> dict[str, bool]:
+    def get_tool_permissions(self, tool_name: str) -> dict[str, Any]:
         """Get tool permissions based on tool name."""
         return self._classify_tool_permissions(tool_name)
 
-    def get_resource_permissions(self, resource_name: str) -> dict[str, bool]:
+    def get_resource_permissions(self, resource_name: str) -> dict[str, Any]:
         """Get resource permissions based on resource name."""
         return self._classify_resource_permissions(resource_name)
 
-    def get_prompt_permissions(self, prompt_name: str) -> dict[str, bool]:
+    def get_prompt_permissions(self, prompt_name: str) -> dict[str, Any]:
         """Get prompt permissions based on prompt name."""
         return self._classify_prompt_permissions(prompt_name)
 
@@ -382,7 +418,7 @@ class DataAccessTracker:
         """
         # Check if trifecta is already achieved before processing this call
         if self.is_trifecta_achieved():
-            log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta already achieved")
+            log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta achieved")
             record_tool_call_blocked(tool_name, "trifecta")
             raise SecurityError(f"Tool call '{tool_name}' blocked: lethal trifecta achieved")
 
@@ -397,10 +433,29 @@ class DataAccessTracker:
             record_tool_call_blocked(tool_name, "disabled")
             raise SecurityError(f"Tool call '{tool_name}' blocked: tool is disabled")
 
+        # ACL-based write downgrade prevention
+        tool_acl: str = _normalize_acl(permissions.get("acl"), default="PUBLIC")
+        if permissions["write_operation"]:
+            current_rank = ACL_RANK.get(self.highest_acl_level, 0)
+            write_rank = ACL_RANK.get(tool_acl, 0)
+            if write_rank < current_rank:
+                log.error(
+                    f"🚫 BLOCKING tool call {tool_name} - write to lower ACL ({tool_acl}) while session has higher ACL {self.highest_acl_level}"
+                )
+                record_tool_call_blocked(tool_name, "acl_downgrade")
+                raise SecurityError(
+                    f"Tool call '{tool_name}' blocked: write to lower ACL ({tool_acl}) not allowed after accessing {self.highest_acl_level} data"
+                )
+
         if permissions["read_private_data"]:
             self.has_private_data_access = True
             log.info(f"🔒 Private data access detected: {tool_name}")
             record_private_data_access("tool", tool_name)
+            # Update highest ACL based on tool ACL when reading private data
+            current_rank = ACL_RANK.get(self.highest_acl_level, 0)
+            tool_rank = ACL_RANK.get(tool_acl, 0)
+            if tool_rank > current_rank:
+                self.highest_acl_level = tool_acl
 
         if permissions["read_untrusted_public_data"]:
             self.has_untrusted_content_exposure = True
@@ -412,7 +467,7 @@ class DataAccessTracker:
             log.info(f"✍️ Write operation detected: {tool_name}")
             record_write_operation("tool", tool_name)
 
-        # Log if trifecta is achieved after this call
+        # Log if trifecta is achieved after this call (blocking begins on subsequent calls)
         if self.is_trifecta_achieved():
             log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after tool call: {tool_name}")
 
@@ -437,7 +492,7 @@ class DataAccessTracker:
                 f"🚫 BLOCKING resource access {resource_name} - lethal trifecta already achieved"
             )
             raise SecurityError(
-                f"Resource access '{resource_name}' blocked: lethal trifecta achieved"
+                f"Resource access '{resource_name}' blocked: lethal trifecta already achieved"
             )
 
         # Get resource permissions and update trifecta flags
@@ -461,6 +516,9 @@ class DataAccessTracker:
         # Log if trifecta is achieved after this access
         if self.is_trifecta_achieved():
             log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after resource access: {resource_name}")
+            raise SecurityError(
+                f"Resource access '{resource_name}' blocked: lethal trifecta achieved"
+            )
 
         return "placeholder_id"
 
@@ -503,6 +561,7 @@ class DataAccessTracker:
         # Log if trifecta is achieved after this access
         if self.is_trifecta_achieved():
             log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after prompt access: {prompt_name}")
+            raise SecurityError(f"Prompt access '{prompt_name}' blocked: lethal trifecta achieved")
 
         return "placeholder_id"
 
@@ -519,6 +578,9 @@ class DataAccessTracker:
                 "has_untrusted_content_exposure": self.has_untrusted_content_exposure,
                 "has_external_communication": self.has_external_communication,
                 "trifecta_achieved": self.is_trifecta_achieved(),
+            },
+            "acl": {
+                "highest_acl_level": self.highest_acl_level,
             },
         }
 

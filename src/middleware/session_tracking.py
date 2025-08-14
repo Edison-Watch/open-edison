@@ -170,6 +170,13 @@ def get_session_from_db(session_id: str) -> MCPSession:
                 data_access_tracker.has_external_communication = trifecta.get(
                     "has_external_communication", False
                 )
+            # Restore ACL highest level if present
+            if isinstance(summary_data, dict) and "acl" in summary_data:
+                acl_summary: Any = summary_data.get("acl")  # type: ignore
+                if isinstance(acl_summary, dict):
+                    highest = acl_summary.get("highest_acl_level")  # type: ignore
+                    if isinstance(highest, str) and highest:
+                        data_access_tracker.highest_acl_level = highest
 
         return MCPSession(
             session_id=session_id,
