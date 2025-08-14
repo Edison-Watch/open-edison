@@ -87,7 +87,7 @@ The server will be available at `http://localhost:3000`.
 
 ```bash
 # After cloning the repo
-make run_docker
+make docker_run
 ```
 
 The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
