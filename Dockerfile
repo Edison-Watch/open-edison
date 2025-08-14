@@ -1,6 +1,16 @@
 # Open Edison Docker Image
 FROM node:20-slim AS frontend
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    bash \
+    git \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 WORKDIR /app/frontend
