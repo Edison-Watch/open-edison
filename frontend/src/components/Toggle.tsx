@@ -1,4 +1,3 @@
-import React from 'react'
 
 export function Toggle({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
   return (
