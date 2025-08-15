@@ -1,4 +1,4 @@
-# Open Edison
+# OpenEdison
 
 Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
