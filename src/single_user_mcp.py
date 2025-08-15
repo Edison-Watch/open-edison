@@ -11,7 +11,6 @@ from fastmcp import FastMCP
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
-from src.mcp_manager import MCPManager
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
@@ -42,9 +41,8 @@ class SingleUserMCP(FastMCP[Any]):
     All enabled MCP servers are mounted through a single FastMCP composite proxy.
     """
 
-    def __init__(self, mcp_manager: MCPManager):
+    def __init__(self):
         super().__init__(name="open-edison-single-user")
-        self.mcp_manager: MCPManager = mcp_manager
         self.mounted_servers: dict[str, MountedServerInfo] = {}
         self.composite_proxy: FastMCP[Any] | None = None
 
@@ -113,12 +111,6 @@ class SingleUserMCP(FastMCP[Any]):
             if not enabled_servers:
                 log.info("No real servers to mount in composite proxy")
                 return True
-
-            # Start all required server processes
-            for server_config in enabled_servers:
-                if not await self.mcp_manager.is_server_running(server_config.name):
-                    log.info(f"Starting server process: {server_config.name}")
-                    _ = await self.mcp_manager.start_server(server_config.name)
 
             # Convert to FastMCP config format
             fastmcp_config = self._convert_to_fastmcp_config(enabled_servers)
@@ -218,7 +210,6 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             # Remove from mounted servers
             await self._cleanup_mounted_server(excluded_server)
-            await self._stop_server_process(excluded_server)
 
             # Get remaining servers that should be in composite proxy
             remaining_configs = [
@@ -245,11 +236,6 @@ class SingleUserMCP(FastMCP[Any]):
         if server_name in self.mounted_servers:
             del self.mounted_servers[server_name]
             log.info(f"✅ Unmounted MCP server: {server_name}")
-
-    async def _stop_server_process(self, server_name: str) -> None:
-        """Stop the server subprocess if it's not a test server."""
-        if server_name != "test-echo":
-            await self.mcp_manager.stop_server(server_name)
 
     async def get_mounted_servers(self) -> list[ServerStatusInfo]:
         """Get list of currently mounted servers."""

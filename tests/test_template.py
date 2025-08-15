@@ -81,11 +81,6 @@ class TestTemplate:
                 host=self.test_config.server.host, port=self.test_config.server.port
             )
 
-            # Also mock the config used by the server itself
-            proxy.mcp_manager.server_configs = {
-                server.name: server for server in self.test_config.mcp_servers
-            }
-
             with TestClient(proxy.fastapi_app) as client:
                 yield client
         finally:
@@ -134,11 +129,6 @@ class BackgroundServerTemplate(TestTemplate):
                 port=self.test_config.server.port
                 - 1,  # Use port 3000 for FastMCP, 3001 for FastAPI
             )
-
-            # Also mock the config used by the server components
-            self.server_proxy.mcp_manager.server_configs = {
-                server.name: server for server in self.test_config.mcp_servers
-            }
 
             async def init_single_user_mcp():
                 await self.server_proxy.single_user_mcp.initialize(self.test_config)
@@ -194,9 +184,6 @@ class BackgroundServerTemplate(TestTemplate):
 
             yield
 
-            # Stop any running MCP servers
-            if self.server_proxy and self.server_proxy.mcp_manager:
-                asyncio.run(self.server_proxy.mcp_manager.shutdown())
         finally:
             # Restore original config
             src.config.config = original_config

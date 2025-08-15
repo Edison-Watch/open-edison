@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import traceback
 import uuid
 from collections.abc import Callable
@@ -175,12 +176,27 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
 
     # Provider/meter
     try:
+        # Capture platform/runtime details
+        install_id = _ensure_install_id()
+        os_type = platform.system().lower() or "unknown"
+        os_description = platform.platform()
+        host_arch = platform.machine()
+        runtime_version = platform.python_version()
+        service_version = getattr(config, "version", "unknown")
+
         # Attach a resource so metrics include service identifiers
         resource = Resource.create(
             {
                 "service.name": "open-edison",
                 "service.namespace": "open-edison",
+                "service.version": service_version,
+                "service.instance.id": install_id,
                 "telemetry.sdk.language": "python",
+                "os.type": os_type,
+                "os.description": os_description,
+                "host.arch": host_arch,
+                "process.runtime.name": "python",
+                "process.runtime.version": runtime_version,
             }
         )
         provider: Any = ot_sdk_metrics.MeterProvider(metric_readers=[reader], resource=resource)
@@ -209,7 +225,7 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
         log.error("Metrics instrument creation failed\n{}", traceback.format_exc())
         return
 
-    _ = _ensure_install_id()
+    _ = install_id
     _initialized = True
     log.info("📈 Telemetry initialized")
 

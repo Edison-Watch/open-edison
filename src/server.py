@@ -24,7 +24,6 @@ from pydantic import BaseModel, Field
 
 from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
-from src.mcp_manager import MCPManager
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
@@ -58,8 +57,7 @@ class OpenEdisonProxy:
         self.port: int = port
 
         # Initialize components
-        self.mcp_manager: MCPManager = MCPManager()
-        self.single_user_mcp: SingleUserMCP = SingleUserMCP(self.mcp_manager)
+        self.single_user_mcp: SingleUserMCP = SingleUserMCP()
 
         # Initialize FastAPI app for management
         self.fastapi_app: FastAPI = self._create_fastapi_app()
@@ -357,12 +355,6 @@ class OpenEdisonProxy:
         log.info("🚀 Starting both FastAPI and FastMCP servers...")
         _ = await asyncio.gather(*servers_to_run)
 
-    async def shutdown(self) -> None:
-        """Shutdown the proxy server and all MCP servers"""
-        log.info("🛑 Shutting down Open Edison proxy server")
-        await self.mcp_manager.shutdown()
-        log.info("✅ Open Edison proxy server shutdown complete")
-
     def _register_routes(self, app: FastAPI) -> None:
         """Register all routes for the FastAPI app"""
         # Register routes with their decorators
@@ -405,6 +397,18 @@ class OpenEdisonProxy:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
 
+    async def mcp_status(self) -> dict[str, list[dict[str, Any]]]:
+        """Get status of configured MCP servers (auth required)."""
+        return {
+            "servers": [
+                {
+                    "name": server.name,
+                    "enabled": server.enabled,
+                }
+                for server in config.mcp_servers
+            ]
+        }
+
     def _handle_server_operation_error(
         self, operation: str, server_name: str, error: Exception
     ) -> HTTPException:
@@ -429,19 +433,6 @@ class OpenEdisonProxy:
     async def health_check(self) -> dict[str, Any]:
         """Health check endpoint"""
         return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
-
-    async def mcp_status(self) -> dict[str, list[dict[str, str | bool]]]:
-        """Get status of configured MCP servers"""
-        return {
-            "servers": [
-                {
-                    "name": server.name,
-                    "enabled": server.enabled,
-                    "running": await self.mcp_manager.is_server_running(server.name),
-                }
-                for server in config.mcp_servers
-            ]
-        }
 
     async def get_mounted_servers(self) -> dict[str, Any]:
         """Get list of currently mounted MCP servers."""
