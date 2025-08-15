@@ -4,6 +4,8 @@ Open-source MCP security gateway that prevents data exfiltration—via direct ac
 
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
+## Interested in connecting AI to your business software with proper access controls? [Contact us](hello@edison.watch) to discuss.
+
 ## Features
 
 - **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
