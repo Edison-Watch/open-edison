@@ -26,7 +26,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 
 # Run the Open Edison MCP proxy server
 .PHONY: run
-run: check_rye frontend_pack ## Build dashboard and run the Open Edison MCP Proxy Server
+run: check_rye sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
 	rye run python main.py
 

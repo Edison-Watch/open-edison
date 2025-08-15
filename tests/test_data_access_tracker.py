@@ -171,23 +171,17 @@ def test_trifecta_blocking():
         tracker.add_tool_call("filesystem_read_file")
 
 
-def test_trifecta_achieves_then_blocks():
-    """Test that trifecta achievement enables blocking on subsequent calls."""
-    # For this test, we need to add a tool with untrusted content to the JSON config
-    # Since current Open Edison doesn't have web tools, we'll test the logic
+def test_trifecta_prevent_immediate_block():
+    """If a call would complete the trifecta, it must be blocked immediately."""
     tracker = DataAccessTracker()
 
-    # Set up trifecta components manually for testing (missing JSON config for web tools)
+    # Simulate two components already present
     tracker.has_private_data_access = True
     tracker.has_untrusted_content_exposure = True
 
-    # Add external communication to achieve trifecta
-    tracker.add_tool_call("sqlite_create_record")  # Write operation
-    assert tracker.is_trifecta_achieved()
-
-    # Next call should be blocked
-    with pytest.raises(SecurityError, match="lethal trifecta achieved"):
-        tracker.add_tool_call("filesystem_read_file")
+    # A write-operation tool would complete the trifecta → block
+    with pytest.raises(SecurityError, match="trifecta"):
+        tracker.add_tool_call("sqlite_create_record")
 
 
 def test_mock_load_tool_permissions_with_json():
@@ -261,12 +255,9 @@ def test_mock_load_tool_permissions_with_json_argument():
     ):
         tracker = DataAccessTracker()
 
-        # Test that our custom tool triggers all trifecta flags
-        tracker.add_tool_call("test_tool")
-        assert tracker.has_private_data_access
-        assert tracker.has_external_communication
-        assert tracker.has_untrusted_content_exposure
-        assert tracker.is_trifecta_achieved()
+        # Immediate blocking when a single tool would complete the trifecta
+        with pytest.raises(SecurityError, match="trifecta"):
+            tracker.add_tool_call("test_tool")
 
 
 def test_mock_function_with_json_argument():

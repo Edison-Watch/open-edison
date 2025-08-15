@@ -23,6 +23,8 @@ from loguru import logger as log
 from src.config import ConfigError
 from src.telemetry import (
     record_private_data_access,
+    record_prompt_access_blocked,
+    record_resource_access_blocked,
     record_tool_call_blocked,
     record_untrusted_public_data,
     record_write_operation,
@@ -238,6 +240,16 @@ def _get_exact_match_permissions(
         permissions = _apply_permission_defaults(config_perms)
         log.debug(f"Found exact match for {type_name} {name}: {permissions}")
         return permissions
+    # Fallback: support names like "server_tool" by checking the part after first underscore
+    if "_" in name:
+        suffix = name.split("_", 1)[1]
+        if suffix in permissions_config and not suffix.startswith("_"):
+            config_perms = permissions_config[suffix]
+            permissions = _apply_permission_defaults(config_perms)
+            log.debug(
+                f"Found fallback match for {type_name} {name} using suffix {suffix}: {permissions}"
+            )
+            return permissions
     return None
 
 
@@ -402,38 +414,24 @@ class DataAccessTracker:
         """Get prompt permissions based on prompt name."""
         return self._classify_prompt_permissions(prompt_name)
 
-    def add_tool_call(self, tool_name: str) -> str:
-        """
-        Add a tool call and update trifecta flags based on tool classification.
+    def _would_call_complete_trifecta(self, permissions: dict[str, Any]) -> bool:
+        """Return True if applying these permissions would complete the trifecta."""
+        would_private = self.has_private_data_access or bool(permissions.get("read_private_data"))
+        would_untrusted = self.has_untrusted_content_exposure or bool(
+            permissions.get("read_untrusted_public_data")
+        )
+        would_write = self.has_external_communication or bool(permissions.get("write_operation"))
+        return bool(would_private and would_untrusted and would_write)
 
-        Args:
-            tool_name: Name of the tool being called
-
-        Returns:
-            Placeholder ID for compatibility
-
-        Raises:
-            SecurityError: If the lethal trifecta is already achieved and this call would be blocked
-        """
-        # Check if trifecta is already achieved before processing this call
-        if self.is_trifecta_achieved():
-            log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta achieved")
-            record_tool_call_blocked(tool_name, "trifecta")
-            raise SecurityError(f"Tool call '{tool_name}' blocked: lethal trifecta achieved")
-
-        # Get tool permissions and update trifecta flags
-        permissions = self._classify_tool_permissions(tool_name)
-
-        log.debug(f"add_tool_call: Tool permissions: {permissions}")
-
-        # Check if tool is enabled
+    def _enforce_tool_enabled(self, permissions: dict[str, Any], tool_name: str) -> None:
         if permissions["enabled"] is False:
             log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
             record_tool_call_blocked(tool_name, "disabled")
-            raise SecurityError(f"Tool call '{tool_name}' blocked: tool is disabled")
+            raise SecurityError(f"'{tool_name}' / Tool disabled")
 
-        # ACL-based write downgrade prevention
-        tool_acl: str = _normalize_acl(permissions.get("acl"), default="PUBLIC")
+    def _enforce_acl_downgrade_block(
+        self, tool_acl: str, permissions: dict[str, Any], tool_name: str
+    ) -> None:
         if permissions["write_operation"]:
             current_rank = ACL_RANK.get(self.highest_acl_level, 0)
             write_rank = ACL_RANK.get(tool_acl, 0)
@@ -442,45 +440,82 @@ class DataAccessTracker:
                     f"🚫 BLOCKING tool call {tool_name} - write to lower ACL ({tool_acl}) while session has higher ACL {self.highest_acl_level}"
                 )
                 record_tool_call_blocked(tool_name, "acl_downgrade")
-                raise SecurityError(
-                    f"Tool call '{tool_name}' blocked: write to lower ACL ({tool_acl}) not allowed after accessing {self.highest_acl_level} data"
-                )
+                raise SecurityError(f"'{tool_name}' / ACL (level={self.highest_acl_level})")
 
+    def _apply_permissions_effects(
+        self,
+        permissions: dict[str, Any],
+        *,
+        source_type: str,
+        name: str,
+    ) -> None:
+        """Apply side effects (flags, ACL, telemetry) for any source type."""
+        acl_value: str = _normalize_acl(permissions.get("acl"), default="PUBLIC")
         if permissions["read_private_data"]:
             self.has_private_data_access = True
-            log.info(f"🔒 Private data access detected: {tool_name}")
-            record_private_data_access("tool", tool_name)
-            # Update highest ACL based on tool ACL when reading private data
+            log.info(f"🔒 Private data access detected via {source_type}: {name}")
+            record_private_data_access(source_type, name)
+            # Update highest ACL based on ACL when reading private data
             current_rank = ACL_RANK.get(self.highest_acl_level, 0)
-            tool_rank = ACL_RANK.get(tool_acl, 0)
-            if tool_rank > current_rank:
-                self.highest_acl_level = tool_acl
+            new_rank = ACL_RANK.get(acl_value, 0)
+            if new_rank > current_rank:
+                self.highest_acl_level = acl_value
 
         if permissions["read_untrusted_public_data"]:
             self.has_untrusted_content_exposure = True
-            log.info(f"🌐 Untrusted content exposure detected: {tool_name}")
-            record_untrusted_public_data("tool", tool_name)
+            log.info(f"🌐 Untrusted content exposure detected via {source_type}: {name}")
+            record_untrusted_public_data(source_type, name)
 
         if permissions["write_operation"]:
             self.has_external_communication = True
-            log.info(f"✍️ Write operation detected: {tool_name}")
-            record_write_operation("tool", tool_name)
+            log.info(f"✍️ Write operation detected via {source_type}: {name}")
+            record_write_operation(source_type, name)
 
-        # Log if trifecta is achieved after this call (blocking begins on subsequent calls)
+    def add_tool_call(self, tool_name: str):
+        """
+        Add a tool call and update trifecta flags based on tool classification.
+
+        Args:
+            tool_name: Name of the tool being called
+
+        Raises:
+            SecurityError: If the lethal trifecta is already achieved and this call would be blocked
+        """
+        # Check if trifecta is already achieved before processing this call
         if self.is_trifecta_achieved():
-            log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after tool call: {tool_name}")
+            log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta achieved")
+            record_tool_call_blocked(tool_name, "trifecta")
+            raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
-        return "placeholder_id"
+        # Get tool permissions and update trifecta flags
+        permissions = self._classify_tool_permissions(tool_name)
 
-    def add_resource_access(self, resource_name: str) -> str:
+        log.debug(f"add_tool_call: Tool permissions: {permissions}")
+
+        # Check if tool is enabled
+        self._enforce_tool_enabled(permissions, tool_name)
+
+        # ACL-based write downgrade prevention
+        tool_acl: str = _normalize_acl(permissions.get("acl"), default="PUBLIC")
+        self._enforce_acl_downgrade_block(tool_acl, permissions, tool_name)
+
+        # Pre-check: would this call achieve the lethal trifecta? If so, block immediately
+        if self._would_call_complete_trifecta(permissions):
+            log.error(f"🚫 BLOCKING tool call {tool_name} - would achieve lethal trifecta")
+            record_tool_call_blocked(tool_name, "trifecta_prevent")
+            raise SecurityError(f"'{tool_name}' / Lethal trifecta")
+
+        self._apply_permissions_effects(permissions, source_type="tool", name=tool_name)
+
+        # We proactively prevent trifecta; by design we should never reach a state where
+        # a completed call newly achieves trifecta.
+
+    def add_resource_access(self, resource_name: str):
         """
         Add a resource access and update trifecta flags based on resource classification.
 
         Args:
             resource_name: Name/URI of the resource being accessed
-
-        Returns:
-            Placeholder ID for compatibility
 
         Raises:
             SecurityError: If the lethal trifecta is already achieved and this access would be blocked
@@ -490,46 +525,30 @@ class DataAccessTracker:
             log.error(
                 f"🚫 BLOCKING resource access {resource_name} - lethal trifecta already achieved"
             )
-            raise SecurityError(
-                f"Resource access '{resource_name}' blocked: lethal trifecta already achieved"
-            )
+            raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         # Get resource permissions and update trifecta flags
         permissions = self._classify_resource_permissions(resource_name)
 
-        if permissions["read_private_data"]:
-            self.has_private_data_access = True
-            log.info(f"🔒 Private data access detected via resource: {resource_name}")
-            record_private_data_access("resource", resource_name)
-
-        if permissions["read_untrusted_public_data"]:
-            self.has_untrusted_content_exposure = True
-            log.info(f"🌐 Untrusted content exposure detected via resource: {resource_name}")
-            record_untrusted_public_data("resource", resource_name)
-
-        if permissions["write_operation"]:
-            self.has_external_communication = True
-            log.info(f"✍️ Write operation detected via resource: {resource_name}")
-            record_write_operation("resource", resource_name)
-
-        # Log if trifecta is achieved after this access
-        if self.is_trifecta_achieved():
-            log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after resource access: {resource_name}")
-            raise SecurityError(
-                f"Resource access '{resource_name}' blocked: lethal trifecta achieved"
+        # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
+        if self._would_call_complete_trifecta(permissions):
+            log.error(
+                f"🚫 BLOCKING resource access {resource_name} - would achieve lethal trifecta"
             )
+            record_resource_access_blocked(resource_name, "trifecta_prevent")
+            raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
-        return "placeholder_id"
+        self._apply_permissions_effects(permissions, source_type="resource", name=resource_name)
 
-    def add_prompt_access(self, prompt_name: str) -> str:
+        # We proactively prevent trifecta; by design we should never reach a state where
+        # a completed access newly achieves trifecta.
+
+    def add_prompt_access(self, prompt_name: str):
         """
         Add a prompt access and update trifecta flags based on prompt classification.
 
         Args:
             prompt_name: Name/type of the prompt being accessed
-
-        Returns:
-            Placeholder ID for compatibility
 
         Raises:
             SecurityError: If the lethal trifecta is already achieved and this access would be blocked
@@ -537,32 +556,21 @@ class DataAccessTracker:
         # Check if trifecta is already achieved before processing this access
         if self.is_trifecta_achieved():
             log.error(f"🚫 BLOCKING prompt access {prompt_name} - lethal trifecta already achieved")
-            raise SecurityError(f"Prompt access '{prompt_name}' blocked: lethal trifecta achieved")
+            raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         # Get prompt permissions and update trifecta flags
         permissions = self._classify_prompt_permissions(prompt_name)
 
-        if permissions["read_private_data"]:
-            self.has_private_data_access = True
-            log.info(f"🔒 Private data access detected via prompt: {prompt_name}")
-            record_private_data_access("prompt", prompt_name)
+        # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
+        if self._would_call_complete_trifecta(permissions):
+            log.error(f"🚫 BLOCKING prompt access {prompt_name} - would achieve lethal trifecta")
+            record_prompt_access_blocked(prompt_name, "trifecta_prevent")
+            raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
-        if permissions["read_untrusted_public_data"]:
-            self.has_untrusted_content_exposure = True
-            log.info(f"🌐 Untrusted content exposure detected via prompt: {prompt_name}")
-            record_untrusted_public_data("prompt", prompt_name)
+        self._apply_permissions_effects(permissions, source_type="prompt", name=prompt_name)
 
-        if permissions["write_operation"]:
-            self.has_external_communication = True
-            log.info(f"✍️ Write operation detected via prompt: {prompt_name}")
-            record_write_operation("prompt", prompt_name)
-
-        # Log if trifecta is achieved after this access
-        if self.is_trifecta_achieved():
-            log.warning(f"⚠️ LETHAL TRIFECTA ACHIEVED after prompt access: {prompt_name}")
-            raise SecurityError(f"Prompt access '{prompt_name}' blocked: lethal trifecta achieved")
-
-        return "placeholder_id"
+        # We proactively prevent trifecta; by design we should never reach a state where
+        # a completed access newly achieves trifecta.
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -586,3 +594,18 @@ class DataAccessTracker:
 
 class SecurityError(Exception):
     """Raised when a security policy violation occurs."""
+
+    def __init__(self, message: str):
+        """We format with a brick ascii wall"""
+        message = f"""
+ ████ ████ ████ ████ ████ ████
+ ██ ████ ████ ████ ████ ████ █
+ ████ ████ ████ ████ ████ ████
+       BLOCKED BY EDISON
+ {message:^30}
+ ████ ████ ████ ████ ████ ████
+ ██ ████ ████ ████ ████ ████ █
+ ████ ████ ████ ████ ████ ████
+        {message}
+        """
+        super().__init__(message)

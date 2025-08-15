@@ -50,6 +50,8 @@ _prompt_used_counter: Any | None = None
 _private_data_access_counter: Any | None = None
 _untrusted_public_data_counter: Any | None = None
 _write_operation_counter: Any | None = None
+_resource_access_blocked_counter: Any | None = None
+_prompt_access_blocked_counter: Any | None = None
 
 
 def _ensure_install_id() -> str:
@@ -197,7 +199,9 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
         _servers_installed_gauge = meter.create_up_down_counter("servers_installed")
         _tool_calls_metadata_counter = meter.create_counter("tool_calls_metadata")
         _resource_used_counter = meter.create_counter("resource_used")
+        _resource_access_blocked_counter = meter.create_counter("resource_access_blocked")
         _prompt_used_counter = meter.create_counter("prompt_used")
+        _prompt_access_blocked_counter = meter.create_counter("prompt_access_blocked")
         _private_data_access_counter = meter.create_counter("private_data_access_calls")
         _untrusted_public_data_counter = meter.create_counter("untrusted_public_data_calls")
         _write_operation_counter = meter.create_counter("write_operation_calls")
@@ -281,10 +285,28 @@ def record_resource_used(resource_name: str) -> None:
 
 
 @telemetry_recorder
+def record_resource_access_blocked(resource_name: str, reason: str) -> None:
+    if _resource_access_blocked_counter is None:
+        return
+    _resource_access_blocked_counter.add(
+        1, attributes=_common_attrs({"resource": resource_name, "reason": reason})
+    )
+
+
+@telemetry_recorder
 def record_prompt_used(prompt_name: str) -> None:
     if _prompt_used_counter is None:
         return
     _prompt_used_counter.add(1, attributes=_common_attrs({"prompt": prompt_name}))
+
+
+@telemetry_recorder
+def record_prompt_access_blocked(prompt_name: str, reason: str) -> None:
+    if _prompt_access_blocked_counter is None:
+        return
+    _prompt_access_blocked_counter.add(
+        1, attributes=_common_attrs({"prompt": prompt_name, "reason": reason})
+    )
 
 
 @telemetry_recorder
