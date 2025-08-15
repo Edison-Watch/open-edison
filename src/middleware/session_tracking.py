@@ -296,7 +296,7 @@ class SessionTrackingMiddleware(Middleware):
 
         assert session.data_access_tracker is not None
         log.debug(f"🔍 Analyzing tool {context.message.name} for security implications")
-        _ = session.data_access_tracker.add_tool_call(context.message.name)
+        session.data_access_tracker.add_tool_call(context.message.name)
         # Telemetry: record tool call
         record_tool_call(context.message.name)
 

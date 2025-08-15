@@ -2,6 +2,12 @@
 
 Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
+Just want to run it?
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_pipe_bash.sh | bash
+```
+
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 ## Features
@@ -38,6 +44,25 @@ open-edison run --config-dir ~/edison-config
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
 
+### Run with Docker
+
+There is a dockerfile for simple local setup.
+
+```bash
+# Single-line:
+git clone https://github.com/GatlingX/open-edison.git && cd open-edison && make docker_run
+
+# Or
+# Clone repo
+git clone https://github.com/GatlingX/open-edison.git
+# Enter repo
+cd open-edison
+# Build and run
+make docker_run
+```
+
+The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
+
 ### Run from source
 
 1. Clone the repository:
@@ -47,33 +72,26 @@ git clone https://github.com/GatlingX/open-edison.git
 cd open-edison
 ```
 
-2. Set up the project:
+1. Set up the project:
 
 ```bash
 make setup
 ```
 
-3. Edit `config.json` to configure your MCP servers:
+1. Edit `config.json` to configure your MCP servers. See the full file: [config.json](config.json), it looks like:
 
 ```json
 {
-  "server": {
-    "host": "localhost",
-    "port": 3000,
-    "api_key": "your-secure-api-key"
-  },
+  "server": { "host": "0.0.0.0", "port": 3000, "api_key": "..." },
+  "logging": { "level": "INFO", "database_path": "sessions.db" },
   "mcp_servers": [
-    {
-      "name": "filesystem",
-      "command": "uvx",
-      "args": ["mcp-server-filesystem", "/path/to/directory"],
-      "enabled": true
-    }
+    { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], "enabled": true },
+    { "name": "github", "enabled": false, "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "..." } }
   ]
 }
 ```
 
-4. Run the server:
+1. Run the server:
 
 ```bash
 make run
@@ -82,15 +100,6 @@ open-edison run
 ```
 
 The server will be available at `http://localhost:3000`.
-
-### Run with Docker
-
-```bash
-# After cloning the repo
-make docker_run
-```
-
-The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
 
 ## MCP Connection
 
@@ -117,64 +126,28 @@ Or add to your MCP client config:
 
 ### API Endpoints
 
-Api is on port 3001 (or configured MCP server port + 1).
-
-- `GET /health` - Health check
-- `GET /mcp/status` - Get status of configured MCP servers
-- `POST /mcp/{server_name}/start` - Start a specific MCP server
-- `POST /mcp/{server_name}/stop` - Stop a specific MCP server
-- `POST /mcp/call` - Proxy MCP calls to running servers
-- `GET /sessions` - Get session logs (coming soon)
-
-All endpoints except `/health` require the `Authorization: Bearer <api_key>` header.
+See [API Reference](docs/quick-reference/api_reference.md) for full API documentation.
 
 ## Development
 
+### Setup
+
+Setup from source as above.
+
+### Run
+
+Server doesn't have any auto-reload at the moment, so you'll need to run & ctrl-c this during development.
+
 ```bash
-# Install dependencies
-make sync
-
-# Run with auto-reload
-make dev
-
-# Run tests
-make test
-
-# Lint code
-make lint
-
-# Format code
-make format
+make run
 ```
 
-### Website (Sessions Dashboard)
+### Tests/code quality
 
-A minimal React + Vite frontend is included at `open-edison/frontend/`.
-
-Run it with a single command from the repo root or via the CLI:
+We expect `make ci` to return cleanly.
 
 ```bash
-make website
-# or
-open-edison website
-```
-
-This will install frontend deps (first run) and start the dev server. Open the URL shown (typically `http://localhost:5173` or `5174`).
-
-Notes:
-
-- The dashboard reads session data directly from the SQLite database `edison.db` in the repo root via sql.js.
-- The Configs tab provides JSON editors (with syntax highlighting) for `config.json`, `tool_permissions.json`, `resource_permissions.json`, and `prompt_permissions.json`.
-- You can Save changes directly while the dev server is running; writes are constrained to the project root.
-
-## Docker
-
-```bash
-# Build Docker image
-make docker_build
-
-# Run in Docker
-make docker_run
+make ci
 ```
 
 ## Configuration
@@ -203,80 +176,48 @@ Open Edison includes a comprehensive security monitoring system that tracks the 
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
 
-The system monitors these risks across **tools**, **resources**, and **prompts** using separate configuration files.
+The configuration allows you to classify these risks across **tools**, **resources**, and **prompts** using separate configuration files.
+
+In addition to trifecta, we track Access Control Level (ACL) for each tool call,
+that is, each tool has an ACL level (one of PUBLIC, PRIVATE, or SECRET), and we track the highest ACL level for each session.
+If a write operation is attempted to a lower ACL level, it is blocked.
 
 ### Tool Permissions (`tool_permissions.json`)
 
-Defines security classifications for MCP tools. Each tool is classified with three boolean flags:
+Defines security classifications for MCP tools. See full file: [tool_permissions.json](tool_permissions.json), it looks like:
 
 ```json
 {
-  "filesystem_read_file": {
-    "write_operation": false,
-    "read_private_data": true,
-    "read_untrusted_public_data": false
+  "_metadata": { "last_updated": "2025-08-07" },
+  "builtin": {
+    "get_security_status": { "enabled": true, "write_operation": false, "read_private_data": false, "read_untrusted_public_data": false, "acl": "PUBLIC" }
   },
-  "sqlite_create_record": {
-    "write_operation": true,
-    "read_private_data": true,
-    "read_untrusted_public_data": false
+  "filesystem": {
+    "read_file": { "enabled": true, "write_operation": false, "read_private_data": true, "read_untrusted_public_data": false, "acl": "PRIVATE" },
+    "write_file": { "enabled": true, "write_operation": true, "read_private_data": true, "read_untrusted_public_data": false, "acl": "PRIVATE" }
   }
 }
 ```
 
 ### Resource Permissions (`resource_permissions.json`)
 
-Defines security classifications for resource access patterns. Currently empty - add classifications as needed:
+Defines security classifications for resource access patterns. See full file: [resource_permissions.json](resource_permissions.json), it looks like:
 
 ```json
 {
-  "_metadata": {
-    "description": "Resource security classifications for Open Edison data access tracker",
-    "last_updated": "2025-08-07"
-  },
-  "file:*": {
-    "write_operation": false,
-    "read_private_data": true,
-    "read_untrusted_public_data": false
-  },
-  "http:*": {
-    "write_operation": false,
-    "read_private_data": false,
-    "read_untrusted_public_data": true
-  },
-  "database:*": {
-    "write_operation": false,
-    "read_private_data": true,
-    "read_untrusted_public_data": false
-  }
+  "_metadata": { "last_updated": "2025-08-07" },
+  "builtin": { "config://app": { "enabled": true, "write_operation": false, "read_private_data": false, "read_untrusted_public_data": false } }
 }
 ```
 
 ### Prompt Permissions (`prompt_permissions.json`)
 
-Defines security classifications for prompt types. Currently empty - add classifications as needed:
+Defines security classifications for prompt types. See full file: [prompt_permissions.json](prompt_permissions.json), it looks like:
 
 ```json
 {
-  "_metadata": {
-    "description": "Prompt security classifications for Open Edison data access tracker", 
-    "last_updated": "2025-08-07"
-  },
-  "system": {
-    "write_operation": false,
-    "read_private_data": false,
-    "read_untrusted_public_data": false
-  },
-  "external_prompt": {
-    "write_operation": false,
-    "read_private_data": false,
-    "read_untrusted_public_data": true
-  },
-  "prompt:file:*": {
-    "write_operation": false,
-    "read_private_data": true,
-    "read_untrusted_public_data": false
-  }
+  "_metadata": { "last_updated": "2025-08-07" },
+  "builtin": { "summarize_text": { "enabled": true, "write_operation": false, "read_private_data": false, "read_untrusted_public_data": false } }
 }
 ```
 
