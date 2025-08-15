@@ -1,0 +1,26 @@
+name: Open Edison CI Setup
+description: Checkout, install Rye, and sync dependencies (Python version from pyproject.toml)
+
+inputs:
+  rye-version:
+    description: Rye version to install
+    required: false
+    default: 'latest'
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ github.token }}
+
+    - name: Install Rye
+      uses: eifinger/setup-rye@v4
+      with:
+        version: ${{ inputs.rye-version }}
+
+    - name: Sync dependencies
+      shell: bash
+      run: rye sync
+

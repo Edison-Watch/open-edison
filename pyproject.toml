@@ -34,6 +34,7 @@ build-backend = "hatchling.build"
 
 [tool.rye]
 managed = true
+python = "3.12"
 dev-dependencies = [
     "basedpyright>=1.21.0",
     "ruff>=0.12.3",
