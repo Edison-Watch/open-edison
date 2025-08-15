@@ -1,4 +1,4 @@
-# Open Edison
+# OpenEdison
 
 Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
@@ -9,6 +9,10 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 ```
 
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
+
+<div align="center">
+  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
+</div>
 
 ## Features
 
