@@ -606,6 +606,5 @@ class SecurityError(Exception):
  ████ ████ ████ ████ ████ ████
  ██ ████ ████ ████ ████ ████ █
  ████ ████ ████ ████ ████ ████
-        {message}
-        """
+"""
         super().__init__(message)
