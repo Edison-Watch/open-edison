@@ -5,10 +5,26 @@ Open-source MCP security gateway that prevents data exfiltration—via direct ac
 Just want to run it?
 
 ```bash
+# Installs uv (via Astral installer) and launches open-edison with uvx.
+# Note: This does NOT install Node/npx. Install Node if you plan to use npx-based tools like mcp-remote.
 curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_pipe_bash.sh | bash
 ```
 
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
+
+If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
+
+- macOS:
+  - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+  - Node/npx: `brew install node`
+- Linux (Debian/Ubuntu):
+  - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+  - Node/npx: `sudo apt-get update && sudo apt-get install -y nodejs npm`
+- Windows (PowerShell):
+  - uv: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+  - Node/npx: `winget install -e --id OpenJS.NodeJS`
+
+After installation, ensure that `npx` is available on PATH.
 
 <div align="center">
   <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
@@ -89,7 +105,7 @@ make setup
   "server": { "host": "0.0.0.0", "port": 3000, "api_key": "..." },
   "logging": { "level": "INFO", "database_path": "sessions.db" },
   "mcp_servers": [
-    { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], "enabled": true },
+    { "name": "filesystem", "command": "uvx", "args": ["mcp-server-filesystem", "/tmp"], "enabled": true },
     { "name": "github", "enabled": false, "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "..." } }
   ]
 }
@@ -107,7 +123,7 @@ The server will be available at `http://localhost:3000`.
 
 ## MCP Connection
 
-Connect any MCP client to Open Edison:
+Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
 
 ```bash
 npx -y mcp-remote http://localhost:3000/mcp/ --http-only --header "Authorization: Bearer your-api-key"

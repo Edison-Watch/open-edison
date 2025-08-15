@@ -6,6 +6,7 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
+import json
 import traceback
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
@@ -184,30 +185,33 @@ class OpenEdisonProxy:
             """
             Resolve a JSON config file path consistently with src.config defaults.
 
-            Precedence for reads (and writes if chosen):
-            1) Repository root next to src/ (editable/dev) if file exists
-            2) Config dir (OPEN_EDISON_CONFIG_DIR or platform default)
-               - If missing, bootstrap from repo root default when available
-            3) Current working directory as last resort
+            Precedence for reads and writes:
+            1) Config dir (OPEN_EDISON_CONFIG_DIR or platform default) — if file exists
+            2) Repository/package defaults next to src/ — and bootstrap a copy into the config dir if missing
+            3) Config dir target path (even if not yet created) as last resort
             """
-            # 1) Prefer repository root next to src/
-            repo_candidate = Path(__file__).parent.parent / filename
-            if repo_candidate.exists():
-                return repo_candidate
-
-            # 2) Config directory
+            # 1) Config directory (preferred)
             try:
                 base = _get_cfg_dir()
             except Exception:
                 base = Path.cwd()
             target = base / filename
-            if (not target.exists()) and repo_candidate.exists():
+            if target.exists():
+                return target
+
+            # 2) Repository/package defaults next to src/
+            repo_candidate = Path(__file__).parent.parent / filename
+            if repo_candidate.exists():
+                # Bootstrap a copy into config dir when possible
                 try:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
                 except Exception:
                     pass
-            return target if target.exists() else repo_candidate
+                return target if target.exists() else repo_candidate
+
+            # 3) Fall back to config dir path (will be created on save)
+            return target
 
         async def _serve_json(filename: str) -> Response:  # type: ignore[override]
             if filename not in allowed_json_files:
@@ -238,23 +242,28 @@ class OpenEdisonProxy:
                 content = body.get("content", "")
                 if not isinstance(content, str):
                     raise ValueError("content must be string")
+                source: str = "unknown"
                 if isinstance(name, str) and name in allowed_json_files:
                     target = _resolve_json_path(name)
+                    source = f"name={name}"
                 elif isinstance(path_val, str):
-                    base = Path.cwd()
-                    # Normalize path but restrict to allowed filenames
+                    # Normalize path but restrict to allowed filenames, then resolve like reads
                     candidate = Path(path_val)
                     filename = candidate.name
                     if filename not in allowed_json_files:
                         raise ValueError("filename not allowed")
-                    target = base / filename
+                    target = _resolve_json_path(filename)
+                    source = f"path={path_val} -> filename={filename}"
                 else:
                     raise ValueError("invalid target file")
-                # Basic validation to ensure valid JSON
-                import json as _json
 
-                _ = _json.loads(content or "{}")
+                log.debug(
+                    f"Saving JSON config ({source}), resolved target: {target} (bytes={len(content.encode('utf-8'))})"
+                )
+
+                _ = json.loads(content or "{}")
                 target.write_text(content or "{}", encoding="utf-8")
+                log.debug(f"Saved JSON config to {target}")
                 return {"status": "ok"}
             except Exception as e:  # noqa: BLE001
                 raise HTTPException(status_code=400, detail=f"Save failed: {e}") from e
@@ -365,45 +374,15 @@ class OpenEdisonProxy:
             dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
-            "/mcp/{server_name}/start",
-            self.start_mcp_server,
-            methods=["POST"],
-            dependencies=[Depends(self.verify_api_key)],
-        )
-        app.add_api_route(
             "/mcp/validate",
             self.validate_mcp_server,
             methods=["POST"],
             # Intentionally no auth required for validation for now
         )
         app.add_api_route(
-            "/mcp/{server_name}/stop",
-            self.stop_mcp_server,
-            methods=["POST"],
-            dependencies=[Depends(self.verify_api_key)],
-        )
-        app.add_api_route(
-            "/mcp/call",
-            self.proxy_mcp_call,
-            methods=["POST"],
-            dependencies=[Depends(self.verify_api_key)],
-        )
-        app.add_api_route(
             "/mcp/mounted",
             self.get_mounted_servers,
             methods=["GET"],
-            dependencies=[Depends(self.verify_api_key)],
-        )
-        app.add_api_route(
-            "/mcp/{server_name}/mount",
-            self.mount_server,
-            methods=["POST"],
-            dependencies=[Depends(self.verify_api_key)],
-        )
-        app.add_api_route(
-            "/mcp/{server_name}/unmount",
-            self.unmount_server,
-            methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
         # Public sessions endpoint (no auth) for simple local dashboard
@@ -464,50 +443,6 @@ class OpenEdisonProxy:
             ]
         }
 
-    async def start_mcp_server(self, server_name: str) -> dict[str, str]:
-        """Start a specific MCP server"""
-        try:
-            _ = await self.mcp_manager.start_server(server_name)
-            return {"message": f"Server {server_name} started successfully"}
-        except Exception as e:
-            raise self._handle_server_operation_error("start", server_name, e) from e
-
-    async def stop_mcp_server(self, server_name: str) -> dict[str, str]:
-        """Stop a specific MCP server"""
-        try:
-            await self.mcp_manager.stop_server(server_name)
-            return {"message": f"Server {server_name} stopped successfully"}
-        except Exception as e:
-            raise self._handle_server_operation_error("stop", server_name, e) from e
-
-    async def proxy_mcp_call(self, request: dict[str, Any]) -> dict[str, Any]:
-        """
-        Proxy MCP calls to mounted servers.
-
-        This now routes requests through the mounted FastMCP servers.
-        """
-        try:
-            log.info(f"Proxying MCP request: {request.get('method', 'unknown')}")
-
-            mounted = await self.single_user_mcp.get_mounted_servers()
-            mounted_names = [server["name"] for server in mounted]
-
-            return {
-                "jsonrpc": "2.0",
-                "id": request.get("id"),
-                "result": {
-                    "message": "MCP request routed through FastMCP",
-                    "request": request,
-                    "mounted_servers": mounted_names,
-                },
-            }
-        except Exception as e:
-            log.error(f"Failed to proxy MCP call: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to proxy MCP call: {str(e)}",
-            ) from e
-
     async def get_mounted_servers(self) -> dict[str, Any]:
         """Get list of currently mounted MCP servers."""
         try:
@@ -519,36 +454,6 @@ class OpenEdisonProxy:
                 status_code=500,
                 detail=f"Failed to get mounted servers: {str(e)}",
             ) from e
-
-    async def mount_server(self, server_name: str) -> dict[str, str]:
-        """Mount a specific MCP server."""
-        try:
-            server_config = self._find_server_config(server_name)
-            success = await self.single_user_mcp.mount_server(server_config)
-            if success:
-                return {"message": f"Server {server_name} mounted successfully"}
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to mount server: {server_name}",
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise self._handle_server_operation_error("mount", server_name, e) from e
-
-    async def unmount_server(self, server_name: str) -> dict[str, str]:
-        """Unmount a specific MCP server."""
-        try:
-            if server_name == "test-echo":
-                log.info("Special handling for test-echo server unmount")
-                _ = await self.single_user_mcp.unmount_server(server_name)
-                return {"message": f"Server {server_name} unmounted successfully"}
-            _ = await self.single_user_mcp.unmount_server(server_name)
-            return {"message": f"Server {server_name} unmounted successfully"}
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise self._handle_server_operation_error("unmount", server_name, e) from e
 
     async def get_sessions(self) -> dict[str, Any]:
         """Return recent MCP session summaries from local SQLite.

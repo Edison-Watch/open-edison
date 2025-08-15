@@ -167,7 +167,7 @@ def test_trifecta_blocking():
     assert tracker.is_trifecta_achieved()
 
     # Now any tool call should be blocked
-    with pytest.raises(SecurityError, match="lethal trifecta achieved"):
+    with pytest.raises(SecurityError, match="(?i)lethal trifecta"):
         tracker.add_tool_call("filesystem_read_file")
 
 
@@ -230,9 +230,7 @@ def test_mock_load_tool_permissions_with_json():
 
         # Test disabled tool
         tracker3 = DataAccessTracker()
-        with pytest.raises(
-            SecurityError, match="Tool call 'disabled_tool' blocked: tool is disabled"
-        ):
+        with pytest.raises(SecurityError, match=r"'disabled_tool' / Tool disabled"):
             tracker3.add_tool_call("disabled_tool")
 
 

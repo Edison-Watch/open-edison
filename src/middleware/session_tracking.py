@@ -102,7 +102,7 @@ def create_db_session() -> Generator[Session, None, None]:
 
     # Ensure changes are flushed to the main database file (avoid WAL for sql.js compatibility)
     @event.listens_for(engine, "connect")
-    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def]
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def] # noqa
         cur = dbapi_connection.cursor()  # type: ignore[attr-defined]
         try:
             cur.execute("PRAGMA journal_mode=DELETE")  # type: ignore[attr-defined]

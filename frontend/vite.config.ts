@@ -20,13 +20,27 @@ const localSavePlugin = () => ({
                     req.on('data', (chunk: any) => { body += chunk })
                     req.on('end', () => resolve())
                 })
-                const data = JSON.parse(body || '{}') as { path?: string; content?: string }
-                if (!data.path || typeof data.path !== 'string') {
+                const data = JSON.parse(body || '{}') as { path?: string; name?: string; content?: string }
+                // Accept either { path, content } or { name, content }
+                let targetPath: string | null = null
+                if (data.path && typeof data.path === 'string') {
+                    targetPath = data.path
+                } else if (data.name && typeof data.name === 'string') {
+                    // Restrict to known config filenames
+                    const allowed = new Set(['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'])
+                    if (!allowed.has(data.name)) {
+                        res.statusCode = 400
+                        res.end('Invalid filename')
+                        return
+                    }
+                    targetPath = path.join(projectRoot, data.name)
+                }
+                if (!targetPath) {
                     res.statusCode = 400
-                    res.end('Invalid path')
+                    res.end('Invalid path or name')
                     return
                 }
-                const normalized = path.resolve(projectRoot, path.relative(projectRoot, data.path))
+                const normalized = path.resolve(projectRoot, path.relative(projectRoot, targetPath))
                 if (!normalized.startsWith(projectRoot)) {
                     res.statusCode = 400
                     res.end('Path outside project root')

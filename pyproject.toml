@@ -39,6 +39,7 @@ dev-dependencies = [
     "ruff>=0.12.3",
     "pytest>=8.3.3",
     "pytest-asyncio>=1.0.0",
+    "vulture>=2.11",
     "twine>=5.1.1",
 ]
 
@@ -76,11 +77,9 @@ include = [
   "prompt_permissions.json",
   "src/**",
   "docs/**",
-]
-exclude = [
+  # Ensure packaged dashboard assets are present when building from sdist
   "src/frontend_dist/**",
 ]
-force-include = { "src/frontend_dist" = "src/frontend_dist" }
 
 [tool.ruff]
 line-length = 100
@@ -112,3 +111,6 @@ reportMissingTypeStubs = true
 reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
 venvPath = ".venv"
 extraPaths = ["src"]
+
+[tool.vulture]
+exclude = ["tests", "src/frontend_dist"]

@@ -110,21 +110,18 @@ class SingleUserMCP(FastMCP[Any]):
             True if composite proxy was created successfully, False otherwise
         """
         try:
-            # Filter out test servers for composite proxy
-            real_servers = [s for s in enabled_servers if s.command != "echo"]
-
-            if not real_servers:
+            if not enabled_servers:
                 log.info("No real servers to mount in composite proxy")
                 return True
 
             # Start all required server processes
-            for server_config in real_servers:
+            for server_config in enabled_servers:
                 if not await self.mcp_manager.is_server_running(server_config.name):
                     log.info(f"Starting server process: {server_config.name}")
                     _ = await self.mcp_manager.start_server(server_config.name)
 
             # Convert to FastMCP config format
-            fastmcp_config = self._convert_to_fastmcp_config(real_servers)
+            fastmcp_config = self._convert_to_fastmcp_config(enabled_servers)
 
             log.info(
                 f"Creating composite proxy for servers: {list(fastmcp_config['mcpServers'].keys())}"
@@ -140,12 +137,12 @@ class SingleUserMCP(FastMCP[Any]):
             await self.import_server(self.composite_proxy)
 
             # Track mounted servers for status reporting
-            for server_config in real_servers:
+            for server_config in enabled_servers:
                 self.mounted_servers[server_config.name] = MountedServerInfo(
                     config=server_config, proxy=self.composite_proxy
                 )
 
-            log.info(f"✅ Created composite proxy with {len(real_servers)} servers")
+            log.info(f"✅ Created composite proxy with {len(enabled_servers)} servers")
             return True
 
         except Exception as e:

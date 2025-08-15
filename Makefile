@@ -126,7 +126,12 @@ basedpyright_check: check_rye ## Run type checking with Basedpyright
 	@rye run basedpyright .
 	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
 
-ci: sync lint basedpyright_check test ## Run CI checks (sync deps, lint, type check, tests)
+deadcode: check_rye ## Find unused code with Vulture (fails on findings)
+	@echo "$(YELLOW)🪦 Scanning for dead code with Vulture...$(RESET)"
+	@rye run vulture src tests --min-confidence 70
+	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 70).$(RESET)"
+
+ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################

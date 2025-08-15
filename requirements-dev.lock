@@ -285,6 +285,7 @@ urllib3==2.5.0
 uvicorn==0.35.0
     # via mcp
     # via open-edison
+vulture==2.14
 werkzeug==3.1.1
     # via openapi-core
 yarl==1.20.1

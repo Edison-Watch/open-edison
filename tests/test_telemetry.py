@@ -80,8 +80,8 @@ def test_initialize_with_endpoint_sets_provider(monkeypatch: pytest.MonkeyPatch)
         def create_counter(self, name: str) -> Any:  # noqa: ANN401
             return SimpleNamespace(add=lambda *a, **k: None)
 
-        def create_up_down_counter(self, name: str) -> Any:  # noqa: ANN401
-            return SimpleNamespace(add=lambda *a, **k: None)
+        def create_up_down_counter(self, name: str) -> Any:
+            return SimpleNamespace(add=lambda *a, **k: None)  #
 
     def _fake_get_meter(name: str) -> Any:  # noqa: ANN401
         return _FakeMeter()
