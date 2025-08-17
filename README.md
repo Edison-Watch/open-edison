@@ -2,7 +2,23 @@
 
 Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
-Just want to run it?
+
+<div align="center">
+  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
+</div>
+
+## Features
+
+- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
+- **JSON configuration** - Easy to configure and manage your MCP servers
+- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
+- **Session tracking** - Track and monitor your MCP interactions
+- **Simple API** - REST API for managing MCP servers and proxying requests
+- **Docker support** - Run in a container for easy deployment
+
+## Quick Start
+
+The fastest way to get started:
 
 ```bash
 # Installs uv (via Astral installer) and launches open-edison with uvx.
@@ -26,22 +42,8 @@ If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js 
 
 After installation, ensure that `npx` is available on PATH.
 
-<div align="center">
-  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
-</div>
-
-## Features
-
-- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
-- **JSON configuration** - Easy to configure and manage your MCP servers
-- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
-- **Session tracking** - Track and monitor your MCP interactions
-- **Simple API** - REST API for managing MCP servers and proxying requests
-- **Docker support** - Run in a container for easy deployment
-
-## Quick Start
-
-### Install from PyPI
+<details>
+<summary>Install from PyPI</summary>
 
 #### Prerequisites
 
@@ -63,6 +65,8 @@ open-edison run --config-dir ~/edison-config
 # or via environment variable
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
+
+</details>
 
 <details>
 <summary>Run with Docker</summary>
