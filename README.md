@@ -64,7 +64,8 @@ open-edison run --config-dir ~/edison-config
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
 
-### Run with Docker
+<details>
+<summary>Run with Docker</summary>
 
 There is a dockerfile for simple local setup.
 
@@ -83,7 +84,10 @@ make docker_run
 
 The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
 
-### Run from source
+</details>
+
+<details>
+<summary>Run from source</summary>
 
 1. Clone the repository:
 
@@ -121,6 +125,8 @@ open-edison run
 
 The server will be available at `http://localhost:3000`.
 
+</details>
+
 ## MCP Connection
 
 Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
@@ -148,7 +154,8 @@ Or add to your MCP client config:
 
 See [API Reference](docs/quick-reference/api_reference.md) for full API documentation.
 
-## Development
+<details>
+<summary>Development</summary>
 
 ### Setup
 
@@ -170,6 +177,8 @@ We expect `make ci` to return cleanly.
 make ci
 ```
 
+</details>
+
 ## Configuration
 
 The `config.json` file contains all configuration:
@@ -190,11 +199,13 @@ Each MCP server configuration includes:
 
 ## Security & Permissions System
 
-Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks:
+Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
 1. **Private data access** - Access to sensitive local files/data
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
+
+![Privileged Access Management (PAM) example showing the lethal trifecta in action](pam-diagram.png)
 
 The configuration allows you to classify these risks across **tools**, **resources**, and **prompts** using separate configuration files.
 
