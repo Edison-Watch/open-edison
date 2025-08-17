@@ -256,5 +256,72 @@
             "read_untrusted_public_data": false,
             "acl": "PRIVATE"
         }
+    },
+    "atlassian": {
+        "getAccessibleAtlassianResources": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        },
+        "getConfluenceSpaces": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        }, 
+        "getPagesInConfluenceSpace": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        }, 
+        "searchConfluenceUsingCql": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        }, 
+        "createConfluencePage": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        }
+    },
+    "zapier": {
+        "confluence_cloud_search_for_page_or_blog_post": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        },
+        "confluence_cloud_create_page_or_blog_post": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "add_tools": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "edit_tools": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        }
     }
 }

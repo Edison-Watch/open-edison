@@ -2,7 +2,7 @@
     "server": {
         "host": "0.0.0.0",
         "port": 3000,
-        "api_key": "dev-api-key-change-me-2"
+        "api_key": "dev-api-key-change-me"
     },
     "logging": {
         "level": "INFO",
@@ -90,6 +90,17 @@
             ],
             "env": {},
             "enabled": false
+        },
+        {
+            "name": "zapier",
+            "command": "npx",
+            "args": [
+            "-y",
+            "mcp-remote",
+            "https://mcp.zapier.com/api/mcp/s/{access_token}/mcp"
+            ],
+            "env": {},
+            "enabled": true
         }
     ]
 }

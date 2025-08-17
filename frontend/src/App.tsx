@@ -494,10 +494,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [origResourcePerms, setOrigResourcePerms] = useState<ResourcePerms | null>(null)
     const [origPromptPerms, setOrigPromptPerms] = useState<PromptPerms | null>(null)
 
-    const CONFIG_NAME = 'config.json'
-    const TOOL_NAME = 'tool_permissions.json'
-    const RESOURCE_NAME = 'resource_permissions.json'
-    const PROMPT_NAME = 'prompt_permissions.json'
+    const CONFIG_NAME = `${projectRoot}/config.json`
+    const TOOL_NAME = `${projectRoot}/tool_permissions.json`
+    const RESOURCE_NAME = `${projectRoot}/resource_permissions.json`
+    const PROMPT_NAME = `${projectRoot}/prompt_permissions.json`
 
     useEffect(() => {
         let active = true
@@ -506,10 +506,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setError('')
             try {
                 const [c, t, r, p] = await Promise.all([
-                    fetch(`/` + CONFIG_NAME),
-                    fetch(`/` + TOOL_NAME),
-                    fetch(`/` + RESOURCE_NAME),
-                    fetch(`/` + PROMPT_NAME),
+                    fetch(`/@fs${CONFIG_NAME}`),
+                    fetch(`/@fs${TOOL_NAME}`),
+                    fetch(`/@fs${RESOURCE_NAME}`),
+                    fetch(`/@fs${PROMPT_NAME}`),
                 ])
                 if (!c.ok) throw new Error('Failed to load config.json')
                 if (!t.ok) throw new Error('Failed to load tool_permissions.json')
