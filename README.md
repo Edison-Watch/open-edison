@@ -28,22 +28,29 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
+<details>
+<summary>Install Node.js/npm (optional for MCP tools)</summary>
+
 If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
 
-- macOS:
-  - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
-  - Node/npx: `brew install node`
-- Linux (Debian/Ubuntu):
-  - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
-  - Node/npx: `sudo apt-get update && sudo apt-get install -y nodejs npm`
-- Windows (PowerShell):
-  - uv: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
-  - Node/npx: `winget install -e --id OpenJS.NodeJS`
+![macOS](https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=apple&logoColor=white)
+- uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+- Node/npx: `brew install node`
+
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+- uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+- Node/npx: `sudo apt-get update && sudo apt-get install -y nodejs npm`
+
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+- uv: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- Node/npx: `winget install -e --id OpenJS.NodeJS`
 
 After installation, ensure that `npx` is available on PATH.
 
+</details>
+
 <details>
-<summary>Install from PyPI</summary>
+<summary>![PyPI](https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white) Install from PyPI</summary>
 
 #### Prerequisites
 
@@ -69,7 +76,7 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 </details>
 
 <details>
-<summary>Run with Docker</summary>
+<summary>![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white) Run with Docker</summary>
 
 There is a dockerfile for simple local setup.
 
@@ -91,7 +98,7 @@ The MCP server will be available at `http://localhost:3000` and the api + fronte
 </details>
 
 <details>
-<summary>Run from source</summary>
+<summary>⚙️ Run from source</summary>
 
 1. Clone the repository:
 
@@ -183,6 +190,9 @@ make ci
 
 </details>
 
+<details>
+<summary>⚙️ Configuration (config.json)</summary>
+
 ## Configuration
 
 The `config.json` file contains all configuration:
@@ -201,9 +211,13 @@ Each MCP server configuration includes:
 - `env` - Environment variables (optional)
 - `enabled` - Whether to auto-start this server
 
+</details>
+
 ## Security & Permissions System
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
+
+![The lethal trifecta diagram showing the three key AI agent security risks](media/lethal-trifecta.png)
 
 1. **Private data access** - Access to sensitive local files/data
 2. **Untrusted content exposure** - Exposure to external/web content  
@@ -234,6 +248,9 @@ Defines security classifications for MCP tools. See full file: [tool_permissions
 }
 ```
 
+<details>
+<summary>Resource Permissions (`resource_permissions.json`)</summary>
+
 ### Resource Permissions (`resource_permissions.json`)
 
 Defines security classifications for resource access patterns. See full file: [resource_permissions.json](resource_permissions.json), it looks like:
@@ -245,6 +262,11 @@ Defines security classifications for resource access patterns. See full file: [r
 }
 ```
 
+</details>
+
+<details>
+<summary>Prompt Permissions (`prompt_permissions.json`)</summary>
+
 ### Prompt Permissions (`prompt_permissions.json`)
 
 Defines security classifications for prompt types. See full file: [prompt_permissions.json](prompt_permissions.json), it looks like:
@@ -255,6 +277,8 @@ Defines security classifications for prompt types. See full file: [prompt_permis
   "builtin": { "summarize_text": { "enabled": true, "write_operation": false, "read_private_data": false, "read_untrusted_public_data": false } }
 }
 ```
+
+</details>
 
 ### Wildcard Patterns
 
