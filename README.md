@@ -209,7 +209,7 @@ Open Edison includes a comprehensive security monitoring system that tracks the 
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
 
-![Privileged Access Management (PAM) example showing the lethal trifecta in action](pam-diagram.png)
+![Privileged Access Management (PAM) example showing the lethal trifecta in action](media/pam-diagram.png)
 
 The configuration allows you to classify these risks across **tools**, **resources**, and **prompts** using separate configuration files.
 
