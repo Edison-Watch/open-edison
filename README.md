@@ -190,6 +190,9 @@ make ci
 
 </details>
 
+<details>
+<summary>⚙️ Configuration (config.json)</summary>
+
 ## Configuration
 
 The `config.json` file contains all configuration:
@@ -207,6 +210,8 @@ Each MCP server configuration includes:
 - `args` - Arguments for the command
 - `env` - Environment variables (optional)
 - `enabled` - Whether to auto-start this server
+
+</details>
 
 ## Security & Permissions System
 
