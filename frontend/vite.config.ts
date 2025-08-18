@@ -47,6 +47,34 @@ const localSavePlugin = () => ({
                     return
                 }
                 await fs.writeFile(normalized, data.content ?? '', 'utf8')
+                
+                // Clear permission caches after successful save (only for permission files)
+                const filename = path.basename(normalized)
+                if (filename === 'tool_permissions.json' || filename === 'resource_permissions.json' || filename === 'prompt_permissions.json') {
+                    console.log(`🔄 Clearing permission caches after ${filename} save...`)
+                    try {
+                        // Read config.json to get server settings
+                        const configPath = path.join(projectRoot, 'config.json')
+                        const configContent = await fs.readFile(configPath, 'utf8')
+                        const configData = JSON.parse(configContent)
+                        const serverHost = configData?.server?.host || 'localhost'
+                        const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
+                        
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        if (cacheResponse.ok) {
+                            const cacheResult = await cacheResponse.json()
+                            console.log('✅ Cache invalidation successful:', cacheResult)
+                        } else {
+                            console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                        }
+                    } catch (cacheError) {
+                        console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
+                    }
+                }
+                
                 res.statusCode = 200
                 res.setHeader('content-type', 'application/json')
                 res.end(JSON.stringify({ ok: true }))
