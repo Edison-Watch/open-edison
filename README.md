@@ -212,6 +212,8 @@ Each MCP server configuration includes:
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
+![The lethal trifecta diagram showing the three key AI agent security risks](media/lethal-trifecta.png)
+
 1. **Private data access** - Access to sensitive local files/data
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
