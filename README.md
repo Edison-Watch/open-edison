@@ -2,7 +2,23 @@
 
 Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
 
-Just want to run it?
+
+<div align="center">
+  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
+</div>
+
+## Features
+
+- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
+- **JSON configuration** - Easy to configure and manage your MCP servers
+- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
+- **Session tracking** - Track and monitor your MCP interactions
+- **Simple API** - REST API for managing MCP servers and proxying requests
+- **Docker support** - Run in a container for easy deployment
+
+## Quick Start
+
+The fastest way to get started:
 
 ```bash
 # Installs uv (via Astral installer) and launches open-edison with uvx.
@@ -26,22 +42,8 @@ If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js 
 
 After installation, ensure that `npx` is available on PATH.
 
-<div align="center">
-  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
-</div>
-
-## Features
-
-- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
-- **JSON configuration** - Easy to configure and manage your MCP servers
-- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
-- **Session tracking** - Track and monitor your MCP interactions
-- **Simple API** - REST API for managing MCP servers and proxying requests
-- **Docker support** - Run in a container for easy deployment
-
-## Quick Start
-
-### Install from PyPI
+<details>
+<summary>Install from PyPI</summary>
 
 #### Prerequisites
 
@@ -64,7 +66,10 @@ open-edison run --config-dir ~/edison-config
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
 
-### Run with Docker
+</details>
+
+<details>
+<summary>Run with Docker</summary>
 
 There is a dockerfile for simple local setup.
 
@@ -83,7 +88,10 @@ make docker_run
 
 The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
 
-### Run from source
+</details>
+
+<details>
+<summary>Run from source</summary>
 
 1. Clone the repository:
 
@@ -121,6 +129,8 @@ open-edison run
 
 The server will be available at `http://localhost:3000`.
 
+</details>
+
 ## MCP Connection
 
 Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
@@ -148,7 +158,8 @@ Or add to your MCP client config:
 
 See [API Reference](docs/quick-reference/api_reference.md) for full API documentation.
 
-## Development
+<details>
+<summary>Development</summary>
 
 ### Setup
 
@@ -170,6 +181,8 @@ We expect `make ci` to return cleanly.
 make ci
 ```
 
+</details>
+
 ## Configuration
 
 The `config.json` file contains all configuration:
@@ -190,11 +203,13 @@ Each MCP server configuration includes:
 
 ## Security & Permissions System
 
-Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks:
+Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
 1. **Private data access** - Access to sensitive local files/data
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
+
+![Privileged Access Management (PAM) example showing the lethal trifecta in action](media/pam-diagram.png)
 
 The configuration allows you to classify these risks across **tools**, **resources**, and **prompts** using separate configuration files.
 
