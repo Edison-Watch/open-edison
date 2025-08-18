@@ -248,6 +248,9 @@ Defines security classifications for MCP tools. See full file: [tool_permissions
 }
 ```
 
+<details>
+<summary>Resource Permissions (`resource_permissions.json`)</summary>
+
 ### Resource Permissions (`resource_permissions.json`)
 
 Defines security classifications for resource access patterns. See full file: [resource_permissions.json](resource_permissions.json), it looks like:
@@ -259,6 +262,11 @@ Defines security classifications for resource access patterns. See full file: [r
 }
 ```
 
+</details>
+
+<details>
+<summary>Prompt Permissions (`prompt_permissions.json`)</summary>
+
 ### Prompt Permissions (`prompt_permissions.json`)
 
 Defines security classifications for prompt types. See full file: [prompt_permissions.json](prompt_permissions.json), it looks like:
@@ -269,6 +277,8 @@ Defines security classifications for prompt types. See full file: [prompt_permis
   "builtin": { "summarize_text": { "enabled": true, "write_operation": false, "read_private_data": false, "read_untrusted_public_data": false } }
 }
 ```
+
+</details>
 
 ### Wildcard Patterns
 
