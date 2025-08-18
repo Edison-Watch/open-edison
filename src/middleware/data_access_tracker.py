@@ -171,6 +171,12 @@ def _load_tool_permissions_cached() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def clear_tool_permissions_cache() -> None:
+    """Clear the tool permissions cache to force reload from file."""
+    _load_tool_permissions_cached.cache_clear()
+    log.info("Tool permissions cache cleared")
+
+
 @cache
 def _load_resource_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load resource permissions from JSON configuration file with LRU caching."""
@@ -186,6 +192,12 @@ def _load_resource_permissions_cached() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def clear_resource_permissions_cache() -> None:
+    """Clear the resource permissions cache to force reload from file."""
+    _load_resource_permissions_cached.cache_clear()
+    log.info("Resource permissions cache cleared")
+
+
 @cache
 def _load_prompt_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load prompt permissions from JSON configuration file with LRU caching."""
@@ -199,6 +211,20 @@ def _load_prompt_permissions_cached() -> dict[str, dict[str, Any]]:
     except Exception as e:
         log.error(f"Failed to load prompt permissions from {config_path}: {e}")
         return {}
+
+
+def clear_prompt_permissions_cache() -> None:
+    """Clear the prompt permissions cache to force reload from file."""
+    _load_prompt_permissions_cached.cache_clear()
+    log.info("Prompt permissions cache cleared")
+
+
+def clear_all_permissions_caches() -> None:
+    """Clear all permission caches to force reload from files."""
+    clear_tool_permissions_cache()
+    clear_resource_permissions_cache()
+    clear_prompt_permissions_cache()
+    log.info("All permission caches cleared")
 
 
 @cache
@@ -350,6 +376,10 @@ class DataAccessTracker:
     def _load_prompt_permissions(self) -> dict[str, dict[str, Any]]:
         """Load prompt permissions from JSON configuration file with caching."""
         return _load_prompt_permissions_cached()
+
+    def clear_caches(self) -> None:
+        """Clear all permission caches to force reload from configuration files."""
+        clear_all_permissions_caches()
 
     def _classify_by_tool_name(self, tool_name: str) -> dict[str, Any]:
         """Classify permissions based on external JSON configuration only."""

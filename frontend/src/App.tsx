@@ -58,6 +58,92 @@ export function App(): React.JSX.Element {
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
     const [view, setView] = useState<'sessions' | 'configs' | 'manager'>('sessions')
+    
+    // MCP Server Status
+    const [mcpStatus, setMcpStatus] = useState<'checking' | 'online' | 'reduced' | 'offline'>('checking')
+    
+    useEffect(() => {
+        const checkMcpStatus = async () => {
+            try {
+                console.log('🔄 Starting MCP status check...')
+                
+                // Load config to get server settings
+                const configResponse = await fetch(`/@fs${projectRoot}/config.json`)
+                if (!configResponse.ok) {
+                    console.log('❌ Failed to load config.json')
+                    setMcpStatus('offline')
+                    return
+                }
+                
+                const configData = await configResponse.json()
+                const serverHost = configData?.server?.host || 'localhost'
+                const basePort = configData?.server?.port || 3000
+                const apiPort = basePort + 1
+                const apiKey = configData?.server?.api_key || ''
+                
+                console.log('🔍 Checking servers:', {
+                    serverHost,
+                    basePort,
+                    apiPort,
+                    mcpUrl: `http://${serverHost}:${basePort}/`,
+                    apiUrl: `http://${serverHost}:${apiPort}/health`
+                })
+                
+                // Check both ports - API server has /health, MCP server we'll check with a GET request
+                const [mcpResponse, apiResponse] = await Promise.allSettled([
+                    fetch(`http://${serverHost}:${apiPort}/mcp/status`, { 
+                        method: 'GET',
+                        mode: 'cors',
+                        headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+                    }),
+                    fetch(`http://${serverHost}:${apiPort}/health`, { 
+                        method: 'GET',
+                        mode: 'cors',
+                        headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+                    })
+                ])
+                
+                console.log('📡 Raw responses:', {
+                    mcpResponse: mcpResponse.status === 'fulfilled' ? {
+                        status: mcpResponse.value.status,
+                        statusText: mcpResponse.value.statusText,
+                        ok: mcpResponse.value.ok
+                    } : mcpResponse.reason,
+                    apiResponse: apiResponse.status === 'fulfilled' ? {
+                        status: apiResponse.value.status,
+                        statusText: apiResponse.value.statusText,
+                        ok: apiResponse.value.ok
+                    } : apiResponse.reason
+                })
+                
+                // For MCP server with no-cors, if the promise is fulfilled, the server is reachable
+                const mcpOk = mcpResponse.status === 'fulfilled'
+                const apiOk = apiResponse.status === 'fulfilled' && apiResponse.value.ok
+                
+                console.log('🔍 MCP Status Check:', {
+                    mcpOk,
+                    apiOk,
+                    finalStatus: mcpOk && apiOk ? 'online' : mcpOk ? 'reduced' : 'offline'
+                })
+                
+                if (mcpOk && apiOk) {
+                    setMcpStatus('online')
+                } else if (mcpOk) {
+                    setMcpStatus('reduced')
+                } else {
+                    setMcpStatus('offline')
+                }
+            } catch (error) {
+                console.error('❌ MCP status check error:', error)
+                setMcpStatus('offline')
+            }
+        }
+        
+        checkMcpStatus()
+        // Check status every 5 seconds
+        const interval = setInterval(checkMcpStatus, 5000)
+        return () => clearInterval(interval)
+    }, [])
 
     return (
         <div className="mx-auto max-w-[1400px] p-6 space-y-4">
@@ -81,11 +167,32 @@ export function App(): React.JSX.Element {
 
             {view === 'sessions' ? (
                 <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="card flex items-center gap-3">
                             <div>
                                 <div className="text-xs text-app-muted">Total sessions</div>
                                 <div className="text-xl font-bold">{filtered.length}</div>
+                            </div>
+                        </div>
+                        <div className="card flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-3 h-3 rounded-full ${
+                                    mcpStatus === 'online' ? 'bg-green-500' : 
+                                    mcpStatus === 'reduced' ? 'bg-yellow-500' : 
+                                    mcpStatus === 'checking' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'
+                                }`}></div>
+                                <div>
+                                    <div className="text-xs text-app-muted">MCP Server</div>
+                                    <div className={`text-xl font-bold ${
+                                        mcpStatus === 'online' ? 'text-green-500' : 
+                                        mcpStatus === 'reduced' ? 'text-yellow-500' : 
+                                        mcpStatus === 'checking' ? 'text-blue-500' : 'text-red-500'
+                                    }`}>
+                                        {mcpStatus === 'online' ? 'Live' : 
+                                         mcpStatus === 'reduced' ? 'Reduced' : 
+                                         mcpStatus === 'checking' ? 'Checking...' : 'Offline'}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div className="card flex items-center gap-3">
@@ -361,6 +468,35 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                 body: JSON.stringify({ path: file.path, content: content[active] ?? '' })
             })
             if (!resp.ok) throw new Error('Local save helper not running or error saving')
+            
+            // Clear permission caches after successful save (only for permission files)
+            if (file.key === 'tool' || file.key === 'resource' || file.key === 'prompt') {
+                console.log(`🔄 Clearing permission caches after ${file.name} save...`)
+                try {
+                    // Load config to get server settings
+                    const configResponse = await fetch('/config.json')
+                    if (configResponse.ok) {
+                        const configData = await configResponse.json()
+                        const serverHost = configData?.server?.host || 'localhost'
+                        const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        if (cacheResponse.ok) {
+                            const cacheResult = await cacheResponse.json()
+                            console.log('✅ Cache invalidation successful:', cacheResult)
+                        } else {
+                            console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                        }
+                    } else {
+                        console.warn('⚠️ Could not load config.json to determine server port')
+                    }
+                } catch (cacheError) {
+                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
+                }
+            }
+            
             setStatusMsg('Saved')
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save. You can use Download to save manually.')
@@ -704,6 +840,27 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             ])
             const notOk = responses.find(r => !r.ok)
             if (notOk) throw new Error('One or more files failed to save')
+            
+            // Clear permission caches after successful save
+            console.log('🔄 Clearing permission caches after configuration save...')
+            try {
+                // Get server config from the loaded config
+                const serverHost = config?.server?.host || 'localhost'
+                const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                if (cacheResponse.ok) {
+                    const cacheResult = await cacheResponse.json()
+                    console.log('✅ Cache invalidation successful:', cacheResult)
+                } else {
+                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                }
+            } catch (cacheError) {
+                console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
+            }
+            
             setSaveMsg(onlyChanges ? 'Saved changes' : 'Saved')
         } catch (e) {
             setSaveMsg(e instanceof Error ? e.message : 'Save failed')

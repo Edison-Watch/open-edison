@@ -383,6 +383,12 @@ class OpenEdisonProxy:
             self.get_sessions,
             methods=["GET"],
         )
+        # Cache invalidation endpoint (no auth required - allowed to fail)
+        app.add_api_route(
+            "/api/clear-caches",
+            self.clear_caches,
+            methods=["POST"],
+        )
 
     async def verify_api_key(
         self, credentials: HTTPAuthorizationCredentials = _auth_dependency
@@ -494,6 +500,21 @@ class OpenEdisonProxy:
         except Exception as e:
             log.error(f"Failed to fetch sessions: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e
+
+    async def clear_caches(self) -> dict[str, str]:
+        """Clear all permission caches to force reload from configuration files."""
+        try:
+            from src.middleware.data_access_tracker import clear_all_permissions_caches
+
+            log.info("🔄 Clearing all permission caches via API endpoint")
+            clear_all_permissions_caches()
+            log.info("✅ All permission caches cleared successfully")
+
+            return {"status": "success", "message": "All permission caches cleared"}
+        except Exception as e:
+            log.error(f"❌ Failed to clear permission caches: {e}")
+            # Don't raise HTTPException - allow to fail gracefully as requested
+            return {"status": "error", "message": f"Failed to clear caches: {str(e)}"}
 
     # ---- MCP validation ----
     class _ValidateRequest(BaseModel):
