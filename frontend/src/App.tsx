@@ -893,6 +893,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             } catch (cacheError) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
+            
+            setToast({ message: onlyChanges ? 'Saved changes' : 'Saved', type: 'success' })
         } catch (e) {
             setToast({ message: e instanceof Error ? e.message : 'Save failed', type: 'error' })
         } finally {
@@ -900,7 +902,92 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     }
 
-    // (Reinitialize workflow removed; can be re-added when endpoint is live)
+    const reinitializeServers = async () => {
+        setSaving(true)
+        setToast(null)
+        try {
+            // Step 1: Save configuration changes first
+            console.log('🔄 Saving configuration changes...')
+            const post = (name: string, content: string) => fetch('/__save_json__', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
+            })
+            
+            const cfgToSave = origConfig && config
+                ? buildConfigSaveObject(origConfig, config)
+                : config
+            const toolsToSave = toolPerms && origToolPerms
+                ? buildPermsSaveObject(origToolPerms, toolPerms, defaults, 'tools')
+                : toolPerms
+            const resourcesToSave = resourcePerms && origResourcePerms
+                ? buildPermsSaveObject(origResourcePerms, resourcePerms, defaults, 'resources')
+                : resourcePerms
+            const promptsToSave = promptPerms && origPromptPerms
+                ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
+                : promptPerms
+            
+            const responses = await Promise.all([
+                post(CONFIG_NAME, JSON.stringify(cfgToSave, null, 4)),
+                post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
+                post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
+                post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
+            ])
+            
+            const notOk = responses.find(r => !r.ok)
+            if (notOk) throw new Error('One or more files failed to save')
+            
+            console.log('✅ Configuration saved successfully')
+            
+            // Step 2: Clear permission caches
+            console.log('🔄 Clearing permission caches...')
+            try {
+                const serverHost = config?.server?.host || 'localhost'
+                const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                if (cacheResponse.ok) {
+                    const cacheResult = await cacheResponse.json()
+                    console.log('✅ Cache invalidation successful:', cacheResult)
+                } else {
+                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                }
+            } catch (cacheError) {
+                console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
+            }
+            
+            // Step 3: Reinitialize MCP servers
+            console.log('🔄 Reinitializing MCP servers...')
+            const serverHost = config?.server?.host || 'localhost'
+            const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+            const apiKey = config?.server?.api_key || ''
+            
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`
+            }
+            
+            const reinitResponse = await fetch(`http://${serverHost}:${serverPort}/mcp/reinitialize`, {
+                method: 'POST',
+                headers
+            })
+            
+            if (!reinitResponse.ok) {
+                const errorData = await reinitResponse.json().catch(() => ({}))
+                throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
+            }
+            
+            const result = await reinitResponse.json()
+            console.log('✅ MCP servers reinitialized successfully:', result)
+            setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
+            
+        } catch (e) {
+            console.error('❌ Failed to save and reinitialize:', e)
+            setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
+        } finally {
+            setSaving(false)
+        }
+    }
 
     async function validateAndImport(serverName: string) {
         setToast(null)
@@ -1276,9 +1363,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
-                        <button className="button" disabled={saving} onClick={() => saveAll(false)}>{saving ? 'Saving…' : 'Save all'}</button>
-                        <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save only changes'}</button>
-                        {saveMsg && <span className="text-xs text-app-muted">{saveMsg}</span>}
+                        <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save'}</button>
+                        <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Save and reinitialize'}</button>
+
                     </div>
                 </div>
                 {viewMode === 'section' ? (
