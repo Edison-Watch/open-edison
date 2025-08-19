@@ -50,7 +50,7 @@ After installation, ensure that `npx` is available on PATH.
 </details>
 
 <details>
-<summary>![PyPI](https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white) Install from PyPI</summary>
+<summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI</summary>
 
 #### Prerequisites
 
@@ -76,7 +76,7 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 </details>
 
 <details>
-<summary>![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white) Run with Docker</summary>
+<summary><img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> Run with Docker</summary>
 
 There is a dockerfile for simple local setup.
 
