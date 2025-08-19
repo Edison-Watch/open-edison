@@ -216,3 +216,4 @@ src/frontend_dist/
 frontend_dist/
 frontend/node_modules/
 frontend/package-lock.json
+.vscode

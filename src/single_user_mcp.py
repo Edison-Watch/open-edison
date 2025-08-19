@@ -8,6 +8,7 @@ Handles MCP protocol communication with running servers using a unified composit
 from typing import Any, TypedDict
 
 from fastmcp import FastMCP
+from fastmcp import Client as FastMCPClient
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
@@ -107,103 +108,23 @@ class SingleUserMCP(FastMCP[Any]):
         Returns:
             True if composite proxy was created successfully, False otherwise
         """
-        try:
-            if not enabled_servers:
-                log.info("No real servers to mount in composite proxy")
-                return True
-
-            # Convert to FastMCP config format
-            fastmcp_config = self._convert_to_fastmcp_config(enabled_servers)
-
-            log.info(
-                f"Creating composite proxy for servers: {list(fastmcp_config['mcpServers'].keys())}"
-            )
-
-            # Create the composite proxy using FastMCP's multi-server support
-            self.composite_proxy = FastMCP.as_proxy(
-                backend=fastmcp_config, name="open-edison-composite-proxy"
-            )
-
-            # Import the composite proxy into this main server
-            # Tools and resources will be automatically namespaced by server name
-            await self.import_server(self.composite_proxy)
-
-            # Track mounted servers for status reporting
-            for server_config in enabled_servers:
-                self.mounted_servers[server_config.name] = MountedServerInfo(
-                    config=server_config, proxy=self.composite_proxy
-                )
-
-            log.info(f"✅ Created composite proxy with {len(enabled_servers)} servers")
+        if not enabled_servers:
+            log.info("No real servers to mount in composite proxy")
             return True
 
-        except Exception as e:
-            log.error(f"❌ Failed to create composite proxy: {e}")
-            return False
+        # Import the composite proxy into this main server
+        # Tools and resources will be automatically namespaced by server name
+        for server_config in enabled_servers:
+            server_name = server_config.name
+            fastmcp_config = self._convert_to_fastmcp_config([server_config])
+            proxy = FastMCP.as_proxy(FastMCPClient(fastmcp_config))
+            self.mount(proxy, prefix=server_name)
+            self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
-    async def mount_server(self, server_config: MCPServerConfig) -> bool:
-        """
-        Mount a single MCP server by rebuilding the composite proxy.
-
-        Args:
-            server_config: Configuration for the server to mount
-
-        Returns:
-            True if mounting was successful, False otherwise
-        """
-        try:
-            # Check if server is already mounted
-            if server_config.name in self.mounted_servers:
-                log.info(f"Server {server_config.name} is already mounted")
-                return True
-
-            # Handle test servers separately
-            if server_config.command == "echo":
-                return await self._mount_test_server(server_config)
-
-            # For real servers, we need to rebuild the composite proxy
-            log.info(f"Mounting server {server_config.name} via composite proxy rebuild")
-
-            # Get currently mounted servers and add the new one
-            current_configs = [mounted["config"] for mounted in self.mounted_servers.values()]
-
-            # Add the new server if not already there
-            if server_config not in current_configs:
-                current_configs.append(server_config)
-
-            # Rebuild composite proxy with new server list
-            return await self.create_composite_proxy(current_configs)
-
-        except Exception as e:
-            log.error(f"❌ Failed to mount server {server_config.name}: {e}")
-            return False
-
-    async def unmount_server(self, server_name: str) -> bool:
-        """
-        Unmount an MCP server and stop its subprocess.
-
-        NOTE: For servers in the composite proxy, this will require rebuilding
-        the entire composite proxy without the specified server.
-        """
-        try:
-            # Check if this is a test server (individually mounted)
-            if server_name in self.mounted_servers:
-                mounted = self.mounted_servers[server_name]
-                if mounted["config"].command == "echo":
-                    # Test server - handle individually
-                    await self._cleanup_mounted_server(server_name)
-                    return True
-
-                # Real server in composite proxy - needs full rebuild
-                log.warning(f"Unmounting {server_name} requires rebuilding composite proxy")
-                return await self._rebuild_composite_proxy_without(server_name)
-
-            log.warning(f"Server {server_name} not found in mounted servers")
-            return False
-
-        except Exception as e:
-            log.error(f"❌ Failed to unmount MCP server {server_name}: {e}")
-            return False
+        log.info(
+            f"✅ Created composite proxy with {len(enabled_servers)} servers ({self.mounted_servers.keys()})"
+        )
+        return True
 
     async def _rebuild_composite_proxy_without(self, excluded_server: str) -> bool:
         """Rebuild the composite proxy without the specified server."""
@@ -233,6 +154,7 @@ class SingleUserMCP(FastMCP[Any]):
 
     async def _cleanup_mounted_server(self, server_name: str) -> None:
         """Clean up mounted server resources."""
+        # TODO not sure this is possible for the self object? i.e. there is no self.unmount
         if server_name in self.mounted_servers:
             del self.mounted_servers[server_name]
             log.info(f"✅ Unmounted MCP server: {server_name}")
