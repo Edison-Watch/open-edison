@@ -607,8 +607,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [resourcePerms, setResourcePerms] = useState<ResourcePerms | null>(null)
     const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
     const [saving, setSaving] = useState(false)
-    const [saveMsg, setSaveMsg] = useState('')
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
+    
+    // Auto-dismiss toast after 10 seconds
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => {
+                setToast(null)
+            }, 10000) // 10 seconds
+            
+            return () => clearTimeout(timer)
+        }
+    }, [toast])
     const [selectedServer, setSelectedServer] = useState<string | null>(null)
     const [validateInProgress, setValidateInProgress] = useState<string | null>(null)
     const [validateErrors, setValidateErrors] = useState<Record<string, string>>({})
@@ -815,7 +826,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const saveAll = async (onlyChanges: boolean) => {
         setSaving(true)
-        setSaveMsg('')
+        setToast(null)
         try {
             const post = (name: string, content: string) => fetch('/__save_json__', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
@@ -861,9 +872,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
             
-            setSaveMsg(onlyChanges ? 'Saved changes' : 'Saved')
+            setToast({ message: onlyChanges ? 'Saved changes' : 'Saved', type: 'success' })
         } catch (e) {
-            setSaveMsg(e instanceof Error ? e.message : 'Save failed')
+            setToast({ message: e instanceof Error ? e.message : 'Save failed', type: 'error' })
         } finally {
             setSaving(false)
         }
@@ -871,7 +882,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const reinitializeServers = async () => {
         setSaving(true)
-        setSaveMsg('')
+        setToast(null)
         try {
             // Step 1: Save configuration changes first
             console.log('🔄 Saving configuration changes...')
@@ -946,18 +957,18 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             
             const result = await reinitResponse.json()
             console.log('✅ MCP servers reinitialized successfully:', result)
-            setSaveMsg(`Saved and reinitialized ${result.total_final_mounted || 0} servers`)
+            setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
             
         } catch (e) {
             console.error('❌ Failed to save and reinitialize:', e)
-            setSaveMsg(e instanceof Error ? e.message : 'Save and reinitialize failed')
+            setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
         } finally {
             setSaving(false)
         }
     }
 
     async function validateAndImport(serverName: string) {
-        setSaveMsg('')
+        setToast(null)
         setValidateInProgress(serverName)
         try {
             const cfg = (config?.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === serverName.toLowerCase())
@@ -1003,7 +1014,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 next[serverName] = server
                 return next
             })
-            setSaveMsg('Imported initial permissions from validation (not yet saved)')
+            setToast({ message: 'Imported initial permissions from validation (not yet saved)', type: 'success' })
             setValidateErrors(prev => { const next = { ...prev }; delete next[serverName]; return next })
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Validation failed'
@@ -1016,7 +1027,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     async function quickStart(serverName: string) {
         await validateAndImport(serverName)
         toggleServer(serverName, true)
-        setSaveMsg('Quick-start: imported permissions and enabled (not yet saved)')
+        setToast({ message: 'Quick-start: imported permissions and enabled (not yet saved)', type: 'success' })
     }
 
     const countEntries = (obj: Record<string, any> | null | undefined) => {
@@ -1212,7 +1223,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         </div>
                         <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save'}</button>
                         <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Save and reinitialize'}</button>
-                        {saveMsg && <span className="text-xs text-app-muted">{saveMsg}</span>}
+
                     </div>
                 </div>
                 {viewMode === 'section' ? (
@@ -1310,6 +1321,25 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     {renderPermGroup('Resources', resourcePerms, setResourcePerms, true, true)}
                     {renderPermGroup('Prompts', promptPerms, setPromptPerms, true, true)}
                 </>
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${
+                    toast.type === 'success' 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-red-500 text-white'
+                }`}>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{toast.message}</span>
+                        <button 
+                            onClick={() => setToast(null)}
+                            className="ml-3 text-white hover:text-gray-200 text-lg font-bold"
+                        >
+                            ×
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
     )
