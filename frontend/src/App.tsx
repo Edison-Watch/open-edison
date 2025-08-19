@@ -606,8 +606,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [resourcePerms, setResourcePerms] = useState<ResourcePerms | null>(null)
     const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
     const [saving, setSaving] = useState(false)
-    const [saveMsg, setSaveMsg] = useState('')
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
+
+    // Auto-dismiss toast after 10 seconds
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => {
+                setToast(null)
+            }, 10000) // 10 seconds
+
+            return () => clearTimeout(timer)
+        }
+    }, [toast])
     const [selectedServer, setSelectedServer] = useState<string | null>(null)
     const [validateInProgress, setValidateInProgress] = useState<string | null>(null)
     const [validateErrors, setValidateErrors] = useState<Record<string, string>>({})
@@ -836,7 +847,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const saveAll = async (onlyChanges: boolean) => {
         setSaving(true)
-        setSaveMsg('')
+        setToast(null)
         try {
             const post = (name: string, content: string) => fetch('/__save_json__', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
@@ -881,17 +892,102 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             } catch (cacheError) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
-
-            setSaveMsg(onlyChanges ? 'Saved changes' : 'Saved')
         } catch (e) {
-            setSaveMsg(e instanceof Error ? e.message : 'Save failed')
+            setToast({ message: e instanceof Error ? e.message : 'Save failed', type: 'error' })
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const reinitializeServers = async () => {
+        setSaving(true)
+        setToast(null)
+        try {
+            // Step 1: Save configuration changes first
+            console.log('🔄 Saving configuration changes...')
+            const post = (name: string, content: string) => fetch('/__save_json__', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
+            })
+
+            const cfgToSave = origConfig && config
+                ? buildConfigSaveObject(origConfig, config)
+                : config
+            const toolsToSave = toolPerms && origToolPerms
+                ? buildPermsSaveObject(origToolPerms, toolPerms, defaults, 'tools')
+                : toolPerms
+            const resourcesToSave = resourcePerms && origResourcePerms
+                ? buildPermsSaveObject(origResourcePerms, resourcePerms, defaults, 'resources')
+                : resourcePerms
+            const promptsToSave = promptPerms && origPromptPerms
+                ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
+                : promptPerms
+
+            const responses = await Promise.all([
+                post(CONFIG_NAME, JSON.stringify(cfgToSave, null, 4)),
+                post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
+                post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
+                post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
+            ])
+
+            const notOk = responses.find(r => !r.ok)
+            if (notOk) throw new Error('One or more files failed to save')
+
+            console.log('✅ Configuration saved successfully')
+
+            // Step 2: Clear permission caches
+            console.log('🔄 Clearing permission caches...')
+            try {
+                const serverHost = config?.server?.host || 'localhost'
+                const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                if (cacheResponse.ok) {
+                    const cacheResult = await cacheResponse.json()
+                    console.log('✅ Cache invalidation successful:', cacheResult)
+                } else {
+                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                }
+            } catch (cacheError) {
+                console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
+            }
+
+            // Step 3: Reinitialize MCP servers
+            console.log('🔄 Reinitializing MCP servers...')
+            const serverHost = config?.server?.host || 'localhost'
+            const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+            const apiKey = config?.server?.api_key || ''
+
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`
+            }
+
+            const reinitResponse = await fetch(`http://${serverHost}:${serverPort}/mcp/reinitialize`, {
+                method: 'POST',
+                headers
+            })
+
+            if (!reinitResponse.ok) {
+                const errorData = await reinitResponse.json().catch(() => ({}))
+                throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
+            }
+
+            const result = await reinitResponse.json()
+            console.log('✅ MCP servers reinitialized successfully:', result)
+            setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
+
+        } catch (e) {
+            console.error('❌ Failed to save and reinitialize:', e)
+            setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
         } finally {
             setSaving(false)
         }
     }
 
     async function validateAndImport(serverName: string) {
-        setSaveMsg('')
+        setToast(null)
         setValidateInProgress(serverName)
         try {
             const cfg = (config?.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === serverName.toLowerCase())
@@ -937,7 +1033,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 next[serverName] = server
                 return next
             })
-            setSaveMsg('Imported initial permissions from validation (not yet saved)')
+            setToast({ message: 'Imported initial permissions from validation (not yet saved)', type: 'success' })
             setValidateErrors(prev => { const next = { ...prev }; delete next[serverName]; return next })
         } catch (e) {
             const msg = e instanceof Error ? e.message : 'Validation failed'
@@ -950,7 +1046,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     async function quickStart(serverName: string) {
         await validateAndImport(serverName)
         toggleServer(serverName, true)
-        setSaveMsg('Quick-start: imported permissions and enabled (not yet saved)')
+        setToast({ message: 'Quick-start: imported permissions and enabled (not yet saved)', type: 'success' })
     }
 
     const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://mcp.edison.watch/api/config-perms'
@@ -1363,6 +1459,24 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     {renderPermGroup('Resources', resourcePerms, setResourcePerms, true, true)}
                     {renderPermGroup('Prompts', promptPerms, setPromptPerms, true, true)}
                 </>
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${toast.type === 'success'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-red-500 text-white'
+                    }`}>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{toast.message}</span>
+                        <button
+                            onClick={() => setToast(null)}
+                            className="ml-3 text-white hover:text-gray-200 text-lg font-bold"
+                        >
+                            ×
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
     )

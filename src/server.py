@@ -377,6 +377,12 @@ class OpenEdisonProxy:
             methods=["GET"],
             dependencies=[Depends(self.verify_api_key)],
         )
+        app.add_api_route(
+            "/mcp/reinitialize",
+            self.reinitialize_mcp_servers,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
         # Public sessions endpoint (no auth) for simple local dashboard
         app.add_api_route(
             "/sessions",
@@ -450,6 +456,49 @@ class OpenEdisonProxy:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to get mounted servers: {str(e)}",
+            ) from e
+
+    async def reinitialize_mcp_servers(self) -> dict[str, Any]:
+        """Reinitialize all MCP servers by creating a fresh instance and reloading config."""
+        old_mcp = None
+        try:
+            log.info("🔄 Reinitializing MCP servers via API endpoint")
+
+            # Reload configuration from disk
+            log.info("Reloading configuration from disk")
+            from src.config import Config
+
+            fresh_config = Config.load()
+            log.info("✅ Configuration reloaded from disk")
+
+            # Create a completely new SingleUserMCP instance to ensure clean state
+            old_mcp = self.single_user_mcp
+            self.single_user_mcp = SingleUserMCP()
+
+            # Initialize the new instance with fresh config
+            await self.single_user_mcp.initialize(fresh_config)
+
+            # Get final status
+            final_mounted = await self.single_user_mcp.get_mounted_servers()
+
+            result = {
+                "status": "success",
+                "message": "MCP servers reinitialized successfully",
+                "final_mounted_servers": [server["name"] for server in final_mounted],
+                "total_final_mounted": len(final_mounted),
+            }
+
+            log.info("✅ MCP servers reinitialized successfully via API")
+            return result
+
+        except Exception as e:
+            log.error(f"❌ Failed to reinitialize MCP servers: {e}")
+            # Restore the old instance on failure
+            if old_mcp is not None:
+                self.single_user_mcp = old_mcp
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to reinitialize MCP servers: {str(e)}",
             ) from e
 
     async def get_sessions(self) -> dict[str, Any]:
