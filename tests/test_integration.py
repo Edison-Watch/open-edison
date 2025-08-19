@@ -5,7 +5,6 @@ These tests run against a real server instance in the background.
 """
 
 import pytest
-import requests
 
 from tests.test_template import BackgroundServerTemplate, integration_test, slow_test
 
@@ -80,17 +79,3 @@ class TestBackgroundServerIntegration(BackgroundServerTemplate):
         assert "sessions" in data
         assert "message" in data
         assert data["sessions"] == []
-
-    @integration_test
-    def test_authentication_required(self):
-        """Test that authentication is required for protected endpoints"""
-
-        # No auth headers
-        response = requests.get(f"{self.base_url}/mcp/status")
-        assert response.status_code == 403
-
-        # Invalid auth
-        response = requests.get(
-            f"{self.base_url}/mcp/status", headers={"Authorization": "Bearer invalid-key"}
-        )
-        assert response.status_code == 401

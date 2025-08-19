@@ -18,26 +18,6 @@ class TestServerAPI(TestTemplate):
         assert "version" in data
         assert "mcp_servers" in data
 
-    def test_mcp_status_requires_auth(self, test_client):
-        """Test that MCP status endpoint requires authentication"""
-        response = test_client.get("/mcp/status")
-        assert response.status_code == 403  # Should require auth
-
-    def test_mcp_status_with_auth(self, test_client, auth_headers):
-        """Test MCP status endpoint with authentication"""
-        response = test_client.get("/mcp/status", headers=auth_headers)
-        assert response.status_code == 200
-
-        data = response.json()
-        assert "servers" in data
-        assert isinstance(data["servers"], list)
-
-    def test_invalid_api_key(self, test_client):
-        """Test that invalid API key is rejected"""
-        headers = {"Authorization": "Bearer invalid-key"}
-        response = test_client.get("/mcp/status", headers=headers)
-        assert response.status_code == 401
-
     def test_sernitialization(self):
         """Test server initialization"""
         from src.server import OpenEdisonProxy

@@ -7,8 +7,8 @@ Handles MCP protocol communication with running servers using a unified composit
 
 from typing import Any, TypedDict
 
-from fastmcp import FastMCP
 from fastmcp import Client as FastMCPClient
+from fastmcp import FastMCP
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
@@ -116,7 +116,11 @@ class SingleUserMCP(FastMCP[Any]):
         # Tools and resources will be automatically namespaced by server name
         for server_config in enabled_servers:
             server_name = server_config.name
+            # Skip if this server would produce an empty config (e.g., misconfigured)
             fastmcp_config = self._convert_to_fastmcp_config([server_config])
+            if not fastmcp_config.get("mcpServers"):
+                log.warning(f"Skipping server '{server_name}' due to empty MCP config")
+                continue
             proxy = FastMCP.as_proxy(FastMCPClient(fastmcp_config))
             self.mount(proxy, prefix=server_name)
             self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
