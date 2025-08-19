@@ -95,12 +95,13 @@
             "name": "zapier",
             "command": "npx",
             "args": [
-            "-y",
-            "mcp-remote",
-            "https://mcp.zapier.com/api/mcp/s/{access_token}/mcp"
+                "-y",
+                "mcp-remote",
+                "https://mcp.zapier.com/api/mcp/s/{access_token}/mcp"
             ],
             "env": {},
-            "enabled": true
+            "enabled": false,
+            "roots": []
         }
     ]
 }
