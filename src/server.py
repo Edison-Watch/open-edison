@@ -363,7 +363,6 @@ class OpenEdisonProxy:
             "/mcp/status",
             self.mcp_status,
             methods=["GET"],
-            dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
             "/mcp/validate",
@@ -621,9 +620,9 @@ class OpenEdisonProxy:
                     "args": body.args,
                     "has_roots": bool(body.roots),
                 },
-                "tools": [self._safe_tool(t) for t in tools],
+                "tools": [self._safe_tool(t, prefix=server_name) for t in tools],
                 "resources": [self._safe_resource(r) for r in resources],
-                "prompts": [self._safe_prompt(p) for p in prompts],
+                "prompts": [self._safe_prompt(p, prefix=server_name) for p in prompts],
             }
         except TimeoutError as te:  # noqa: PERF203
             log.error(f"MCP validation timed out: {te}\n{traceback.format_exc()}")
@@ -694,10 +693,13 @@ class OpenEdisonProxy:
         timeout = body.timeout_s if isinstance(body.timeout_s, (int | float)) else 20.0
         return await asyncio.wait_for(list_all(), timeout=timeout)
 
-    def _safe_tool(self, t: Any) -> dict[str, Any]:
+    def _safe_tool(self, t: Any, prefix: str) -> dict[str, Any]:
         name = getattr(t, "name", None)
         description = getattr(t, "description", None)
-        return {"name": str(name) if name is not None else "", "description": description}
+        return {
+            "name": prefix + "_" + str(name) if name is not None else "",
+            "description": description,
+        }
 
     def _safe_resource(self, r: Any) -> dict[str, Any]:
         uri = getattr(r, "uri", None)
@@ -708,7 +710,10 @@ class OpenEdisonProxy:
         description = getattr(r, "description", None)
         return {"uri": uri_str, "description": description}
 
-    def _safe_prompt(self, p: Any) -> dict[str, Any]:
+    def _safe_prompt(self, p: Any, prefix: str) -> dict[str, Any]:
         name = getattr(p, "name", None)
         description = getattr(p, "description", None)
-        return {"name": str(name) if name is not None else "", "description": description}
+        return {
+            "name": prefix + "_" + str(name) if name is not None else "",
+            "description": description,
+        }

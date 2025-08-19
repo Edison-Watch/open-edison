@@ -1,7 +1,6 @@
 # OpenEdison
 
-Open-source MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local, single-user use.
-
+Open-source single-user MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
 
 <div align="center">
   <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
@@ -34,20 +33,21 @@ Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
 
 ![macOS](https://img.shields.io/badge/mac%20os-000000?style=for-the-badge&logo=apple&logoColor=white)
+
 - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
 - Node/npx: `brew install node`
 
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+
 - uv: `curl -fsSL https://astral.sh/uv/install.sh | sh`
 - Node/npx: `sudo apt-get update && sudo apt-get install -y nodejs npm`
 
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+
 - uv: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 - Node/npx: `winget install -e --id OpenJS.NodeJS`
 
 After installation, ensure that `npx` is available on PATH.
-
-</details>
 
 <details>
 <summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI</summary>
@@ -138,7 +138,8 @@ The server will be available at `http://localhost:3000`.
 
 </details>
 
-## MCP Connection
+<details>
+<summary>MCP Connection</summary>
 
 Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
 
@@ -159,7 +160,10 @@ Or add to your MCP client config:
 }
 ```
 
-## Usage
+</details>
+
+<details>
+<summary>Usage</summary>
 
 ### API Endpoints
 
@@ -213,7 +217,10 @@ Each MCP server configuration includes:
 
 </details>
 
-## Security & Permissions System
+</details>
+
+<details>
+<summary>Security & Permissions System</summary>
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
@@ -294,7 +301,10 @@ All permission types support wildcard patterns:
 
 Use the `get_security_status` tool to monitor your session's current risk level and see which capabilities have been accessed. When the lethal trifecta is achieved (all three risk flags set), further potentially dangerous operations are blocked.
 
-## Documentation
+</details>
+
+<details>
+<summary>Documentation</summary>
 
 📚 **Complete documentation available in [`docs/`](docs/)**
 
@@ -303,6 +313,11 @@ Use the `get_security_status` tool to monitor your session's current risk level 
 - **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
 - **[Development Guide](docs/development/development_guide.md)** - Contributing and development
 
-## License
+</details>
+
+<details>
+<summary>License</summary>
 
 GPL-3.0 License - see [LICENSE](LICENSE) for details.
+
+</details>

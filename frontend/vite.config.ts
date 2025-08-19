@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import * as fs from 'node:fs/promises'
+import * as fsSync from 'node:fs'
 import * as path from 'node:path'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -47,7 +48,7 @@ const localSavePlugin = () => ({
                     return
                 }
                 await fs.writeFile(normalized, data.content ?? '', 'utf8')
-                
+
                 // Clear permission caches after successful save (only for permission files)
                 const filename = path.basename(normalized)
                 if (filename === 'tool_permissions.json' || filename === 'resource_permissions.json' || filename === 'prompt_permissions.json') {
@@ -59,7 +60,7 @@ const localSavePlugin = () => ({
                         const configData = JSON.parse(configContent)
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
-                        
+
                         const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
@@ -74,7 +75,7 @@ const localSavePlugin = () => ({
                         console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
                     }
                 }
-                
+
                 res.statusCode = 200
                 res.setHeader('content-type', 'application/json')
                 res.end(JSON.stringify({ ok: true }))
@@ -91,6 +92,18 @@ export default defineConfig({
     plugins: [react(), localSavePlugin()],
     define: {
         __PROJECT_ROOT__: JSON.stringify(projectRoot),
+        // Build-time autoconfig URL, read from project config.json if available
+        __AUTOCONFIG_URL__: (() => {
+            try {
+                const configPath = path.join(projectRoot, 'config.json')
+                const raw = fsSync.readFileSync(configPath, 'utf8')
+                const conf = JSON.parse(raw || '{}')
+                const url = conf?.autoconfig_url || process.env.AUTOCONFIG_URL || 'https://api.edison.watch/api/config-perms'// 'http://localhost:3101/api/config-perms'
+                return JSON.stringify(url)
+            } catch (e) {
+                return JSON.stringify(process.env.AUTOCONFIG_URL || 'https://api.edison.watch/api/config-perms')// 'http://localhost:3101/api/config-perms'
+            }
+        })(),
     },
     server: {
         port: 5173,

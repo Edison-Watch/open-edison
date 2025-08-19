@@ -4,10 +4,12 @@
         "port": 3000,
         "api_key": "dev-api-key-change-me"
     },
+    "autoconfig_url": "https://api.edison.watch/api/config-perms",
     "logging": {
         "level": "INFO",
         "database_path": "sessions.db"
     },
+    "edison-watch-api-key": "change-me",
     "mcp_servers": [
         {
             "name": "filesystem",
