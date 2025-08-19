@@ -58,15 +58,15 @@ export function App(): React.JSX.Element {
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
     const [view, setView] = useState<'sessions' | 'configs' | 'manager'>('sessions')
-    
+
     // MCP Server Status
     const [mcpStatus, setMcpStatus] = useState<'checking' | 'online' | 'reduced' | 'offline'>('checking')
-    
+
     useEffect(() => {
         const checkMcpStatus = async () => {
             try {
                 console.log('🔄 Starting MCP status check...')
-                
+
                 // Load config to get server settings
                 const configResponse = await fetch(`/@fs${projectRoot}/config.json`)
                 if (!configResponse.ok) {
@@ -74,13 +74,13 @@ export function App(): React.JSX.Element {
                     setMcpStatus('offline')
                     return
                 }
-                
+
                 const configData = await configResponse.json()
                 const serverHost = configData?.server?.host || 'localhost'
                 const basePort = configData?.server?.port || 3000
                 const apiPort = basePort + 1
                 const apiKey = configData?.server?.api_key || ''
-                
+
                 console.log('🔍 Checking servers:', {
                     serverHost,
                     basePort,
@@ -88,21 +88,21 @@ export function App(): React.JSX.Element {
                     mcpUrl: `http://${serverHost}:${basePort}/`,
                     apiUrl: `http://${serverHost}:${apiPort}/health`
                 })
-                
+
                 // Check both ports - API server has /health, MCP server we'll check with a GET request
                 const [mcpResponse, apiResponse] = await Promise.allSettled([
-                    fetch(`http://${serverHost}:${apiPort}/mcp/status`, { 
+                    fetch(`http://${serverHost}:${apiPort}/mcp/status`, {
                         method: 'GET',
                         mode: 'cors',
                         headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
                     }),
-                    fetch(`http://${serverHost}:${apiPort}/health`, { 
+                    fetch(`http://${serverHost}:${apiPort}/health`, {
                         method: 'GET',
                         mode: 'cors',
                         headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
                     })
                 ])
-                
+
                 console.log('📡 Raw responses:', {
                     mcpResponse: mcpResponse.status === 'fulfilled' ? {
                         status: mcpResponse.value.status,
@@ -115,17 +115,17 @@ export function App(): React.JSX.Element {
                         ok: apiResponse.value.ok
                     } : apiResponse.reason
                 })
-                
+
                 // For MCP server with no-cors, if the promise is fulfilled, the server is reachable
                 const mcpOk = mcpResponse.status === 'fulfilled'
                 const apiOk = apiResponse.status === 'fulfilled' && apiResponse.value.ok
-                
+
                 console.log('🔍 MCP Status Check:', {
                     mcpOk,
                     apiOk,
                     finalStatus: mcpOk && apiOk ? 'online' : mcpOk ? 'reduced' : 'offline'
                 })
-                
+
                 if (mcpOk && apiOk) {
                     setMcpStatus('online')
                 } else if (mcpOk) {
@@ -138,7 +138,7 @@ export function App(): React.JSX.Element {
                 setMcpStatus('offline')
             }
         }
-        
+
         checkMcpStatus()
         // Check status every 5 seconds
         const interval = setInterval(checkMcpStatus, 5000)
@@ -176,21 +176,19 @@ export function App(): React.JSX.Element {
                         </div>
                         <div className="card flex items-center gap-3">
                             <div className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${
-                                    mcpStatus === 'online' ? 'bg-green-500' : 
-                                    mcpStatus === 'reduced' ? 'bg-yellow-500' : 
-                                    mcpStatus === 'checking' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'
-                                }`}></div>
+                                <div className={`w-3 h-3 rounded-full ${mcpStatus === 'online' ? 'bg-green-500' :
+                                    mcpStatus === 'reduced' ? 'bg-yellow-500' :
+                                        mcpStatus === 'checking' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'
+                                    }`}></div>
                                 <div>
                                     <div className="text-xs text-app-muted">MCP Server</div>
-                                    <div className={`text-xl font-bold ${
-                                        mcpStatus === 'online' ? 'text-green-500' : 
-                                        mcpStatus === 'reduced' ? 'text-yellow-500' : 
-                                        mcpStatus === 'checking' ? 'text-blue-500' : 'text-red-500'
-                                    }`}>
-                                        {mcpStatus === 'online' ? 'Live' : 
-                                         mcpStatus === 'reduced' ? 'Reduced' : 
-                                         mcpStatus === 'checking' ? 'Checking...' : 'Offline'}
+                                    <div className={`text-xl font-bold ${mcpStatus === 'online' ? 'text-green-500' :
+                                        mcpStatus === 'reduced' ? 'text-yellow-500' :
+                                            mcpStatus === 'checking' ? 'text-blue-500' : 'text-red-500'
+                                        }`}>
+                                        {mcpStatus === 'online' ? 'Live' :
+                                            mcpStatus === 'reduced' ? 'Reduced' :
+                                                mcpStatus === 'checking' ? 'Checking...' : 'Offline'}
                                     </div>
                                 </div>
                             </div>
@@ -468,7 +466,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                 body: JSON.stringify({ path: file.path, content: content[active] ?? '' })
             })
             if (!resp.ok) throw new Error('Local save helper not running or error saving')
-            
+
             // Clear permission caches after successful save (only for permission files)
             if (file.key === 'tool' || file.key === 'resource' || file.key === 'prompt') {
                 console.log(`🔄 Clearing permission caches after ${file.name} save...`)
@@ -496,7 +494,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                     console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
                 }
             }
-            
+
             setStatusMsg('Saved')
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save. You can use Download to save manually.')
@@ -587,6 +585,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             enabled?: boolean
             roots?: string[]
         }>
+        'edison-watch-api-key'?: string
     }
     type PermissionFlags = {
         enabled: boolean
@@ -612,6 +611,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [selectedServer, setSelectedServer] = useState<string | null>(null)
     const [validateInProgress, setValidateInProgress] = useState<string | null>(null)
     const [validateErrors, setValidateErrors] = useState<Record<string, string>>({})
+    const [apiKeyVisible, setApiKeyVisible] = useState(false)
+    const [apiKeyInput, setApiKeyInput] = useState<string>('')
+    const [savingKey, setSavingKey] = useState(false)
 
     // Persist view mode across reloads
     useEffect(() => {
@@ -624,6 +626,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     useEffect(() => {
         try { localStorage.setItem('cm_view_mode', viewMode) } catch { /* ignore */ }
     }, [viewMode])
+    useEffect(() => {
+        const k = (config as any)?.['edison-watch-api-key'] || ''
+        setApiKeyInput(k)
+    }, [config])
     // Baselines for Save only changes
     const [origConfig, setOrigConfig] = useState<ConfigFile | null>(null)
     const [origToolPerms, setOrigToolPerms] = useState<ToolPerms | null>(null)
@@ -724,7 +730,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 }
             }
         }
-        return { ...original, mcp_servers: resultServers }
+        const result: ConfigFile = { ...original, mcp_servers: resultServers }
+        const currExtKey = (current as any)?.['edison-watch-api-key']
+        const origExtKey = (original as any)?.['edison-watch-api-key']
+        if (currExtKey !== origExtKey) {
+            (result as any)['edison-watch-api-key'] = currExtKey
+        }
+        return result
     }
 
     function shallowEqualServer(a: ConfigFile['mcp_servers'][number], b: ConfigFile['mcp_servers'][number]): boolean {
@@ -751,6 +763,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const entries = (d as any)[kind] as Record<string, PermissionFlags> | undefined
             if (entries) defaultsByServer[d.name] = entries
         }
+
+        // Persist only core permission flags; drop any UI metadata like description/acl
+        const toCore = (f: any) => ({
+            enabled: Boolean(f?.enabled),
+            write_operation: Boolean(f?.write_operation),
+            read_private_data: Boolean(f?.read_private_data),
+            read_untrusted_public_data: Boolean(f?.read_untrusted_public_data),
+        })
+
         for (const [group, items] of Object.entries(currentMerged as any)) {
             if (group === '_metadata') continue
             for (const [item, flags] of Object.entries(items as any)) {
@@ -766,11 +787,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         || Boolean((flags as any).read_untrusted_public_data)
                     if (shouldAdd) {
                         if (!result[group]) result[group] = {}
-                        result[group][item] = flags
+                        result[group][item] = toCore(flags)
                     }
                 } else if (!shallowEqualPerms(flags as PermissionFlags, baseline)) {
                     if (!result[group]) result[group] = {}
-                    result[group][item] = flags
+                    result[group][item] = toCore(flags)
                 }
             }
         }
@@ -840,7 +861,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             ])
             const notOk = responses.find(r => !r.ok)
             if (notOk) throw new Error('One or more files failed to save')
-            
+
             // Clear permission caches after successful save
             console.log('🔄 Clearing permission caches after configuration save...')
             try {
@@ -860,7 +881,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             } catch (cacheError) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
-            
+
             setSaveMsg(onlyChanges ? 'Saved changes' : 'Saved')
         } catch (e) {
             setSaveMsg(e instanceof Error ? e.message : 'Save failed')
@@ -930,6 +951,109 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         await validateAndImport(serverName)
         toggleServer(serverName, true)
         setSaveMsg('Quick-start: imported permissions and enabled (not yet saved)')
+    }
+
+    const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://mcp.edison.watch/api/config-perms'
+
+    function getNamesForServer<T extends Record<string, any> | null | undefined>(data: T, serverName: string): string[] {
+        if (!data) return []
+        const group = (data as any)[serverName] || {}
+        return Object.keys(group).filter((k) => k !== '_metadata')
+    }
+
+    async function autoConfigure(serverName: string) {
+        try {
+            const tools = getNamesForServer(toolPerms, serverName)
+            const resources = getNamesForServer(resourcePerms, serverName)
+            const prompts = getNamesForServer(promptPerms, serverName)
+
+            if (tools.length === 0 && resources.length === 0 && prompts.length === 0) {
+                setSaveMsg('No known tools/resources/prompts for this server')
+                return
+            }
+
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const externalKey = (config as any)?.['edison-watch-api-key'] || ''
+            if (externalKey) headers['X-API-KEY'] = externalKey
+
+            const body = { server: serverName, tools, resources, prompts }
+            const resp = await fetch(AUTOCONFIG_URL, { method: 'POST', headers, body: JSON.stringify(body), mode: 'cors' })
+            if (!resp.ok) {
+                const txt = await resp.text().catch(() => '')
+                setSaveMsg(`Autoconfig failed (${resp.status})${txt ? ` - ${txt}` : ''}`)
+                return
+            }
+            let payload: any = null
+            try { payload = await resp.json() } catch { /* ignore */ }
+            if (!payload) {
+                setSaveMsg('Autoconfig succeeded (no payload)')
+                return
+            }
+
+            const toolsResp = payload.tools as Record<string, any> | undefined
+            const resourcesResp = payload.resources as Record<string, any> | undefined
+            const promptsResp = payload.prompts as Record<string, any> | undefined
+
+            if (toolsResp) {
+                setToolPerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = { ...(next[serverName] || {}) }
+                    for (const [name, flags] of Object.entries(toolsResp)) {
+                        server[name] = flags
+                    }
+                    next[serverName] = server
+                    return next
+                })
+            }
+            if (resourcesResp) {
+                setResourcePerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = { ...(next[serverName] || {}) }
+                    for (const [name, flags] of Object.entries(resourcesResp)) {
+                        server[name] = flags
+                    }
+                    next[serverName] = server
+                    return next
+                })
+            }
+            if (promptsResp) {
+                setPromptPerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = { ...(next[serverName] || {}) }
+                    for (const [name, flags] of Object.entries(promptsResp)) {
+                        server[name] = flags
+                    }
+                    next[serverName] = server
+                    return next
+                })
+            }
+
+            setSaveMsg('Autoconfig applied (not yet saved)')
+        } catch (e) {
+            console.warn('Autoconfig request error:', e)
+            setSaveMsg('Autoconfig failed')
+        }
+    }
+
+    const saveExternalApiKey = async () => {
+        if (!config) return
+        setSavingKey(true)
+        try {
+            const nextCfg: any = { ...config, ['edison-watch-api-key']: apiKeyInput }
+            const resp = await fetch('/__save_json__', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: 'config.json', content: JSON.stringify(nextCfg, null, 4) })
+            })
+            if (!resp.ok) throw new Error('Save failed')
+            setConfig(nextCfg)
+            setOrigConfig(nextCfg)
+            setSaveMsg('API key saved')
+        } catch (e) {
+            setSaveMsg('Failed to save API key')
+        } finally {
+            setSavingKey(false)
+        }
     }
 
     const countEntries = (obj: Record<string, any> | null | undefined) => {
@@ -1123,6 +1247,17 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type={apiKeyVisible ? 'text' : 'password'}
+                                className="button !py-1.5 !px-2 w-[240px]"
+                                placeholder="Edison Watch API Key"
+                                value={apiKeyInput}
+                                onChange={(e) => setApiKeyInput(e.target.value)}
+                            />
+                            <button className="button" onClick={() => setApiKeyVisible(v => !v)}>{apiKeyVisible ? 'Hide' : 'Show'}</button>
+                            <button className="button" disabled={savingKey} onClick={saveExternalApiKey}>{savingKey ? 'Saving…' : 'Save key'}</button>
+                        </div>
                         <button className="button" disabled={saving} onClick={() => saveAll(false)}>{saving ? 'Saving…' : 'Save all'}</button>
                         <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save only changes'}</button>
                         {saveMsg && <span className="text-xs text-app-muted">{saveMsg}</span>}
@@ -1179,6 +1314,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 <button className="button" onClick={() => validateAndImport(def.name)}>Validate & import</button>
                                                 <button className="button" onClick={() => quickStart(def.name)}>Quick start</button>
+                                                {(() => {
+                                                    const c = getCounts(def.name); return (enabled && (c.tools + c.resources + c.prompts) > 0) ? (
+                                                        <button className="button" onClick={() => autoConfigure(def.name)}>Autoconfig</button>
+                                                    ) : null
+                                                })()}
                                             </div>
                                         </div>
                                     </details>
