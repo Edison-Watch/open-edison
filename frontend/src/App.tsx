@@ -607,6 +607,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+    const [saveMsg, setSaveMsg] = useState<string>('')
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
 
     // Auto-dismiss toast after 10 seconds
@@ -899,92 +900,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     }
 
-    const reinitializeServers = async () => {
-        setSaving(true)
-        setToast(null)
-        try {
-            // Step 1: Save configuration changes first
-            console.log('🔄 Saving configuration changes...')
-            const post = (name: string, content: string) => fetch('/__save_json__', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
-            })
-
-            const cfgToSave = origConfig && config
-                ? buildConfigSaveObject(origConfig, config)
-                : config
-            const toolsToSave = toolPerms && origToolPerms
-                ? buildPermsSaveObject(origToolPerms, toolPerms, defaults, 'tools')
-                : toolPerms
-            const resourcesToSave = resourcePerms && origResourcePerms
-                ? buildPermsSaveObject(origResourcePerms, resourcePerms, defaults, 'resources')
-                : resourcePerms
-            const promptsToSave = promptPerms && origPromptPerms
-                ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
-                : promptPerms
-
-            const responses = await Promise.all([
-                post(CONFIG_NAME, JSON.stringify(cfgToSave, null, 4)),
-                post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
-                post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
-                post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
-            ])
-
-            const notOk = responses.find(r => !r.ok)
-            if (notOk) throw new Error('One or more files failed to save')
-
-            console.log('✅ Configuration saved successfully')
-
-            // Step 2: Clear permission caches
-            console.log('🔄 Clearing permission caches...')
-            try {
-                const serverHost = config?.server?.host || 'localhost'
-                const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                if (cacheResponse.ok) {
-                    const cacheResult = await cacheResponse.json()
-                    console.log('✅ Cache invalidation successful:', cacheResult)
-                } else {
-                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
-                }
-            } catch (cacheError) {
-                console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
-            }
-
-            // Step 3: Reinitialize MCP servers
-            console.log('🔄 Reinitializing MCP servers...')
-            const serverHost = config?.server?.host || 'localhost'
-            const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-            const apiKey = config?.server?.api_key || ''
-
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            if (apiKey) {
-                headers['Authorization'] = `Bearer ${apiKey}`
-            }
-
-            const reinitResponse = await fetch(`http://${serverHost}:${serverPort}/mcp/reinitialize`, {
-                method: 'POST',
-                headers
-            })
-
-            if (!reinitResponse.ok) {
-                const errorData = await reinitResponse.json().catch(() => ({}))
-                throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
-            }
-
-            const result = await reinitResponse.json()
-            console.log('✅ MCP servers reinitialized successfully:', result)
-            setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
-
-        } catch (e) {
-            console.error('❌ Failed to save and reinitialize:', e)
-            setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
-        } finally {
-            setSaving(false)
-        }
-    }
+    // (Reinitialize workflow removed; can be re-added when endpoint is live)
 
     async function validateAndImport(serverName: string) {
         setToast(null)
@@ -1049,12 +965,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         setToast({ message: 'Quick-start: imported permissions and enabled (not yet saved)', type: 'success' })
     }
 
-    const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://mcp.edison.watch/api/config-perms'
+    const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://api.edison.watch/api/config-perms'// 'http://localhost:3101/api/config-perms'
 
     function getNamesForServer<T extends Record<string, any> | null | undefined>(data: T, serverName: string): string[] {
         if (!data) return []
         const group = (data as any)[serverName] || {}
         return Object.keys(group).filter((k) => k !== '_metadata')
+    }
+
+    function unprefixByServer(name: string, serverName: string): string {
+        const prefix = `${serverName}_`
+        return name.toLowerCase().startsWith(prefix.toLowerCase())
+            ? name.slice(prefix.length)
+            : name
     }
 
     async function autoConfigure(serverName: string) {
@@ -1072,7 +995,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const externalKey = (config as any)?.['edison-watch-api-key'] || ''
             if (externalKey) headers['X-API-KEY'] = externalKey
 
-            const body = { server: serverName, tools, resources, prompts }
+            const body = {
+                server: serverName,
+                // Unprefix tools and prompts by server name for backend autoconfig
+                tools: tools.map((n) => unprefixByServer(n, serverName)),
+                resources,
+                prompts: prompts.map((n) => unprefixByServer(n, serverName)),
+            }
             const resp = await fetch(AUTOCONFIG_URL, { method: 'POST', headers, body: JSON.stringify(body), mode: 'cors' })
             if (!resp.ok) {
                 const txt = await resp.text().catch(() => '')
@@ -1095,7 +1024,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     const next = { ...(prev || {}) } as any
                     const server = { ...(next[serverName] || {}) }
                     for (const [name, flags] of Object.entries(toolsResp)) {
-                        server[name] = flags
+                        const prefixed = `${serverName}_${name}`
+                        const targetKey = Object.prototype.hasOwnProperty.call(server, prefixed) ? prefixed : name
+                        server[targetKey] = flags
                     }
                     next[serverName] = server
                     return next
@@ -1117,7 +1048,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     const next = { ...(prev || {}) } as any
                     const server = { ...(next[serverName] || {}) }
                     for (const [name, flags] of Object.entries(promptsResp)) {
-                        server[name] = flags
+                        const prefixed = `${serverName}_${name}`
+                        const targetKey = Object.prototype.hasOwnProperty.call(server, prefixed) ? prefixed : name
+                        server[targetKey] = flags
                     }
                     next[serverName] = server
                     return next
@@ -1230,8 +1163,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                             }))
                                                         }}
                                                     >
-                                                        <option value="PUBLIC">Public</option>
-                                                        <option value="PRIVATE">Private</option>
+                                                        <option value="PUBLIC">PUBLIC</option>
+                                                        <option value="PRIVATE">PRIVATE</option>
                                                         <option value="SECRET">SECRET</option>
                                                     </select>
                                                 </div>
@@ -1295,9 +1228,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         }))
                                                     }}
                                                 >
-                                                    <option value="PUBLIC">Public</option>
-                                                    <option value="PRIVATE">Private</option>
-                                                    <option value="SECRET">Secret</option>
+                                                    <option value="PUBLIC">PUBLIC</option>
+                                                    <option value="PRIVATE">PRIVATE</option>
+                                                    <option value="SECRET">SECRET</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -1342,17 +1275,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type={apiKeyVisible ? 'text' : 'password'}
-                                className="button !py-1.5 !px-2 w-[240px]"
-                                placeholder="Edison Watch API Key"
-                                value={apiKeyInput}
-                                onChange={(e) => setApiKeyInput(e.target.value)}
-                            />
-                            <button className="button" onClick={() => setApiKeyVisible(v => !v)}>{apiKeyVisible ? 'Hide' : 'Show'}</button>
-                            <button className="button" disabled={savingKey} onClick={saveExternalApiKey}>{savingKey ? 'Saving…' : 'Save key'}</button>
                         </div>
                         <button className="button" disabled={saving} onClick={() => saveAll(false)}>{saving ? 'Saving…' : 'Save all'}</button>
                         <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save only changes'}</button>
@@ -1451,6 +1373,21 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         )}
                     </>
                 )}
+                {/* Edison Watch API Key controls at bottom */}
+                <div className="mt-3 border border-app-border rounded p-2 bg-app-bg/50">
+                    <div className="text-xs text-app-muted mb-1">Edison Watch API key</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            type={apiKeyVisible ? 'text' : 'password'}
+                            className="button !py-1.5 !px-2 w-[260px]"
+                            placeholder="Enter API key"
+                            value={apiKeyInput}
+                            onChange={(e) => setApiKeyInput(e.target.value)}
+                        />
+                        <button className="button" onClick={() => setApiKeyVisible(v => !v)}>{apiKeyVisible ? 'Hide' : 'Show'}</button>
+                        <button className="button" disabled={savingKey} onClick={saveExternalApiKey}>{savingKey ? 'Saving…' : 'Save key'}</button>
+                    </div>
+                </div>
             </div>
 
             {viewMode === 'section' && (

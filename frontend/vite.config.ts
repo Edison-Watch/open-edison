@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import * as fs from 'node:fs/promises'
+import * as fsSync from 'node:fs'
 import * as path from 'node:path'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -95,12 +96,12 @@ export default defineConfig({
         __AUTOCONFIG_URL__: (() => {
             try {
                 const configPath = path.join(projectRoot, 'config.json')
-                const raw = require('node:fs').readFileSync(configPath, 'utf8')
+                const raw = fsSync.readFileSync(configPath, 'utf8')
                 const conf = JSON.parse(raw || '{}')
-                const url = conf?.autoconfig_url || process.env.AUTOCONFIG_URL || 'https://mcp.edison.watch/api/config-perms'
+                const url = conf?.autoconfig_url || process.env.AUTOCONFIG_URL || 'https://api.edison.watch/api/config-perms'// 'http://localhost:3101/api/config-perms'
                 return JSON.stringify(url)
             } catch (e) {
-                return JSON.stringify(process.env.AUTOCONFIG_URL || 'https://mcp.edison.watch/api/config-perms')
+                return JSON.stringify(process.env.AUTOCONFIG_URL || 'https://api.edison.watch/api/config-perms')// 'http://localhost:3101/api/config-perms'
             }
         })(),
     },
