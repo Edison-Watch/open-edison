@@ -48,6 +48,7 @@ If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js 
 - Node/npx: `winget install -e --id OpenJS.NodeJS`
 
 After installation, ensure that `npx` is available on PATH.
+</details>
 
 <details>
 <summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI</summary>
