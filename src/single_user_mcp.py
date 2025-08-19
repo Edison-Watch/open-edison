@@ -270,6 +270,80 @@ class SingleUserMCP(FastMCP[Any]):
 
         log.info("✅ Single User MCP server initialized with composite proxy")
 
+    async def reinitialize(self, test_config: Any | None = None) -> dict[str, Any]:
+        """
+        Reinitialize all MCP servers by cleaning up existing ones and reloading config.
+
+        This method:
+        1. Cleans up all mounted servers and MCP proxies
+        2. Reloads the configuration
+        3. Reinitializes all enabled servers
+
+        Args:
+            test_config: Optional test configuration to use instead of reloading from disk
+
+        Returns:
+            Dictionary with reinitialization status and details
+        """
+        log.info("🔄 Reinitializing all MCP servers")
+
+        try:
+            # Step 1: Clean up existing mounted servers and proxies
+            log.info("Cleaning up existing mounted servers and proxies")
+
+            # Clean up composite proxy if it exists
+            if self.composite_proxy is not None:
+                log.info("Cleaning up composite proxy")
+                self.composite_proxy = None
+
+            # Clean up all mounted servers
+            mounted_server_names = list(self.mounted_servers.keys())
+            for server_name in mounted_server_names:
+                await self._cleanup_mounted_server(server_name)
+
+            # Clear the mounted servers dictionary completely
+            self.mounted_servers.clear()
+
+            log.info(f"✅ Cleaned up {len(mounted_server_names)} mounted servers")
+
+            # Step 2: Reload configuration if not using test config
+            config_to_use = test_config
+            if test_config is None:
+                log.info("Reloading configuration from disk")
+                # Import here to avoid circular imports
+                from src.config import Config
+
+                config_to_use = Config.load()
+                log.info("✅ Configuration reloaded from disk")
+
+            # Step 3: Reinitialize all servers
+            log.info("Reinitializing servers with fresh configuration")
+            await self.initialize(config_to_use)
+
+            # Step 4: Get final status
+            final_mounted = await self.get_mounted_servers()
+
+            result = {
+                "status": "success",
+                "message": "MCP servers reinitialized successfully",
+                "cleaned_up_servers": mounted_server_names,
+                "final_mounted_servers": [server["name"] for server in final_mounted],
+                "total_final_mounted": len(final_mounted),
+            }
+
+            log.info(
+                f"✅ Reinitialization complete. Final mounted servers: {result['final_mounted_servers']}"
+            )
+            return result
+
+        except Exception as e:
+            log.error(f"❌ Failed to reinitialize MCP servers: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to reinitialize MCP servers: {str(e)}",
+                "error": str(e),
+            }
+
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """
         Calculate a human-readable risk level based on trifecta flags.
