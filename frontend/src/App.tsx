@@ -607,7 +607,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-    const [saveMsg, setSaveMsg] = useState<string>('')
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
 
     // Auto-dismiss toast after 10 seconds
@@ -1074,7 +1073,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const prompts = getNamesForServer(promptPerms, serverName)
 
             if (tools.length === 0 && resources.length === 0 && prompts.length === 0) {
-                setSaveMsg('No known tools/resources/prompts for this server')
+                setToast({ message: 'No known tools/resources/prompts for this server', type: 'error' })
                 return
             }
 
@@ -1092,13 +1091,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const resp = await fetch(AUTOCONFIG_URL, { method: 'POST', headers, body: JSON.stringify(body), mode: 'cors' })
             if (!resp.ok) {
                 const txt = await resp.text().catch(() => '')
-                setSaveMsg(`Autoconfig failed (${resp.status})${txt ? ` - ${txt}` : ''}`)
+                setToast({ message: `Autoconfig failed (${resp.status})${txt ? ` - ${txt}` : ''}`, type: 'error' })
                 return
             }
             let payload: any = null
             try { payload = await resp.json() } catch { /* ignore */ }
             if (!payload) {
-                setSaveMsg('Autoconfig succeeded (no payload)')
+                setToast({ message: 'Autoconfig succeeded (no payload)', type: 'success' })
                 return
             }
 
@@ -1144,10 +1143,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 })
             }
 
-            setSaveMsg('Autoconfig applied (not yet saved)')
+            setToast({ message: 'Autoconfig applied (not yet saved)', type: 'success' })
         } catch (e) {
             console.warn('Autoconfig request error:', e)
-            setSaveMsg('Autoconfig failed')
+            setToast({ message: 'Autoconfig failed', type: 'error' })
         }
     }
 
@@ -1164,9 +1163,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             if (!resp.ok) throw new Error('Save failed')
             setConfig(nextCfg)
             setOrigConfig(nextCfg)
-            setSaveMsg('API key saved')
+            setToast({ message: 'API key saved', type: 'success' })
         } catch (e) {
-            setSaveMsg('Failed to save API key')
+            setToast({ message: 'Failed to save API key', type: 'error' })
         } finally {
             setSavingKey(false)
         }
