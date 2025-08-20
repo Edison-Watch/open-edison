@@ -28,12 +28,13 @@ from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
 from src.config import get_config_dir  # type: ignore[reportMissingImports]
-from src.middleware.data_access_tracker import DataAccessTracker
+from src.middleware.data_access_tracker import DataAccessTracker, SecurityError
 from src.telemetry import (
     record_prompt_used,
     record_resource_used,
     record_tool_call,
 )
+from src import events
 
 
 @dataclass
@@ -248,7 +249,9 @@ class SessionTrackingMiddleware(Middleware):
         # Filter out specific tools or return empty list
         allowed_tools: list[FunctionTool | ProxyTool | Any] = []
         for tool in response:
-            log.trace(f"🔍 Processing tool listing {tool.name}")
+            # Due to proxy & server naming
+            tool_name = tool.key
+            log.trace(f"🔍 Processing tool listing {tool_name}")
             if isinstance(tool, FunctionTool):
                 log.trace("🔍 Tool is built-in")
                 log.trace(f"🔍 Tool is a FunctionTool: {tool}")
@@ -260,14 +263,14 @@ class SessionTrackingMiddleware(Middleware):
                 log.trace(f"🔍 Tool is a unknown type: {tool}")
                 continue
 
-            log.trace(f"🔍 Getting permissions for tool {tool.name}")
-            permissions = session.data_access_tracker.get_tool_permissions(tool.name)
+            log.trace(f"🔍 Getting permissions for tool {tool_name}")
+            permissions = session.data_access_tracker.get_tool_permissions(tool_name)
             log.trace(f"🔍 Tool permissions: {permissions}")
             if permissions["enabled"]:
                 allowed_tools.append(tool)
             else:
                 log.warning(
-                    f"🔍 Tool {tool.name} is disabled on not configured and will not be allowed"
+                    f"🔍 Tool {tool_name} is disabled on not configured and will not be allowed"
                 )
                 continue
 
@@ -296,7 +299,28 @@ class SessionTrackingMiddleware(Middleware):
 
         assert session.data_access_tracker is not None
         log.debug(f"🔍 Analyzing tool {context.message.name} for security implications")
-        session.data_access_tracker.add_tool_call(context.message.name)
+        try:
+            session.data_access_tracker.add_tool_call(context.message.name)
+        except SecurityError as e:
+            # Publish pre-block event enriched with session_id then wait up to 30s for approval
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": context.message.name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "tool", context.message.name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            # Approved: apply effects and proceed
+            session.data_access_tracker.apply_effects_after_manual_approval(
+                "tool", context.message.name
+            )
         # Telemetry: record tool call
         record_tool_call(context.message.name)
 
@@ -396,7 +420,26 @@ class SessionTrackingMiddleware(Middleware):
         resource_name = str(context.message.uri)
 
         log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
-        _ = session.data_access_tracker.add_resource_access(resource_name)
+        try:
+            _ = session.data_access_tracker.add_resource_access(resource_name)
+        except SecurityError as e:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "resource",
+                    "name": resource_name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "resource", resource_name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            session.data_access_tracker.apply_effects_after_manual_approval(
+                "resource", resource_name
+            )
         record_resource_used(resource_name)
 
         # Update database session
@@ -477,7 +520,24 @@ class SessionTrackingMiddleware(Middleware):
         prompt_name = context.message.name
 
         log.debug(f"🔍 Analyzing prompt {prompt_name} for security implications")
-        _ = session.data_access_tracker.add_prompt_access(prompt_name)
+        try:
+            _ = session.data_access_tracker.add_prompt_access(prompt_name)
+        except SecurityError as e:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "prompt",
+                    "name": prompt_name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "prompt", prompt_name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            session.data_access_tracker.apply_effects_after_manual_approval("prompt", prompt_name)
         record_prompt_used(prompt_name)
 
         # Update database session

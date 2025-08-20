@@ -6,16 +6,17 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
+from contextlib import suppress
 import json
 import traceback
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP
@@ -32,6 +33,9 @@ from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
+
+# get_session_from_db import removed; no longer needed for one-time approvals
+from src import events
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -204,12 +208,10 @@ class OpenEdisonProxy:
             # 2) Repository/package defaults next to src/
             repo_candidate = Path(__file__).parent.parent / filename
             if repo_candidate.exists():
-                # Bootstrap a copy into config dir when possible
-                try:
+                # Bootstrap a copy into config dir when possible (best effort)
+                with suppress(Exception):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
-                except Exception:
-                    pass
                 return target if target.exists() else repo_candidate
 
             # 3) Fall back to config dir path (will be created on save)
@@ -271,6 +273,46 @@ class OpenEdisonProxy:
                 raise HTTPException(status_code=400, detail=f"Save failed: {e}") from e
 
         app.add_api_route("/__save_json__", _save_json, methods=["POST"])  # type: ignore[arg-type]
+
+        # SSE events endpoint
+        async def _events() -> StreamingResponse:  # type: ignore[override]
+            queue = await events.subscribe()
+            return StreamingResponse(
+                events.sse_stream(queue),
+                media_type="text/event-stream",
+            )
+
+        app.add_api_route("/events", _events, methods=["GET"])  # type: ignore[arg-type]
+
+        # Approval endpoint to allow an item for the rest of the session
+        class _ApprovalBody(BaseModel):
+            session_id: str
+            kind: Literal["tool", "resource", "prompt"]
+            name: str
+
+        async def _approve(body: _ApprovalBody) -> dict[str, Any]:  # type: ignore[override]
+            try:
+                # Mark approval once; no persistent overrides
+                await events.approve_once(body.session_id, body.kind, body.name)
+
+                # Notify listeners (best effort, log failure)
+                events.fire_and_forget(
+                    {
+                        "type": "mcp_approved_once",
+                        "session_id": body.session_id,
+                        "kind": body.kind,
+                        "name": body.name,
+                    }
+                )
+
+                return {"status": "ok"}
+            except HTTPException:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.error(f"Approval failed: {e}")
+                raise HTTPException(status_code=500, detail="Failed to approve item") from e
+
+        app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
 
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]

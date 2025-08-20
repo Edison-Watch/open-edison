@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+import traceback
 from typing import Any
 
 from loguru import logger as log
@@ -29,6 +30,8 @@ from src.telemetry import (
     record_untrusted_public_data,
     record_write_operation,
 )
+from src import events
+from src.config import get_config_dir
 
 ACL_RANK: dict[str, int] = {"PUBLIC": 0, "PRIVATE": 1, "SECRET": 2}
 
@@ -95,7 +98,6 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, Any]]:
             # Handle new format: server -> {tool -> permissions}
             # Convert to flat tool -> permissions format
             flat_permissions: dict[str, dict[str, Any]] = {}
-            tool_to_server: dict[str, str] = {}
             server_tools: dict[str, set[str]] = {}
 
             for server_name, server_data in data.items():
@@ -112,55 +114,48 @@ def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, Any]]:
                 server_tools[server_name] = set()
 
                 for tool_name, tool_permissions in server_data.items():  # type: ignore
+                    # Prefix by server name to make things clear
+                    assert isinstance(tool_name, str)
+                    unprefixed_tool_name = tool_name
+                    tool_name = server_name + "_" + tool_name
                     if not isinstance(tool_permissions, dict):
                         log.warning(
-                            f"Invalid tool permissions for {server_name}/{tool_name}: expected dict, got {type(tool_permissions)}"  # type: ignore
+                            f"Invalid tool permissions for {tool_name}: expected dict, got {type(tool_permissions)}"  # type: ignore
                         )  # type: ignore
                         continue
 
                     # Check for duplicates within the same server
                     if tool_name in server_tools[server_name]:
-                        log.error(f"Duplicate tool '{tool_name}' found in server '{server_name}'")
-                        raise ConfigError(
-                            f"Duplicate tool '{tool_name}' found in server '{server_name}'"
-                        )
-
-                    # Check for duplicates across different servers
-                    if tool_name in tool_to_server:
-                        existing_server = tool_to_server[tool_name]
                         log.error(
-                            f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
+                            f"Duplicate tool '{unprefixed_tool_name}' found in server '{server_name}'"
                         )
                         raise ConfigError(
-                            f"Duplicate tool '{tool_name}' found in servers '{existing_server}' and '{server_name}'"
+                            f"Duplicate tool '{unprefixed_tool_name}' found in server '{server_name}'"
                         )
 
-                    # Add to tracking maps
-                    tool_to_server[tool_name] = server_name
-                    server_tools[server_name].add(tool_name)  # type: ignore
+                    server_tools[server_name].add(unprefixed_tool_name)  # type: ignore
 
                     # Convert to flat format with explicit type casting
                     tool_perms_dict: dict[str, Any] = tool_permissions  # type: ignore
                     flat_permissions[tool_name] = _apply_permission_defaults(tool_perms_dict)
 
-            log.debug(
+            log.trace(
                 f"Loaded {len(flat_permissions)} tool permissions from {len(server_tools)} servers in {config_path}"
             )
             # Convert sets to lists for JSON serialization
             server_tools_serializable = {
                 server: list(tools) for server, tools in server_tools.items()
             }
-            log.debug(f"Server tools: {json.dumps(server_tools_serializable, indent=2)}")
+            log.trace(f"Server tools: {json.dumps(server_tools_serializable, indent=2)}")
             return flat_permissions
     else:
-        log.warning(f"Tool permissions file not found at {config_path}")
-        return {}
+        raise ConfigError(f"Tool permissions file not found at {config_path}")
 
 
 @cache
 def _load_tool_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load tool permissions from JSON configuration file with LRU caching."""
-    config_path = Path(__file__).parent.parent.parent / "tool_permissions.json"
+    config_path = get_config_dir() / "tool_permissions.json"
 
     try:
         return _flat_permissions_loader(config_path)
@@ -181,7 +176,7 @@ def clear_tool_permissions_cache() -> None:
 @cache
 def _load_resource_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load resource permissions from JSON configuration file with LRU caching."""
-    config_path = Path(__file__).parent.parent.parent / "resource_permissions.json"
+    config_path = get_config_dir() / "resource_permissions.json"
 
     try:
         return _flat_permissions_loader(config_path)
@@ -202,7 +197,7 @@ def clear_resource_permissions_cache() -> None:
 @cache
 def _load_prompt_permissions_cached() -> dict[str, dict[str, Any]]:
     """Load prompt permissions from JSON configuration file with LRU caching."""
-    config_path = Path(__file__).parent.parent.parent / "prompt_permissions.json"
+    config_path = get_config_dir() / "prompt_permissions.json"
 
     try:
         return _flat_permissions_loader(config_path)
@@ -293,16 +288,7 @@ def _get_exact_match_permissions(
         permissions = _apply_permission_defaults(config_perms)
         log.debug(f"Found exact match for {type_name} {name}: {permissions}")
         return permissions
-    # Fallback: support names like "server_tool" by checking the part after first underscore
-    if "_" in name:
-        suffix = name.split("_", 1)[1]
-        if suffix in permissions_config and not suffix.startswith("_"):
-            config_perms = permissions_config[suffix]
-            permissions = _apply_permission_defaults(config_perms)
-            log.debug(
-                f"Found fallback match for {type_name} {name} using suffix {suffix}: {permissions}"
-            )
-            return permissions
+
     return None
 
 
@@ -426,7 +412,7 @@ class DataAccessTracker:
             Dictionary with permission flags
         """
         permissions = self._classify_by_tool_name(tool_name)
-        log.debug(f"Classified tool {tool_name}: {permissions}")
+        log.trace(f"Classified tool {tool_name}: {permissions}")
         return permissions
 
     def _classify_resource_permissions(self, resource_name: str) -> dict[str, Any]:
@@ -439,7 +425,7 @@ class DataAccessTracker:
             Dictionary with permission flags
         """
         permissions = self._classify_by_resource_name(resource_name)
-        log.debug(f"Classified resource {resource_name}: {permissions}")
+        log.trace(f"Classified resource {resource_name}: {permissions}")
         return permissions
 
     def _classify_prompt_permissions(self, prompt_name: str) -> dict[str, Any]:
@@ -452,7 +438,7 @@ class DataAccessTracker:
             Dictionary with permission flags
         """
         permissions = self._classify_by_prompt_name(prompt_name)
-        log.debug(f"Classified prompt {prompt_name}: {permissions}")
+        log.trace(f"Classified prompt {prompt_name}: {permissions}")
         return permissions
 
     def get_tool_permissions(self, tool_name: str) -> dict[str, Any]:
@@ -538,6 +524,15 @@ class DataAccessTracker:
         if self.is_trifecta_achieved():
             log.error(f"🚫 BLOCKING tool call {tool_name} - lethal trifecta achieved")
             record_tool_call_blocked(tool_name, "trifecta")
+            # Fire-and-forget event (log errors via callback)
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": tool_name,
+                    "reason": "trifecta",
+                }
+            )
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         # Get tool permissions and update trifecta flags
@@ -546,16 +541,46 @@ class DataAccessTracker:
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
         # Check if tool is enabled
-        self._enforce_tool_enabled(permissions, tool_name)
+        try:
+            self._enforce_tool_enabled(permissions, tool_name)
+        except SecurityError:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": tool_name,
+                    "reason": "disabled",
+                }
+            )
+            raise
 
         # ACL-based write downgrade prevention
         tool_acl: str = _normalize_acl(permissions.get("acl"), default="PUBLIC")
-        self._enforce_acl_downgrade_block(tool_acl, permissions, tool_name)
+        try:
+            self._enforce_acl_downgrade_block(tool_acl, permissions, tool_name)
+        except SecurityError:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": tool_name,
+                    "reason": "acl_downgrade",
+                }
+            )
+            raise
 
         # Pre-check: would this call achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
             log.error(f"🚫 BLOCKING tool call {tool_name} - would achieve lethal trifecta")
             record_tool_call_blocked(tool_name, "trifecta_prevent")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": tool_name,
+                    "reason": "trifecta_prevent",
+                }
+            )
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         self._apply_permissions_effects(permissions, source_type="tool", name=tool_name)
@@ -578,6 +603,14 @@ class DataAccessTracker:
             log.error(
                 f"🚫 BLOCKING resource access {resource_name} - lethal trifecta already achieved"
             )
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "resource",
+                    "name": resource_name,
+                    "reason": "trifecta",
+                }
+            )
             raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         # Get resource permissions and update trifecta flags
@@ -589,6 +622,14 @@ class DataAccessTracker:
                 f"🚫 BLOCKING resource access {resource_name} - would achieve lethal trifecta"
             )
             record_resource_access_blocked(resource_name, "trifecta_prevent")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "resource",
+                    "name": resource_name,
+                    "reason": "trifecta_prevent",
+                }
+            )
             raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         self._apply_permissions_effects(permissions, source_type="resource", name=resource_name)
@@ -609,6 +650,14 @@ class DataAccessTracker:
         # Check if trifecta is already achieved before processing this access
         if self.is_trifecta_achieved():
             log.error(f"🚫 BLOCKING prompt access {prompt_name} - lethal trifecta already achieved")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "prompt",
+                    "name": prompt_name,
+                    "reason": "trifecta",
+                }
+            )
             raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         # Get prompt permissions and update trifecta flags
@@ -618,6 +667,14 @@ class DataAccessTracker:
         if self._would_call_complete_trifecta(permissions):
             log.error(f"🚫 BLOCKING prompt access {prompt_name} - would achieve lethal trifecta")
             record_prompt_access_blocked(prompt_name, "trifecta_prevent")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "prompt",
+                    "name": prompt_name,
+                    "reason": "trifecta_prevent",
+                }
+            )
             raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         self._apply_permissions_effects(permissions, source_type="prompt", name=prompt_name)
@@ -643,6 +700,18 @@ class DataAccessTracker:
                 "highest_acl_level": self.highest_acl_level,
             },
         }
+
+    # Public helper: apply effects after a manual approval without re-checking
+    def apply_effects_after_manual_approval(self, kind: str, name: str) -> None:
+        if kind == "tool":
+            permissions = self._classify_tool_permissions(name)
+        elif kind == "resource":
+            permissions = self._classify_resource_permissions(name)
+        elif kind == "prompt":
+            permissions = self._classify_prompt_permissions(name)
+        else:
+            raise ValueError("Invalid kind")
+        self._apply_permissions_effects(permissions, source_type=kind, name=name)
 
 
 class SecurityError(Exception):

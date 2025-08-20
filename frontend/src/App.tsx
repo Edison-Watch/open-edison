@@ -145,6 +145,46 @@ export function App(): React.JSX.Element {
         return () => clearInterval(interval)
     }, [])
 
+    // Subscribe to server-sent events (relative to FastAPI origin on 3001) and show browser notifications
+    useEffect(() => {
+        const es = new EventSource(`/events`)
+        es.onmessage = (ev) => {
+            try {
+                const data = JSON.parse(ev.data || '{}') as any
+                if (data?.type === 'mcp_pre_block') {
+                    const title = 'Edison blocked a risky action'
+                    const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
+                    const sessionId = data.session_id || ''
+                    if (typeof Notification !== 'undefined') {
+                        const show = () => {
+                            try {
+                                const n = new Notification(title, { body })
+                                n.onclick = async () => {
+                                    try {
+                                        const ok = window.confirm(`Allow ${data.kind} '${data.name}' for this session?`)
+                                        if (ok && sessionId) {
+                                            await fetch(`/api/approve`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ session_id: sessionId, kind: data.kind, name: data.name })
+                                            })
+                                        }
+                                    } catch { /* ignore */ }
+                                }
+                            } catch { /* ignore */ }
+                        }
+                        if (Notification.permission === 'granted') show()
+                        else if (Notification.permission !== 'denied') {
+                            Notification.requestPermission().then((p) => { if (p === 'granted') show() }).catch(() => { })
+                        }
+                    }
+                }
+            } catch { /* ignore */ }
+        }
+        es.onerror = () => { /* auto-retry by browser */ }
+        return () => { es.close() }
+    }, [])
+
     return (
         <div className="mx-auto max-w-[1400px] p-6 space-y-4">
             <div className="flex items-center justify-between gap-3">
@@ -892,7 +932,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             } catch (cacheError) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
-            
+
             setToast({ message: onlyChanges ? 'Saved changes' : 'Saved', type: 'success' })
         } catch (e) {
             setToast({ message: e instanceof Error ? e.message : 'Save failed', type: 'error' })
@@ -910,7 +950,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const post = (name: string, content: string) => fetch('/__save_json__', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
             })
-            
+
             const cfgToSave = origConfig && config
                 ? buildConfigSaveObject(origConfig, config)
                 : config
@@ -923,19 +963,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const promptsToSave = promptPerms && origPromptPerms
                 ? buildPermsSaveObject(origPromptPerms, promptPerms, defaults, 'prompts')
                 : promptPerms
-            
+
             const responses = await Promise.all([
                 post(CONFIG_NAME, JSON.stringify(cfgToSave, null, 4)),
                 post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
                 post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
                 post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
             ])
-            
+
             const notOk = responses.find(r => !r.ok)
             if (notOk) throw new Error('One or more files failed to save')
-            
+
             console.log('✅ Configuration saved successfully')
-            
+
             // Step 2: Clear permission caches
             console.log('🔄 Clearing permission caches...')
             try {
@@ -954,32 +994,32 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             } catch (cacheError) {
                 console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
             }
-            
+
             // Step 3: Reinitialize MCP servers
             console.log('🔄 Reinitializing MCP servers...')
             const serverHost = config?.server?.host || 'localhost'
             const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
             const apiKey = config?.server?.api_key || ''
-            
+
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             if (apiKey) {
                 headers['Authorization'] = `Bearer ${apiKey}`
             }
-            
+
             const reinitResponse = await fetch(`http://${serverHost}:${serverPort}/mcp/reinitialize`, {
                 method: 'POST',
                 headers
             })
-            
+
             if (!reinitResponse.ok) {
                 const errorData = await reinitResponse.json().catch(() => ({}))
                 throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
             }
-            
+
             const result = await reinitResponse.json()
             console.log('✅ MCP servers reinitialized successfully:', result)
             setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
-            
+
         } catch (e) {
             console.error('❌ Failed to save and reinitialize:', e)
             setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
