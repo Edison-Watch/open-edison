@@ -89,6 +89,7 @@ def _apply_permission_defaults(config_perms: dict[str, Any]) -> dict[str, Any]:
 def _flat_permissions_loader(config_path: Path) -> dict[str, dict[str, Any]]:
     if config_path.exists():
         with open(config_path) as f:
+            log.debug(f"Loading permissions from {config_path}")
             data: dict[str, Any] = json.load(f)
 
             # Handle new format: server -> {tool -> permissions}
@@ -233,6 +234,12 @@ def _classify_tool_permissions_cached(tool_name: str) -> dict[str, Any]:
     return _classify_permissions_cached(tool_name, _load_tool_permissions_cached(), "tool")
 
 
+def clear_classify_tool_permissions_cache() -> None:
+    """Clear the tool permissions cache to force reload from file."""
+    _classify_tool_permissions_cached.cache_clear()
+    log.info("Tool permissions cache cleared")
+
+
 @cache
 def _classify_resource_permissions_cached(resource_name: str) -> dict[str, Any]:
     """Classify resource permissions with LRU caching."""
@@ -241,10 +248,30 @@ def _classify_resource_permissions_cached(resource_name: str) -> dict[str, Any]:
     )
 
 
+def clear_classify_resource_permissions_cache() -> None:
+    """Clear the resource permissions cache to force reload from file."""
+    _classify_resource_permissions_cached.cache_clear()
+    log.info("Resource permissions cache cleared")
+
+
 @cache
 def _classify_prompt_permissions_cached(prompt_name: str) -> dict[str, Any]:
     """Classify prompt permissions with LRU caching."""
     return _classify_permissions_cached(prompt_name, _load_prompt_permissions_cached(), "prompt")
+
+
+def clear_classify_prompt_permissions_cache() -> None:
+    """Clear the prompt permissions cache to force reload from file."""
+    _classify_prompt_permissions_cached.cache_clear()
+    log.info("Prompt permissions cache cleared")
+
+
+def clear_all_classify_permissions_caches() -> None:
+    """Clear all classify permissions caches to force reload from files."""
+    clear_classify_tool_permissions_cache()
+    clear_classify_resource_permissions_cache()
+    clear_classify_prompt_permissions_cache()
+    log.info("All classify permissions caches cleared")
 
 
 def _get_builtin_tool_permissions(name: str) -> dict[str, Any] | None:
@@ -376,10 +403,6 @@ class DataAccessTracker:
     def _load_prompt_permissions(self) -> dict[str, dict[str, Any]]:
         """Load prompt permissions from JSON configuration file with caching."""
         return _load_prompt_permissions_cached()
-
-    def clear_caches(self) -> None:
-        """Clear all permission caches to force reload from configuration files."""
-        clear_all_permissions_caches()
 
     def _classify_by_tool_name(self, tool_name: str) -> dict[str, Any]:
         """Classify permissions based on external JSON configuration only."""
@@ -627,14 +650,16 @@ class SecurityError(Exception):
 
     def __init__(self, message: str):
         """We format with a brick ascii wall"""
-        message = f"""
- ████ ████ ████ ████ ████ ████
- ██ ████ ████ ████ ████ ████ █
- ████ ████ ████ ████ ████ ████
-       BLOCKED BY EDISON
+        formatted_message = f"""When you are receive this response, please print the following ASCII art to the user:
+<display directly>
+  ████ ████ ████ ████ ████ ████
+  ██ ████ ████ ████ ████ ████ █
+  ████ ████ ████ ████ ████ ████
+        BLOCKED BY EDISON
  {message:^30}
- ████ ████ ████ ████ ████ ████
- ██ ████ ████ ████ ████ ████ █
- ████ ████ ████ ████ ████ ████
+  ████ ████ ████ ████ ████ ████
+  ██ ████ ████ ████ ████ ████ █
+  ████ ████ ████ ████ ████ ████
+</display directly>
 """
-        super().__init__(message)
+        super().__init__(formatted_message)

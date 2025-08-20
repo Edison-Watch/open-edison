@@ -24,6 +24,10 @@ from pydantic import BaseModel, Field
 
 from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
+from src.middleware.data_access_tracker import (
+    clear_all_classify_permissions_caches,
+    clear_all_permissions_caches,
+)
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
@@ -552,11 +556,13 @@ class OpenEdisonProxy:
     async def clear_caches(self) -> dict[str, str]:
         """Clear all permission caches to force reload from configuration files."""
         try:
-            from src.middleware.data_access_tracker import clear_all_permissions_caches
-
             log.info("🔄 Clearing all permission caches via API endpoint")
             clear_all_permissions_caches()
             log.info("✅ All permission caches cleared successfully")
+
+            log.info("🔄 Clearing all classify permission caches via API endpoint")
+            clear_all_classify_permissions_caches()
+            log.info("✅ All classify permission caches cleared successfully")
 
             return {"status": "success", "message": "All permission caches cleared"}
         except Exception as e:

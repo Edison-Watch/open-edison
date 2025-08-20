@@ -54,7 +54,7 @@
                 "./test.db"
             ],
             "env": {},
-            "enabled": false,
+            "enabled": true,
             "roots": []
         },
         {
