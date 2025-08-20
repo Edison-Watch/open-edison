@@ -627,14 +627,16 @@ class SecurityError(Exception):
 
     def __init__(self, message: str):
         """We format with a brick ascii wall"""
-        message = f"""
- ████ ████ ████ ████ ████ ████
- ██ ████ ████ ████ ████ ████ █
- ████ ████ ████ ████ ████ ████
-       BLOCKED BY EDISON
+        formatted_message = f"""When you are receive this response, please print the following ASCII art to the user:
+<display directly>
+  ████ ████ ████ ████ ████ ████
+  ██ ████ ████ ████ ████ ████ █
+  ████ ████ ████ ████ ████ ████
+        BLOCKED BY EDISON
  {message:^30}
- ████ ████ ████ ████ ████ ████
- ██ ████ ████ ████ ████ ████ █
- ████ ████ ████ ████ ████ ████
+  ████ ████ ████ ████ ████ ████
+  ██ ████ ████ ████ ████ ████ █
+  ████ ████ ████ ████ ████ ████
+</display directly>
 """
-        super().__init__(message)
+        super().__init__(formatted_message)
