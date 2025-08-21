@@ -1,4 +1,4 @@
-# OpenEdison
+# OpenEdison 🔒⚡️
 
 Open-source single-user MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
 
@@ -17,16 +17,16 @@ Open-source single-user MCP security gateway that prevents data exfiltration—v
 --- 
 
 
-## Features
+## Features ✨
 
-- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
-- **JSON configuration** - Easy to configure and manage your MCP servers
-- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
-- **Session tracking** - Track and monitor your MCP interactions
-- **Simple API** - REST API for managing MCP servers and proxying requests
-- **Docker support** - Run in a container for easy deployment
+- 👤 **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
+- 🗂️ **JSON configuration** - Easy to configure and manage your MCP servers
+- 🖥️ **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
+- 📊 **Session tracking** - Track and monitor your MCP interactions
+- 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
+- 🐳 **Docker support** - Run in a container for easy deployment
 
-## Quick Start
+## Quick Start 🚀
 
 The fastest way to get started:
 
@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 <details>
-<summary>Install Node.js/npm (optional for MCP tools)</summary>
+<summary>🧰 Install Node.js/npm (optional for MCP tools)</summary>
 
 If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
 
@@ -62,7 +62,7 @@ After installation, ensure that `npx` is available on PATH.
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI</summary>
+<summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI 📦</summary>
 
 #### Prerequisites
 
@@ -88,7 +88,7 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> Run with Docker</summary>
+<summary><img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> Run with Docker 🐳</summary>
 
 There is a dockerfile for simple local setup.
 
@@ -105,7 +105,7 @@ cd open-edison
 make docker_run
 ```
 
-The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
+The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`. 🌐
 
 </details>
 
@@ -146,12 +146,12 @@ make run
 open-edison run
 ```
 
-The server will be available at `http://localhost:3000`.
+The server will be available at `http://localhost:3000`. 🌐
 
 </details>
 
 <details>
-<summary>MCP Connection</summary>
+<summary>🔌 MCP Connection</summary>
 
 Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
 
@@ -175,20 +175,20 @@ Or add to your MCP client config:
 </details>
 
 <details>
-<summary>Usage</summary>
+<summary>🧭 Usage</summary>
 
 ### API Endpoints
 
 See [API Reference](docs/quick-reference/api_reference.md) for full API documentation.
 
 <details>
-<summary>Development</summary>
+<summary>🛠️ Development</summary>
 
-### Setup
+### Setup 🧰
 
 Setup from source as above.
 
-### Run
+### Run ▶️
 
 Server doesn't have any auto-reload at the moment, so you'll need to run & ctrl-c this during development.
 
@@ -196,7 +196,7 @@ Server doesn't have any auto-reload at the moment, so you'll need to run & ctrl-
 make run
 ```
 
-### Tests/code quality
+### Tests/code quality ✅
 
 We expect `make ci` to return cleanly.
 
@@ -209,7 +209,7 @@ make ci
 <details>
 <summary>⚙️ Configuration (config.json)</summary>
 
-## Configuration
+## Configuration ⚙️
 
 The `config.json` file contains all configuration:
 
@@ -232,7 +232,7 @@ Each MCP server configuration includes:
 </details>
 
 <details>
-<summary>Security & Permissions System</summary>
+<summary>🛡️ Security & Permissions System</summary>
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
@@ -250,7 +250,7 @@ In addition to trifecta, we track Access Control Level (ACL) for each tool call,
 that is, each tool has an ACL level (one of PUBLIC, PRIVATE, or SECRET), and we track the highest ACL level for each session.
 If a write operation is attempted to a lower ACL level, it is blocked.
 
-### Tool Permissions (`tool_permissions.json`)
+### 🧰 Tool Permissions (`tool_permissions.json`)
 
 Defines security classifications for MCP tools. See full file: [tool_permissions.json](tool_permissions.json), it looks like:
 
@@ -268,7 +268,7 @@ Defines security classifications for MCP tools. See full file: [tool_permissions
 ```
 
 <details>
-<summary>Resource Permissions (`resource_permissions.json`)</summary>
+<summary>📁 Resource Permissions (`resource_permissions.json`)</summary>
 
 ### Resource Permissions (`resource_permissions.json`)
 
@@ -284,7 +284,7 @@ Defines security classifications for resource access patterns. See full file: [r
 </details>
 
 <details>
-<summary>Prompt Permissions (`prompt_permissions.json`)</summary>
+<summary>💬 Prompt Permissions (`prompt_permissions.json`)</summary>
 
 ### Prompt Permissions (`prompt_permissions.json`)
 
@@ -299,7 +299,7 @@ Defines security classifications for prompt types. See full file: [prompt_permis
 
 </details>
 
-### Wildcard Patterns
+### Wildcard Patterns ✨
 
 All permission types support wildcard patterns:
 
@@ -307,7 +307,7 @@ All permission types support wildcard patterns:
 - **Resources**: `scheme:*` (e.g., `file:*` matches all file resources)  
 - **Prompts**: `type:*` (e.g., `template:*` matches all template prompts)
 
-### Security Monitoring
+### Security Monitoring 🕵️
 
 **All items must be explicitly configured** - unknown tools/resources/prompts will be rejected for security.
 
@@ -315,20 +315,20 @@ Use the `get_security_status` tool to monitor your session's current risk level 
 
 </details>
 
-<details>
-<summary>Documentation</summary>
+
+
+## Documentation 📚
 
 📚 **Complete documentation available in [`docs/`](docs/)**
 
-- **[Getting Started](docs/quick-reference/config_quick_start.md)** - Quick setup guide
-- **[Configuration](docs/core/configuration.md)** - Complete configuration reference
-- **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
-- **[Development Guide](docs/development/development_guide.md)** - Contributing and development
+- 🚀 **[Getting Started](docs/quick-reference/config_quick_start.md)** - Quick setup guide
+- ⚙️ **[Configuration](docs/core/configuration.md)** - Complete configuration reference
+- 📡 **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
+- 🧑‍💻 **[Development Guide](docs/development/development_guide.md)** - Contributing and development
 
-</details>
 
 <details>
-<summary>License</summary>
+<summary>📄 License</summary>
 
 GPL-3.0 License - see [LICENSE](LICENSE) for details.
 
