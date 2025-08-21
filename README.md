@@ -7,12 +7,10 @@ Open-source single-user MCP security gateway that prevents data exfiltration—v
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project.name&label=Project%20Name&color=purple" alt="Dynamic TOML Badge">
-  <img alt="Project Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue">
-  <img alt="Python Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project['requires-python']&label=python&logo=python&color=blue">
+  <img alt="Project Version" src="https://img.shields.io/pypi/v/open-edison?label=version&color=blue">
+  <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue?logo=python">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
   <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/Edison-Watch/open-edison">
-  <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/Edison-Watch/open-edison/test_target_tests.yaml?branch=main">
 
 </p>
 
