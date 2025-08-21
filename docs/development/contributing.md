@@ -24,7 +24,7 @@ Open Edison is designed to be:
 
 ```bash
 # Clone the repository
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 cd open-edison
 
 # Install dependencies
@@ -177,7 +177,7 @@ git clone https://github.com/your-username/open-edison.git
 cd open-edison
 
 # Add upstream remote
-git remote add upstream https://github.com/GatlingX/open-edison.git
+git remote add upstream https://github.com/Edison-Watch/open-edison.git
 ```
 
 ### 2. **Create Feature Branch**

@@ -7,11 +7,10 @@ Open-source single-user MCP security gateway that prevents data exfiltration—v
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=%24.project.name&label=Project Name&color=purple" alt="Dynamic TOML Badge">
-  <img alt="Project Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue">
-  <img alt="Python Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=%24.project['requires-python']&label=python&logo=python&color=blue">
-  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
-  <img alt="Dynamic YAML Badge" src="https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fglobal_config%2Fglobal_config.yaml&query=%24%5B%27model_name%27%5D&label=Model in Use&color=yellow">
+  <img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project.name&label=Project%20Name&color=purple" alt="Dynamic TOML Badge">
+  <img alt="Project Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue">
+  <img alt="Python Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdison-Watch%2Fopen-edison%2Fmain%2Fpyproject.toml&query=project['requires-python']&label=python&logo=python&color=blue">
+  <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
   <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/Edison-Watch/open-edison">
   <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/Edison-Watch/open-edison/test_target_tests.yaml?branch=main">
 
@@ -97,11 +96,11 @@ There is a dockerfile for simple local setup.
 
 ```bash
 # Single-line:
-git clone https://github.com/GatlingX/open-edison.git && cd open-edison && make docker_run
+git clone https://github.com/Edison-Watch/open-edison.git && cd open-edison && make docker_run
 
 # Or
 # Clone repo
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 # Enter repo
 cd open-edison
 # Build and run
@@ -118,7 +117,7 @@ The MCP server will be available at `http://localhost:3000` and the api + fronte
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 cd open-edison
 ```
 

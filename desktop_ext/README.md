@@ -146,7 +146,7 @@ This extension operates securely:
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/GatlingX/open-edison
+   git clone https://github.com/Edison-Watch/open-edison
    cd open-edison/desktop_ext
    ```
 
@@ -181,11 +181,11 @@ desktop_ext/
 ## Contributing
 
 This extension is part of the Open Edison project. See the main repository for contribution guidelines:
-<https://github.com/GatlingX/open-edison>
+<https://github.com/Edison-Watch/open-edison>
 
 ## Related Resources
 
-- [Open Edison Main Repository](https://github.com/GatlingX/open-edison)
+- [Open Edison Main Repository](https://github.com/Edison-Watch/open-edison)
 - [mcp-remote Package](https://www.npmjs.com/package/mcp-remote)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Anthropic Desktop Extensions](https://support.anthropic.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
