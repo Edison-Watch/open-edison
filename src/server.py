@@ -32,6 +32,7 @@ from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
+from src.oauth_manager import get_oauth_manager, OAuthStatus
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -398,6 +399,38 @@ class OpenEdisonProxy:
             self.clear_caches,
             methods=["POST"],
         )
+        
+        # OAuth endpoints
+        app.add_api_route(
+            "/mcp/oauth/status",
+            self.get_oauth_status_all,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/oauth/status/{server_name}",
+            self.get_oauth_status,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/oauth/authorize/{server_name}",
+            self.oauth_authorize,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/oauth/tokens/{server_name}",
+            self.oauth_clear_tokens,
+            methods=["DELETE"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/oauth/refresh/{server_name}",
+            self.oauth_refresh_status,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
 
     async def verify_api_key(
         self, credentials: HTTPAuthorizationCredentials = _auth_dependency
@@ -723,3 +756,263 @@ class OpenEdisonProxy:
             "name": prefix + "_" + str(name) if name is not None else "",
             "description": description,
         }
+    
+    # ---- OAuth endpoints ----
+    
+    async def get_oauth_status_all(self) -> dict[str, Any]:
+        """Get OAuth status for all configured MCP servers."""
+        try:
+            current_config = _get_current_config()
+            oauth_manager = get_oauth_manager()
+            
+            servers_info = {}
+            for server_config in current_config.mcp_servers:
+                server_name = server_config.name
+                info = oauth_manager.get_server_info(server_name)
+                
+                if info:
+                    # Use cached OAuth info
+                    servers_info[server_name] = {
+                        "server_name": info.server_name,
+                        "status": info.status.value,
+                        "error_message": info.error_message,
+                        "token_expires_at": info.token_expires_at,
+                        "has_refresh_token": info.has_refresh_token,
+                        "scopes": info.scopes,
+                    }
+                else:
+                    # OAuth status not checked yet - check proactively for remote servers
+                    if server_config.is_remote_server():
+                        remote_url = server_config.get_remote_url()
+                        log.info(f"🔍 Proactively checking OAuth for remote server {server_name}")
+                        
+                        # Check OAuth requirements for this remote server
+                        oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
+                        
+                        servers_info[server_name] = {
+                            "server_name": oauth_info.server_name,
+                            "status": oauth_info.status.value,
+                            "error_message": oauth_info.error_message,
+                            "token_expires_at": oauth_info.token_expires_at,
+                            "has_refresh_token": oauth_info.has_refresh_token,
+                            "scopes": oauth_info.scopes,
+                        }
+                    else:
+                        # Local server - no OAuth needed
+                        servers_info[server_name] = {
+                            "server_name": server_name,
+                            "status": OAuthStatus.NOT_REQUIRED.value,
+                            "error_message": None,
+                            "token_expires_at": None,
+                            "has_refresh_token": False,
+                            "scopes": None,
+                        }
+            
+            return {"oauth_status": servers_info}
+            
+        except Exception as e:
+            log.error(f"Failed to get OAuth status for all servers: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get OAuth status: {str(e)}",
+            ) from e
+    
+    async def get_oauth_status(self, server_name: str) -> dict[str, Any]:
+        """Get OAuth status for a specific MCP server."""
+        try:
+            server_config = self._find_server_config(server_name)
+            oauth_manager = get_oauth_manager()
+            
+            # Get the remote URL if this is a remote server
+            remote_url = server_config.get_remote_url()
+            
+            # Check or refresh OAuth status
+            oauth_info = await oauth_manager.check_oauth_requirement(
+                server_name, remote_url
+            )
+            
+            return {
+                "server_name": oauth_info.server_name,
+                "mcp_url": oauth_info.mcp_url,
+                "status": oauth_info.status.value,
+                "error_message": oauth_info.error_message,
+                "token_expires_at": oauth_info.token_expires_at,
+                "has_refresh_token": oauth_info.has_refresh_token,
+                "scopes": oauth_info.scopes,
+                "client_name": oauth_info.client_name,
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error(f"Failed to get OAuth status for {server_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get OAuth status: {str(e)}",
+            ) from e
+    
+    class _OAuthAuthorizeRequest(BaseModel):
+        scopes: list[str] | None = Field(None, description="OAuth scopes to request")
+        client_name: str | None = Field(None, description="Client name for OAuth registration")
+    
+    async def oauth_authorize(
+        self, 
+        server_name: str,
+        body: _OAuthAuthorizeRequest | None = None
+    ) -> dict[str, Any]:
+        """
+        Initiate OAuth authorization flow for a server.
+        
+        Note: This endpoint will trigger the OAuth flow which opens a browser
+        and starts a local callback server. The flow completion is handled
+        automatically by FastMCP.
+        """
+        try:
+            server_config = self._find_server_config(server_name)
+            oauth_manager = get_oauth_manager()
+            
+            # Check if this is a remote server
+            if not server_config.is_remote_server():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                )
+            
+            # Get the remote URL
+            remote_url = server_config.get_remote_url()
+            if not remote_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} does not have a valid remote URL"
+                )
+            
+            # Get OAuth configuration
+            scopes = None
+            client_name = None
+            
+            if body:
+                scopes = body.scopes
+                client_name = body.client_name
+            
+            # Use server config OAuth settings if not provided in request
+            if not scopes and server_config.oauth_scopes:
+                scopes = server_config.oauth_scopes
+            if not client_name and server_config.oauth_client_name:
+                client_name = server_config.oauth_client_name
+            
+            # Create OAuth auth object (this will trigger the flow)
+            oauth_auth = oauth_manager.get_oauth_auth(
+                server_name, remote_url, scopes, client_name
+            )
+            
+            if not oauth_auth:
+                # Check why OAuth auth couldn't be created
+                info = oauth_manager.get_server_info(server_name)
+                if info and info.status == OAuthStatus.NOT_REQUIRED:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Server {server_name} does not require OAuth authentication"
+                    )
+                else:
+                    error_msg = info.error_message if info else "Unknown error"
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create OAuth authentication: {error_msg}"
+                    )
+            
+            log.info(f"🔐 OAuth authorization flow initiated for {server_name}")
+            
+            # The OAuth flow is now initiated. The user will be redirected to
+            # the OAuth provider's authorization page in their browser.
+            return {
+                "status": "authorization_started",
+                "message": f"OAuth authorization flow initiated for {server_name}. "
+                          f"Please complete the authorization in your web browser.",
+                "server_name": server_name,
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error(f"Failed to initiate OAuth for {server_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initiate OAuth authorization: {str(e)}",
+            ) from e
+    
+    async def oauth_clear_tokens(self, server_name: str) -> dict[str, Any]:
+        """Clear stored OAuth tokens for a server."""
+        try:
+            server_config = self._find_server_config(server_name)
+            oauth_manager = get_oauth_manager()
+            
+            # Check if this is a remote server
+            if not server_config.is_remote_server():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                )
+            
+            # Get the remote URL
+            remote_url = server_config.get_remote_url()
+            if not remote_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} does not have a valid remote URL"
+                )
+            
+            success = oauth_manager.clear_tokens(server_name, remote_url)
+            
+            if success:
+                return {
+                    "status": "success",
+                    "message": f"OAuth tokens cleared for {server_name}",
+                    "server_name": server_name,
+                }
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to clear OAuth tokens for {server_name}"
+                )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error(f"Failed to clear OAuth tokens for {server_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to clear OAuth tokens: {str(e)}",
+            ) from e
+    
+    async def oauth_refresh_status(self, server_name: str) -> dict[str, Any]:
+        """Refresh OAuth status for a server."""
+        try:
+            server_config = self._find_server_config(server_name)
+            oauth_manager = get_oauth_manager()
+            
+            # Get the remote URL if this is a remote server
+            remote_url = server_config.get_remote_url()
+            
+            # Refresh OAuth status
+            oauth_info = await oauth_manager.refresh_server_status(
+                server_name, remote_url
+            )
+            
+            return {
+                "status": "refreshed",
+                "server_name": oauth_info.server_name,
+                "oauth_status": oauth_info.status.value,
+                "error_message": oauth_info.error_message,
+                "token_expires_at": oauth_info.token_expires_at,
+                "has_refresh_token": oauth_info.has_refresh_token,
+                "scopes": oauth_info.scopes,
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error(f"Failed to refresh OAuth status for {server_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to refresh OAuth status: {str(e)}",
+            ) from e

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import './index.css'
 import Editor from '@monaco-editor/react'
 import { useSessions } from './hooks'
-import type { Session } from './types'
+import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus } from './types'
 import { Timeline } from './components/Timeline'
 import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
@@ -608,6 +608,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
+    
+    // OAuth state
+    const [oauthInfo, setOauthInfo] = useState<Record<string, OAuthServerInfo>>({})
+    const [oauthLoading, setOauthLoading] = useState<Record<string, boolean>>({})
+    const [oauthError, setOauthError] = useState<Record<string, string>>({})
 
     // Auto-dismiss toast after 10 seconds
     useEffect(() => {
@@ -980,6 +985,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             console.log('✅ MCP servers reinitialized successfully:', result)
             setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
             
+            // Refresh OAuth status after successful reinitialization
+            console.log('🔐 Refreshing OAuth status after reinitialization...')
+            await loadOAuthStatus()
+            
         } catch (e) {
             console.error('❌ Failed to save and reinitialize:', e)
             setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
@@ -1168,6 +1177,222 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setToast({ message: 'Failed to save API key', type: 'error' })
         } finally {
             setSavingKey(false)
+        }
+    }
+
+    // OAuth functions
+    const loadOAuthStatus = async () => {
+        if (!config) return
+        
+        try {
+            const serverHost = config.server.host || 'localhost'
+            const serverPort = (config.server.port || 3000) + 1
+            const apiKey = config.server.api_key || ''
+            
+            const headers: Record<string, string> = {
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            }
+            
+            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/status`, {
+                method: 'GET',
+                headers
+            })
+            
+            if (response.ok) {
+                const data: OAuthStatusResponse = await response.json()
+                setOauthInfo(data.oauth_status)
+            }
+        } catch (error) {
+            console.warn('Failed to load OAuth status:', error)
+        }
+    }
+
+    const authorizeServer = async (serverName: string) => {
+        if (!config) return
+        
+        setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
+        setOauthError((prev: Record<string, string>) => {
+            const next = { ...prev }
+            delete next[serverName]
+            return next
+        })
+        
+        try {
+            const serverHost = config.server.host || 'localhost'
+            const serverPort = (config.server.port || 3000) + 1
+            const apiKey = config.server.api_key || ''
+            
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            }
+            
+            const body: OAuthAuthorizeRequest = {
+                // Use server-specific OAuth configuration if available
+            }
+            
+            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/authorize/${serverName}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body)
+            })
+            
+            if (response.ok) {
+                const data = await response.json()
+                setToast({ message: data.message, type: 'success' })
+                
+                // Refresh OAuth status after a delay to allow for authorization completion
+                setTimeout(loadOAuthStatus, 3000)
+            } else {
+                const errorData = await response.json().catch(() => ({}))
+                throw new Error(errorData.detail || `Authorization failed (${response.status})`)
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Authorization failed'
+            setOauthError((prev: Record<string, string>) => ({ ...prev, [serverName]: message }))
+            setToast({ message, type: 'error' })
+        } finally {
+            setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: false }))
+        }
+    }
+
+    const clearServerTokens = async (serverName: string) => {
+        if (!config) return
+        
+        setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
+        
+        try {
+            const serverHost = config.server.host || 'localhost'
+            const serverPort = (config.server.port || 3000) + 1
+            const apiKey = config.server.api_key || ''
+            
+            const headers: Record<string, string> = {
+                'Authorization': `Bearer ${apiKey}`
+            }
+            
+            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/tokens/${serverName}`, {
+                method: 'DELETE',
+                headers
+            })
+            
+            if (response.ok) {
+                const data = await response.json()
+                setToast({ message: data.message, type: 'success' })
+                
+                // Update OAuth info immediately
+                setOauthInfo((prev: Record<string, OAuthServerInfo>) => ({
+                    ...prev,
+                    [serverName]: {
+                        server_name: serverName,
+                        status: 'needs_auth' as OAuthStatus,
+                        has_refresh_token: false,
+                        token_expires_at: null,
+                        ...prev[serverName]
+                    }
+                }))
+            } else {
+                const errorData = await response.json().catch(() => ({}))
+                throw new Error(errorData.detail || `Failed to clear tokens (${response.status})`)
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to clear tokens'
+            setToast({ message, type: 'error' })
+        } finally {
+            setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: false }))
+        }
+    }
+
+    const refreshServerOAuth = async (serverName: string) => {
+        if (!config) return
+        
+        setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
+        
+        try {
+            const serverHost = config.server.host || 'localhost'
+            const serverPort = (config.server.port || 3000) + 1
+            const apiKey = config.server.api_key || ''
+            
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            }
+            
+            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/refresh/${serverName}`, {
+                method: 'POST',
+                headers
+            })
+            
+            if (response.ok) {
+                const data = await response.json()
+                setOauthInfo((prev: Record<string, OAuthServerInfo>) => ({
+                    ...prev,
+                    [serverName]: {
+                        server_name: serverName,
+                        status: data.oauth_status,
+                        error_message: data.error_message,
+                        has_refresh_token: data.has_refresh_token,
+                        token_expires_at: data.token_expires_at,
+                        scopes: data.scopes
+                    }
+                }))
+                setToast({ message: 'OAuth status refreshed', type: 'success' })
+            } else {
+                const errorData = await response.json().catch(() => ({}))
+                throw new Error(errorData.detail || `Failed to refresh status (${response.status})`)
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to refresh OAuth status'
+            setToast({ message, type: 'error' })
+        } finally {
+            setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: false }))
+        }
+    }
+
+    // Helper function to determine if a server is remote (may need OAuth)
+    const isRemoteServer = (serverConfig: any): boolean => {
+        return (
+            serverConfig.command === 'npx' &&
+            serverConfig.args?.length >= 3 &&
+            serverConfig.args[1] === 'mcp-remote' &&
+            serverConfig.args[2]?.startsWith('https://')
+        )
+    }
+
+    // Load OAuth status when config is loaded
+    useEffect(() => {
+        if (config && !loading) {
+            loadOAuthStatus()
+        }
+    }, [config, loading])
+
+    const getOAuthStatusColor = (status: OAuthStatus): string => {
+        switch (status) {
+            case 'authenticated':
+                return 'text-green-500'
+            case 'needs_auth':
+                return 'text-yellow-500'
+            case 'error':
+                return 'text-red-500'
+            case 'not_required':
+                return 'text-gray-400'
+            default:
+                return 'text-gray-400'
+        }
+    }
+
+    const getOAuthStatusIcon = (status: OAuthStatus): string => {
+        switch (status) {
+            case 'authenticated':
+                return '🔐'
+            case 'needs_auth':
+                return '⚠️'
+            case 'error':
+                return '❌'
+            case 'not_required':
+                return '🔓'
+            default:
+                return '❓'
         }
     }
 
@@ -1384,7 +1609,33 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                     <details open>
                                         <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
                                             <div>
-                                                <div className="font-semibold">{def.name}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-semibold">{def.name}</span>
+                                                    {(() => {
+                                                        // Only show OAuth indicators for remote servers
+                                                        const serverConfig = (config.mcp_servers || []).find(
+                                                            s => (s.name || '').trim().toLowerCase() === def.name.toLowerCase()
+                                                        )
+                                                        if (!serverConfig || !isRemoteServer(serverConfig)) {
+                                                            return null
+                                                        }
+                                                        
+                                                        const oauthStatus = oauthInfo[def.name]?.status || 'unknown'
+                                                        const oauthIcon = getOAuthStatusIcon(oauthStatus)
+                                                        const oauthColor = getOAuthStatusColor(oauthStatus)
+                                                        if (oauthStatus !== 'unknown' && oauthStatus !== 'not_required') {
+                                                            return (
+                                                                <span 
+                                                                    className={`text-sm ${oauthColor}`}
+                                                                    title={`OAuth status: ${oauthStatus}`}
+                                                                >
+                                                                    {oauthIcon}
+                                                                </span>
+                                                            )
+                                                        }
+                                                        return null
+                                                    })()}
+                                                </div>
                                                 {(() => {
                                                     const c = getCounts(def.name); const err = validateErrors[def.name]; return (
                                                         <div className="text-xs mt-0.5">
@@ -1393,6 +1644,32 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                             {err && <div className="text-rose-400 mt-1">{err}</div>}
                                                         </div>
                                                     )
+                                                })()}
+                                                {(() => {
+                                                    // Only show OAuth messages for remote servers
+                                                    const serverConfig = (config.mcp_servers || []).find(
+                                                        s => (s.name || '').trim().toLowerCase() === def.name.toLowerCase()
+                                                    )
+                                                    if (!serverConfig || !isRemoteServer(serverConfig)) {
+                                                        return null
+                                                    }
+                                                    
+                                                    const oauthStatus = oauthInfo[def.name]?.status
+                                                    const oauthErrorMsg = oauthInfo[def.name]?.error_message || oauthError[def.name]
+                                                    if (oauthErrorMsg) {
+                                                        return <div className="text-xs text-red-400 mt-1">OAuth: {oauthErrorMsg}</div>
+                                                    }
+                                                    if (oauthStatus === 'needs_auth') {
+                                                        return <div className="text-xs text-yellow-500 mt-1">OAuth authentication required</div>
+                                                    }
+                                                    if (oauthStatus === 'authenticated') {
+                                                        const expiresAt = oauthInfo[def.name]?.token_expires_at
+                                                        if (expiresAt) {
+                                                            return <div className="text-xs text-green-500 mt-1">OAuth authenticated (expires: {new Date(expiresAt).toLocaleDateString()})</div>
+                                                        }
+                                                        return <div className="text-xs text-green-500 mt-1">OAuth authenticated</div>
+                                                    }
+                                                    return null
                                                 })()}
                                             </div>
                                             <div className="text-xs flex items-center gap-2">
@@ -1422,6 +1699,81 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     const c = getCounts(def.name); return (enabled && (c.tools + c.resources + c.prompts) > 0) ? (
                                                         <button className="button" onClick={() => autoConfigure(def.name)}>Autoconfig</button>
                                                     ) : null
+                                                })()}
+                                                
+                                                {/* OAuth buttons */}
+                                                {(() => {
+                                                    // Only show OAuth buttons for remote servers
+                                                    const serverConfig = (config.mcp_servers || []).find(
+                                                        s => (s.name || '').trim().toLowerCase() === def.name.toLowerCase()
+                                                    )
+                                                    if (!serverConfig || !isRemoteServer(serverConfig)) {
+                                                        return null
+                                                    }
+                                                    
+                                                    const oauthStatus = oauthInfo[def.name]?.status
+                                                    const isOAuthLoading = oauthLoading[def.name]
+                                                    
+                                                    if (oauthStatus === 'needs_auth') {
+                                                        return (
+                                                            <button 
+                                                                className="button"
+                                                                onClick={() => authorizeServer(def.name)}
+                                                                disabled={isOAuthLoading}
+                                                                title="Authorize OAuth access for this server"
+                                                            >
+                                                                {isOAuthLoading ? 'Authorizing...' : '🔐 Authorize OAuth'}
+                                                            </button>
+                                                        )
+                                                    }
+                                                    
+                                                    if (oauthStatus === 'authenticated') {
+                                                        return (
+                                                            <div className="flex gap-2">
+                                                                <button 
+                                                                    className="button"
+                                                                    onClick={() => refreshServerOAuth(def.name)}
+                                                                    disabled={isOAuthLoading}
+                                                                    title="Refresh OAuth status"
+                                                                >
+                                                                    {isOAuthLoading ? 'Refreshing...' : '🔄 Refresh OAuth'}
+                                                                </button>
+                                                                <button 
+                                                                    className="button"
+                                                                    onClick={() => clearServerTokens(def.name)}
+                                                                    disabled={isOAuthLoading}
+                                                                    title="Clear stored OAuth tokens"
+                                                                >
+                                                                    {isOAuthLoading ? 'Clearing...' : '🗑️ Clear Tokens'}
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    
+                                                    if (oauthStatus === 'error' || oauthStatus === 'expired') {
+                                                        return (
+                                                            <div className="flex gap-2">
+                                                                <button 
+                                                                    className="button"
+                                                                    onClick={() => refreshServerOAuth(def.name)}
+                                                                    disabled={isOAuthLoading}
+                                                                    title="Refresh OAuth status"
+                                                                >
+                                                                    {isOAuthLoading ? 'Refreshing...' : '🔄 Refresh OAuth'}
+                                                                </button>
+                                                                <button 
+                                                                    className="button"
+                                                                    onClick={() => authorizeServer(def.name)}
+                                                                    disabled={isOAuthLoading}
+                                                                    title="Re-authorize OAuth access"
+                                                                >
+                                                                    {isOAuthLoading ? 'Authorizing...' : '🔐 Re-authorize'}
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    }
+                                                    
+                                                    return null
                                                 })()}
                                             </div>
                                         </div>
