@@ -1,6 +1,10 @@
 # OpenEdison 🔒⚡️
 
-Open-source single-user MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
+MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
+
+<p align="center">
+  <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
+</p>
 
 <div align="center">
   <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
@@ -39,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 <details>
-<summary>🧰 Install Node.js/npm (optional for MCP tools)</summary>
+<summary>⬇️ Install Node.js/npm (optional for MCP tools)</summary>
 
 If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
 
@@ -62,7 +66,7 @@ After installation, ensure that `npx` is available on PATH.
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI 📦</summary>
+<summary><img src="https://img.shields.io/badge/pypi-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"> Install from PyPI</summary>
 
 #### Prerequisites
 
@@ -88,7 +92,7 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> Run with Docker 🐳</summary>
+<summary><img src="https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> Run with Docker</summary>
 
 There is a dockerfile for simple local setup.
 
