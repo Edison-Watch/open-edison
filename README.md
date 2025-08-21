@@ -10,7 +10,7 @@ Open-source single-user MCP security gateway that prevents data exfiltration—v
   <img alt="Project Version" src="https://img.shields.io/pypi/v/open-edison?label=version&color=blue">
   <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue?logo=python">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
-  <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/Edison-Watch/open-edison">
+
 
 </p>
 
