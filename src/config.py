@@ -136,7 +136,7 @@ class MCPServerConfig:
     def is_remote_server(self) -> bool:
         """
         Check if this is a remote MCP server (connects to external HTTPS endpoint).
-        
+
         Remote servers use mcp-remote with HTTPS URLs and may require OAuth.
         Local servers run as child processes and don't need OAuth.
         """
@@ -150,7 +150,7 @@ class MCPServerConfig:
     def get_remote_url(self) -> str | None:
         """
         Get the remote URL for a remote MCP server.
-        
+
         Returns:
             The HTTPS URL if this is a remote server, None otherwise
         """
@@ -161,7 +161,7 @@ class MCPServerConfig:
     def is_local_server(self) -> bool:
         """
         Check if this is a local MCP server (runs as child process).
-        
+
         Local servers typically use @modelcontextprotocol packages.
         """
         return not self.is_remote_server()

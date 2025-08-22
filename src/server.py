@@ -862,7 +862,7 @@ class OpenEdisonProxy:
     ) -> dict[str, Any]:
         """
         Test connection to a remote MCP server, triggering OAuth flow if needed.
-        
+
         This endpoint creates a temporary FastMCP client with OAuth authentication
         and attempts to make a connection. This automatically triggers FastMCP's
         OAuth flow, which will open a browser for user authorization.
@@ -946,7 +946,7 @@ class OpenEdisonProxy:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Connection test failed: {error_message}"
-                )
+                ) from None
 
         except HTTPException:
             raise
@@ -1006,8 +1006,20 @@ class OpenEdisonProxy:
             server_config = self._find_server_config(server_name)
             oauth_manager = get_oauth_manager()
 
-            # Get the remote URL if this is a remote server
+            # Check if this is a remote server
+            if not server_config.is_remote_server():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                )
+
+            # Get the remote URL (now guaranteed to be non-None for remote servers)
             remote_url = server_config.get_remote_url()
+            if not remote_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Server {server_name} does not have a valid remote URL"
+                )
 
             # Refresh OAuth status
             oauth_info = await oauth_manager.refresh_server_status(

@@ -47,7 +47,7 @@ class OAuthServerInfo:
 class OAuthManager:
     """
     Manages OAuth authentication for MCP servers.
-    
+
     This class provides a centralized interface for:
     - Detecting which MCP servers require OAuth
     - Managing OAuth tokens and credentials
@@ -58,7 +58,7 @@ class OAuthManager:
     def __init__(self, cache_dir: Path | None = None):
         """
         Initialize OAuth manager.
-        
+
         Args:
             cache_dir: Directory for token cache. Defaults to FastMCP's default.
         """
@@ -75,12 +75,12 @@ class OAuthManager:
     ) -> OAuthServerInfo:
         """
         Check if an MCP server requires OAuth authentication.
-        
+
         Args:
             server_name: Name of the MCP server
             mcp_url: URL of the MCP endpoint (None for local servers)
             timeout_seconds: Timeout for the check request
-            
+
         Returns:
             OAuthServerInfo with detection results
         """
@@ -196,13 +196,13 @@ class OAuthManager:
     ) -> OAuth | None:
         """
         Get OAuth authentication object for FastMCP client.
-        
+
         Args:
             server_name: Name of the MCP server
             mcp_url: URL of the MCP endpoint
             scopes: OAuth scopes to request
             client_name: Client name for OAuth registration
-            
+
         Returns:
             OAuth authentication object, or None if OAuth not required
         """
@@ -233,11 +233,11 @@ class OAuthManager:
     def clear_tokens(self, server_name: str, mcp_url: str) -> bool:
         """
         Clear stored OAuth tokens for a server.
-        
+
         Args:
             server_name: Name of the MCP server
             mcp_url: URL of the MCP endpoint
-            
+
         Returns:
             True if tokens were cleared successfully
         """
@@ -269,11 +269,11 @@ class OAuthManager:
     async def refresh_server_status(self, server_name: str, mcp_url: str) -> OAuthServerInfo:
         """
         Refresh OAuth status for a server.
-        
+
         Args:
             server_name: Name of the MCP server
             mcp_url: URL of the MCP endpoint
-            
+
         Returns:
             Updated OAuthServerInfo
         """
@@ -286,11 +286,11 @@ class OAuthManager:
     ) -> dict[str, OAuthServerInfo]:
         """
         Check OAuth requirements for multiple servers concurrently.
-        
+
         Args:
             servers: List of (server_name, mcp_url) tuples
             timeout_seconds: Timeout for each individual check
-            
+
         Returns:
             Dictionary mapping server names to OAuth info
         """

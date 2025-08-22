@@ -131,39 +131,47 @@ class SingleUserMCP(FastMCP[Any]):
                 remote_url = server_config.get_remote_url()
                 oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
 
-                # Create the FastMCP client
-                if server_config.is_remote_server() and oauth_info.status == OAuthStatus.AUTHENTICATED:
-                    # Remote server with OAuth - create client with authentication
-                    oauth_auth = oauth_manager.get_oauth_auth(
-                        server_name,
-                        remote_url,
-                        server_config.oauth_scopes,
-                        server_config.oauth_client_name
-                    )
-                    if oauth_auth and remote_url:
-                        # Create client for remote server with OAuth
-                        client = FastMCPClient(remote_url, auth=oauth_auth)
-                        log.info(f"🔐 Created remote client with OAuth authentication for {server_name}")
+                # Create proxy based on server type to avoid union type issues
+                if server_config.is_remote_server():
+                    # Handle remote servers (with or without OAuth)
+                    if not remote_url:
+                        log.error(f"❌ Remote server {server_name} has no URL")
+                        continue
+                    
+                    if oauth_info.status == OAuthStatus.AUTHENTICATED:
+                        # Remote server with OAuth authentication
+                        oauth_auth = oauth_manager.get_oauth_auth(
+                            server_name,
+                            remote_url,
+                            server_config.oauth_scopes,
+                            server_config.oauth_client_name
+                        )
+                        if oauth_auth:
+                            client = FastMCPClient(remote_url, auth=oauth_auth)
+                            log.info(f"🔐 Created remote client with OAuth authentication for {server_name}")
+                        else:
+                            client = FastMCPClient(remote_url)
+                            log.warning(f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}")
                     else:
-                        # Fallback to unauthenticated remote client
-                        client = FastMCPClient(remote_url) if remote_url else FastMCPClient(fastmcp_config)
-                        log.warning(f"⚠️ Created unauthenticated remote client for {server_name}")
-                elif server_config.is_remote_server() and remote_url:
-                    # Remote server without OAuth
-                    client = FastMCPClient(remote_url)
-                    log.info(f"🌐 Created remote client for {server_name}")
+                        # Remote server without OAuth or needs auth
+                        client = FastMCPClient(remote_url)
+                        log.info(f"🌐 Created remote client for {server_name}")
+                    
+                    # Log OAuth status warnings
+                    if oauth_info.status == OAuthStatus.NEEDS_AUTH:
+                        log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
+                                  f"Server will be mounted without authentication and may fail.")
+                    elif oauth_info.status == OAuthStatus.ERROR:
+                        log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
+                    
+                    # Create proxy from remote client
+                    proxy = FastMCP.as_proxy(client)
+                    
                 else:
-                    # Local server - use process-based configuration
-                    client = FastMCPClient(fastmcp_config)
-                    log.info(f"🔧 Created local process client for {server_name}")
-
-                if oauth_info.status == OAuthStatus.NEEDS_AUTH:
-                    log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
-                              f"Server will be mounted without authentication and may fail.")
-                elif oauth_info.status == OAuthStatus.ERROR:
-                    log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
-
-                proxy = FastMCP.as_proxy(client)
+                    # Local server - create proxy directly from config (avoids union type issue)
+                    log.info(f"🔧 Creating local process proxy for {server_name}")
+                    proxy = FastMCP.as_proxy(fastmcp_config)
+                
                 self.mount(proxy, prefix=server_name)
                 self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 

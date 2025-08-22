@@ -150,10 +150,10 @@ OAUTH_SERVER_PRESETS: list[OAuthServerPreset] = [
 def get_oauth_preset(server_name: str) -> OAuthServerPreset | None:
     """
     Get OAuth preset configuration for a server name.
-    
+
     Args:
         server_name: Name of the MCP server
-        
+
     Returns:
         Matching OAuthServerPreset, or None if no preset matches
     """
@@ -169,10 +169,10 @@ def get_oauth_preset(server_name: str) -> OAuthServerPreset | None:
 def suggest_oauth_scopes(server_name: str) -> list[str]:
     """
     Suggest OAuth scopes for a server based on its name.
-    
+
     Args:
         server_name: Name of the MCP server
-        
+
     Returns:
         List of suggested OAuth scopes
     """
@@ -187,10 +187,10 @@ def suggest_oauth_scopes(server_name: str) -> list[str]:
 def get_oauth_documentation_url(server_name: str) -> str | None:
     """
     Get OAuth documentation URL for a server.
-    
+
     Args:
         server_name: Name of the MCP server
-        
+
     Returns:
         Documentation URL, or None if not available
     """
