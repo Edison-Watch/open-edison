@@ -6,10 +6,10 @@ No multi-user support, no complex routing - just a straightforward proxy.
 """
 
 import asyncio
-from contextlib import suppress
 import json
 import traceback
 from collections.abc import Awaitable, Callable, Coroutine
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -23,21 +23,17 @@ from fastmcp import FastMCP
 from loguru import logger as log
 from pydantic import BaseModel, Field
 
-from src.config import MCPServerConfig, config
+# get_session_from_db import removed; no longer needed for one-time approvals
+from src import events
+from src.config import config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
-from src.middleware.data_access_tracker import (
-    clear_all_classify_permissions_caches,
-    clear_all_permissions_caches,
-)
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
-
-# get_session_from_db import removed; no longer needed for one-time approvals
-from src import events
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
+from src.user_config import clear_config_cache
 
 
 def _get_current_config():
@@ -466,27 +462,6 @@ class OpenEdisonProxy:
             ]
         }
 
-    def _handle_server_operation_error(
-        self, operation: str, server_name: str, error: Exception
-    ) -> HTTPException:
-        """Handle common server operation errors."""
-        log.error(f"Failed to {operation} server {server_name}: {error}")
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to {operation} server: {str(error)}",
-        )
-
-    def _find_server_config(self, server_name: str) -> MCPServerConfig:
-        """Find server configuration by name."""
-        current_config = _get_current_config()
-        for config_server in current_config.mcp_servers:
-            if config_server.name == server_name:
-                return config_server
-        raise HTTPException(
-            status_code=404,
-            detail=f"Server configuration not found: {server_name}",
-        )
-
     async def health_check(self) -> dict[str, Any]:
         """Health check endpoint"""
         return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
@@ -598,17 +573,13 @@ class OpenEdisonProxy:
     async def clear_caches(self) -> dict[str, str]:
         """Clear all permission caches to force reload from configuration files."""
         try:
-            log.info("🔄 Clearing all permission caches via API endpoint")
-            clear_all_permissions_caches()
+            log.info("🔄 Clearing all config caches via API endpoint")
+            clear_config_cache()
             log.info("✅ All permission caches cleared successfully")
 
-            log.info("🔄 Clearing all classify permission caches via API endpoint")
-            clear_all_classify_permissions_caches()
-            log.info("✅ All classify permission caches cleared successfully")
-
-            return {"status": "success", "message": "All permission caches cleared"}
+            return {"status": "success", "message": "All config caches cleared"}
         except Exception as e:
-            log.error(f"❌ Failed to clear permission caches: {e}")
+            log.error(f"❌ Failed to clear config caches: {e}")
             # Don't raise HTTPException - allow to fail gracefully as requested
             return {"status": "error", "message": f"Failed to clear caches: {str(e)}"}
 
@@ -706,18 +677,6 @@ class OpenEdisonProxy:
                         await result  # type: ignore[func-returns-value]
             except Exception as cleanup_err:  # noqa: BLE001
                 log.debug(f"Validator cleanup skipped/failed: {cleanup_err}")
-
-    def _build_backend_config(
-        self, server_name: str, body: "OpenEdisonProxy._ValidateRequest"
-    ) -> dict[str, Any]:
-        backend_entry: dict[str, Any] = {
-            "command": body.command,
-            "args": body.args,
-            "env": body.env or {},
-        }
-        if body.roots:
-            backend_entry["roots"] = body.roots
-        return {"mcpServers": {server_name: backend_entry}}
 
     async def _list_all_capabilities(
         self, server: FastMCP[Any], body: "OpenEdisonProxy._ValidateRequest"

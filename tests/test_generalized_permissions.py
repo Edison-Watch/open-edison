@@ -5,9 +5,17 @@ Tests the enhanced permission system that handles tools, resources, and prompts
 with separate JSON configuration files for each type.
 """
 
+from pathlib import Path
+
 import pytest
 
 from src.middleware.data_access_tracker import DataAccessTracker
+from src.user_config import (
+    _flat_permissions_loader,
+    classify_prompt_permissions,
+    classify_resource_permissions,
+    classify_tool_permissions,
+)
 
 
 class TestResourcePermissions:
@@ -70,12 +78,11 @@ class TestPermissionConfigIntegration:
 
     def test_all_config_files_loaded(self):
         """Test that all permission configuration files are loaded."""
-        tracker = DataAccessTracker()
 
         # Test that each config type works
-        tool_perms = tracker._load_tool_permissions()
-        resource_perms = tracker._load_resource_permissions()
-        prompt_perms = tracker._load_prompt_permissions()
+        tool_perms = _flat_permissions_loader(Path("tool_permissions.json"))
+        resource_perms = _flat_permissions_loader(Path("resource_permissions.json"))
+        prompt_perms = _flat_permissions_loader(Path("prompt_permissions.json"))
 
         assert isinstance(tool_perms, dict)
         assert isinstance(resource_perms, dict)
@@ -88,28 +95,26 @@ class TestPermissionConfigIntegration:
 
     def test_consistent_permission_structure(self):
         """Test that all permission types use consistent structure."""
-        tracker = DataAccessTracker()
-
         # Test tool permission structure (this works since tool_permissions.json has data)
-        tool_perms = tracker._classify_tool_permissions("filesystem_read_file")
+        tool_perms = classify_tool_permissions("filesystem_read_file")
         assert "write_operation" in tool_perms
         assert "read_private_data" in tool_perms
         assert "read_untrusted_public_data" in tool_perms
 
         # Test that resource and prompt classification methods exist
         # (they will raise ValueError for unknown items, but the structure is consistent)
-        assert callable(tracker._classify_resource_permissions)
-        assert callable(tracker._classify_prompt_permissions)
+        assert callable(classify_resource_permissions)
+        assert callable(classify_prompt_permissions)
 
         # Test the error format is consistent
         try:
-            tracker._classify_resource_permissions("file:/test.txt")
+            classify_resource_permissions("file:/test.txt")
             raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "resource_permissions.json" in str(e)
 
         try:
-            tracker._classify_prompt_permissions("system")
+            classify_prompt_permissions("system")
             raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "prompt_permissions.json" in str(e)

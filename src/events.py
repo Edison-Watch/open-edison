@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from functools import wraps
 from typing import Any
 
 from loguru import logger as log
-
 
 _subscribers: set[asyncio.Queue[str]] = set()
 _lock = asyncio.Lock()
@@ -25,6 +25,20 @@ _approvals_lock = asyncio.Lock()
 
 def _approval_key(session_id: str, kind: str, name: str) -> str:
     return f"{session_id}::{kind}::{name}"
+
+
+def requires_loop(func: Callable[..., Any]) -> Callable[..., None | Any]:  # noqa: ANN401
+    """Decorator to ensure the function is called when there is an asyncio event loop.
+    This is for sync(!) functions that return None / can do so on error"""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> None | Any:
+        if asyncio.get_event_loop_policy()._local._loop is None:  # type: ignore[attr-defined]
+            log.warning("fire_and_forget called in non-async context")
+            return None
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 async def subscribe() -> asyncio.Queue[str]:
@@ -74,11 +88,9 @@ async def publish(event: dict[str, Any]) -> None:
             _subscribers.discard(q)
 
 
+@requires_loop
 def fire_and_forget(event: dict[str, Any]) -> None:
-    """Schedule publish(event) and log any exception when the task completes.
-
-    This avoids broad try/except at call sites while ensuring failures are visible.
-    """
+    """Schedule publish(event) and log any exception when the task completes."""
     task = asyncio.create_task(publish(event))
 
     def _log_exc(t: asyncio.Task[None]) -> None:

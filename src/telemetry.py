@@ -18,9 +18,6 @@ Events/metrics captured (high level, install-unique ID for deaggregation):
 Configuration: see `TelemetryConfig` in `src.config`.
 """
 
-from __future__ import annotations
-
-import json
 import os
 import platform
 import traceback
@@ -230,29 +227,6 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
     log.info("📈 Telemetry initialized")
 
 
-def force_flush_metrics(timeout_ms: int = 5000) -> bool:
-    """Force-flush metrics synchronously if a provider is initialized.
-
-    Returns True on success, False otherwise.
-    """
-    try:
-        provider = _provider
-        if provider is None:
-            return False
-        # Some providers expose force_flush(timeout_millis=...), others as force_flush() -> bool
-        if hasattr(provider, "force_flush"):
-            try:
-                # Try with timeout argument first
-                result = provider.force_flush(timeout_millis=timeout_ms)  # type: ignore[misc]
-            except TypeError:
-                result = provider.force_flush()
-            return bool(result)
-        return False
-    except Exception:  # noqa: BLE001
-        log.error("Force flush failed\n{}", traceback.format_exc())
-        return False
-
-
 def _common_attrs(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     attrs: dict[str, Any] = {"install_id": _ensure_install_id(), "app": "open-edison"}
     if extra:
@@ -273,16 +247,6 @@ def record_tool_call_blocked(tool_name: str, reason: str) -> None:
         return
     _tool_calls_blocked_counter.add(
         1, attributes=_common_attrs({"tool": tool_name, "reason": reason})
-    )
-
-
-@telemetry_recorder
-def record_tool_call_metadata(tool_name: str, metadata: dict[str, Any]) -> None:
-    if _tool_calls_metadata_counter is None:
-        return
-    metadata_str = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    _tool_calls_metadata_counter.add(
-        1, attributes=_common_attrs({"tool": tool_name, "metadata_json": metadata_str})
     )
 
 

@@ -58,12 +58,6 @@ def get_config_dir() -> Path:
         return (Path.home() / ".open-edison").resolve()
 
 
-# Back-compat private alias (internal modules may import this)
-def _get_config_dir() -> Path:  # noqa: D401
-    """Alias to public get_config_dir (maintained for internal imports)."""
-    return get_config_dir()
-
-
 def _default_config_path() -> Path:
     """Determine default config.json path.
 

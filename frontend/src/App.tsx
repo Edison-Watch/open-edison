@@ -62,6 +62,14 @@ export function App(): React.JSX.Element {
     // MCP Server Status
     const [mcpStatus, setMcpStatus] = useState<'checking' | 'online' | 'reduced' | 'offline'>('checking')
 
+    // App-level toast (e.g., approval confirmations)
+    const [uiToast, setUiToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+    useEffect(() => {
+        if (!uiToast) return
+        const t = setTimeout(() => setUiToast(null), 5000)
+        return () => clearTimeout(t)
+    }, [uiToast])
+
     useEffect(() => {
         const checkMcpStatus = async () => {
             try {
@@ -145,8 +153,21 @@ export function App(): React.JSX.Element {
         return () => clearInterval(interval)
     }, [])
 
-    // Subscribe to server-sent events (relative to FastAPI origin on 3001) and show browser notifications
+    // Register service worker (for actionable notifications) then subscribe to SSE
     useEffect(() => {
+        // Try to register service worker if supported
+        const registerSW = async () => {
+            if ('serviceWorker' in navigator) {
+                try {
+                    // sw.js is served from public/
+                    await navigator.serviceWorker.register('/sw.js');
+                } catch {
+                    // ignore
+                }
+            }
+        }
+        void registerSW();
+
         const es = new EventSource(`/events`)
         es.onmessage = (ev) => {
             try {
@@ -155,7 +176,32 @@ export function App(): React.JSX.Element {
                     const title = 'Edison blocked a risky action'
                     const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
                     const sessionId = data.session_id || ''
-                    if (typeof Notification !== 'undefined') {
+                    const trySW = async () => {
+                        try {
+                            if ('serviceWorker' in navigator && Notification) {
+                                const ensurePerm = async () => {
+                                    if (Notification.permission === 'granted') return true
+                                    if (Notification.permission === 'denied') return false
+                                    const p = await Notification.requestPermission();
+                                    return p === 'granted'
+                                }
+                                const ok = await ensurePerm()
+                                if (!ok) return false
+                                const reg = await navigator.serviceWorker.ready
+                                reg.active?.postMessage({
+                                    type: 'SHOW_MCP_BLOCK_NOTIFICATION',
+                                    title,
+                                    body,
+                                    data: { sessionId, kind: data.kind, name: data.name }
+                                })
+                                return true
+                            }
+                        } catch { /* ignore */ }
+                        return false
+                    }
+
+                    const fallbackInline = () => {
+                        if (typeof Notification === 'undefined') return
                         const show = () => {
                             try {
                                 const n = new Notification(title, { body })
@@ -178,6 +224,12 @@ export function App(): React.JSX.Element {
                             Notification.requestPermission().then((p) => { if (p === 'granted') show() }).catch(() => { })
                         }
                     }
+
+                    // Prefer SW (action buttons) and fall back to inline notification + confirm
+                    void trySW().then((ok) => { if (!ok) fallbackInline() })
+                } else if (data?.type === 'mcp_approved_once') {
+                    const msg = `Approved ${data.kind} '${data.name}'`
+                    setUiToast({ message: msg, type: 'success' })
                 }
             } catch { /* ignore */ }
         }
@@ -289,6 +341,23 @@ export function App(): React.JSX.Element {
                 <JsonEditors projectRoot={projectRoot} />
             ) : (
                 <ConfigurationManager projectRoot={projectRoot} />
+            )}
+            {/* Global toast for cross-page confirmations */}
+            {uiToast && (
+                <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${uiToast.type === 'success'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-red-500 text-white'
+                    }`}>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{uiToast.message}</span>
+                        <button
+                            onClick={() => setUiToast(null)}
+                            className="ml-3 text-white hover:text-gray-200 text-lg font-bold"
+                        >
+                            ×
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
     )

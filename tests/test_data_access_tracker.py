@@ -4,6 +4,8 @@ Tests for Data Access Tracker
 Tests the lethal trifecta monitoring functionality.
 """
 
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -84,9 +86,9 @@ def test_safe_tools_remain_safe():
     tracker = DataAccessTracker()
 
     # Built-in safe tools
-    tracker.add_tool_call("echo")
-    tracker.add_tool_call("get_server_info")
-    tracker.add_tool_call("get_security_status")
+    tracker.add_tool_call("builtin_echo")
+    tracker.add_tool_call("builtin_get_server_info")
+    tracker.add_tool_call("builtin_get_security_status")
 
     assert not tracker.has_private_data_access
     assert not tracker.has_untrusted_content_exposure
@@ -210,7 +212,7 @@ def test_mock_load_tool_permissions_with_json():
 
     # Mock the module-level function that loads permissions
     with patch(
-        "src.middleware.data_access_tracker._load_tool_permissions_cached",
+        "src.user_config._flat_permissions_loader",
         return_value=mock_permissions,
     ):
         tracker = DataAccessTracker()
@@ -248,7 +250,7 @@ def test_mock_load_tool_permissions_with_json_argument():
 
     # Mock the module-level function that loads permissions
     with patch(
-        "src.middleware.data_access_tracker._load_tool_permissions_cached",
+        "src.user_config._flat_permissions_loader",
         return_value=custom_json_permissions,
     ):
         tracker = DataAccessTracker()
@@ -258,73 +260,14 @@ def test_mock_load_tool_permissions_with_json_argument():
             tracker.add_tool_call("test_tool")
 
 
-def test_mock_function_with_json_argument():
-    """Test creating a mock function that accepts JSON input as an argument."""
-    # Define custom JSON permissions data
-    custom_json_permissions = {
-        "dynamic_tool": {
-            "enabled": True,
-            "write_operation": True,
-            "read_private_data": True,
-            "read_untrusted_public_data": False,
-        }
-    }
-
-    # Create a mock function that accepts JSON input as an argument
-    def mock_load_permissions_with_json(json_input=None):
-        """Mock function that accepts JSON input and returns it."""
-        if json_input is None:
-            # Return default permissions if no JSON provided
-            return {
-                "default_tool": {
-                    "enabled": True,
-                    "write_operation": False,
-                    "read_private_data": False,
-                    "read_untrusted_public_data": False,
-                }
-            }
-        return json_input
-
-    # Example 1: Use the mock function directly
-    result = mock_load_permissions_with_json(custom_json_permissions)
-    assert result == custom_json_permissions
-    assert "dynamic_tool" in result
-
-    # Example 2: Use the mock function with no arguments (default behavior)
-    default_result = mock_load_permissions_with_json()
-    assert "default_tool" in default_result
-
-    # Example 3: Use the mock function to replace the actual function
-    with patch(
-        "src.middleware.data_access_tracker._load_tool_permissions_cached",
-        side_effect=mock_load_permissions_with_json,
-    ):
-        # Create a tracker and test with custom JSON
-        tracker = DataAccessTracker()
-
-        # The mock will be called with no arguments, so it returns default permissions
-        # We can't directly pass arguments to the cached function, but we can test the pattern
-
-        # Test that the mock function works as expected
-        permissions = tracker._load_tool_permissions()
-        assert "default_tool" in permissions
-
-        # Test with a tool that exists in default permissions
-        tracker.add_tool_call("default_tool")
-        # Should not trigger any security flags since default_tool has all False values
-        assert not tracker.has_private_data_access
-        assert not tracker.has_external_communication
-        assert not tracker.has_untrusted_content_exposure
-
-
 def test_mock_with_dynamic_json_input():
     """Test creating a mock that can handle dynamic JSON input."""
 
     # Create a mock function that can accept different JSON inputs
-    def create_mock_with_json(json_input):
+    def create_mock_with_json(json_input: dict[str, Any]) -> Callable[[Any], dict[str, Any]]:
         """Factory function that creates a mock with specific JSON input."""
 
-        def mock_function():
+        def mock_function(a: Any) -> dict[str, Any]:
             return json_input
 
         return mock_function
@@ -361,7 +304,7 @@ def test_mock_with_dynamic_json_input():
         mock_func = create_mock_with_json(config)
 
         with patch(
-            "src.middleware.data_access_tracker._load_tool_permissions_cached",
+            "src.user_config._flat_permissions_loader",
             side_effect=mock_func,
         ):
             tracker = DataAccessTracker()

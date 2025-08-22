@@ -27,14 +27,20 @@ from sqlalchemy import JSON, Column, Integer, String, create_engine, event
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
+from src import events
 from src.config import get_config_dir  # type: ignore[reportMissingImports]
-from src.middleware.data_access_tracker import DataAccessTracker, SecurityError
+from src.middleware.data_access_tracker import (
+    DataAccessTracker,
+    SecurityError,
+    classify_prompt_permissions,
+    classify_resource_permissions,
+    classify_tool_permissions,
+)
 from src.telemetry import (
     record_prompt_used,
     record_resource_used,
     record_tool_call,
 )
-from src import events
 
 
 @dataclass
@@ -102,7 +108,7 @@ def create_db_session() -> Generator[Session, None, None]:
     engine = create_engine(f"sqlite:///{db_path}")
 
     # Ensure changes are flushed to the main database file (avoid WAL for sql.js compatibility)
-    @event.listens_for(engine, "connect")
+    @event.listens_for(engine, "connect")  # noqa
     def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def] # noqa
         cur = dbapi_connection.cursor()  # type: ignore[attr-defined]
         try:
@@ -215,7 +221,7 @@ class SessionTrackingMiddleware(Middleware):
         return session, session_id
 
     # General hooks for on_request, on_message, etc.
-    async def on_request(
+    async def on_request(  # noqa
         self,
         context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
         call_next: CallNext[mt.Request[Any, Any], Any],  # type: ignore
@@ -229,7 +235,7 @@ class SessionTrackingMiddleware(Middleware):
         return await call_next(context)  # type: ignore
 
     # Hooks for Tools
-    async def on_list_tools(
+    async def on_list_tools(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -264,7 +270,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for tool {tool_name}")
-            permissions = session.data_access_tracker.get_tool_permissions(tool_name)
+            permissions = classify_tool_permissions(tool_name)
             log.trace(f"🔍 Tool permissions: {permissions}")
             if permissions["enabled"]:
                 allowed_tools.append(tool)
@@ -276,7 +282,7 @@ class SessionTrackingMiddleware(Middleware):
 
         return allowed_tools  # type: ignore
 
-    async def on_call_tool(
+    async def on_call_tool(  # noqa
         self,
         context: MiddlewareContext[mt.CallToolRequestParams],  # type: ignore
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],  # type: ignore
@@ -354,7 +360,7 @@ class SessionTrackingMiddleware(Middleware):
         return await call_next(context)  # type: ignore
 
     # Hooks for Resources
-    async def on_list_resources(
+    async def on_list_resources(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -389,7 +395,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
-            permissions = session.data_access_tracker.get_resource_permissions(resource_name)
+            permissions = classify_resource_permissions(resource_name)
             log.trace(f"🔍 Resource permissions: {permissions}")
             if permissions["enabled"]:
                 allowed_resources.append(resource)
@@ -401,7 +407,7 @@ class SessionTrackingMiddleware(Middleware):
 
         return allowed_resources  # type: ignore
 
-    async def on_read_resource(
+    async def on_read_resource(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -455,7 +461,7 @@ class SessionTrackingMiddleware(Middleware):
         return await call_next(context)
 
     # Hooks for Prompts
-    async def on_list_prompts(
+    async def on_list_prompts(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -490,7 +496,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
-            permissions = session.data_access_tracker.get_prompt_permissions(prompt_name)
+            permissions = classify_prompt_permissions(prompt_name)
             log.trace(f"🔍 Prompt permissions: {permissions}")
             if permissions["enabled"]:
                 allowed_prompts.append(prompt)
@@ -502,7 +508,7 @@ class SessionTrackingMiddleware(Middleware):
 
         return allowed_prompts  # type: ignore
 
-    async def on_get_prompt(
+    async def on_get_prompt(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
