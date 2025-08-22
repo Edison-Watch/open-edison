@@ -16,6 +16,7 @@ from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
 )
+from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 
 
 class MountedServerInfo(TypedDict):
@@ -112,23 +113,88 @@ class SingleUserMCP(FastMCP[Any]):
             log.info("No real servers to mount in composite proxy")
             return True
 
-        # Import the composite proxy into this main server
-        # Tools and resources will be automatically namespaced by server name
+        oauth_manager = get_oauth_manager()
+
         for server_config in enabled_servers:
             server_name = server_config.name
+
             # Skip if this server would produce an empty config (e.g., misconfigured)
             fastmcp_config = self._convert_to_fastmcp_config([server_config])
             if not fastmcp_config.get("mcpServers"):
                 log.warning(f"Skipping server '{server_name}' due to empty MCP config")
                 continue
-            proxy = FastMCP.as_proxy(FastMCPClient(fastmcp_config))
-            self.mount(proxy, prefix=server_name)
-            self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
+
+            try:
+                await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
+            except Exception as e:
+                log.error(f"❌ Failed to mount server {server_name}: {e}")
+                # Continue with other servers even if one fails
+                continue
 
         log.info(
             f"✅ Created composite proxy with {len(enabled_servers)} servers ({self.mounted_servers.keys()})"
         )
         return True
+
+    async def _mount_single_server(
+        self,
+        server_config: MCPServerConfig,
+        fastmcp_config: dict[str, Any],
+        oauth_manager: OAuthManager
+    ) -> None:
+        """Mount a single MCP server with appropriate OAuth handling."""
+        server_name = server_config.name
+
+        # Check OAuth requirements for this server
+        remote_url = server_config.get_remote_url()
+        oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
+
+        # Create proxy based on server type to avoid union type issues
+        if server_config.is_remote_server():
+            # Handle remote servers (with or without OAuth)
+            if not remote_url:
+                log.error(f"❌ Remote server {server_name} has no URL")
+                return
+
+            if oauth_info.status == OAuthStatus.AUTHENTICATED:
+                # Remote server with OAuth authentication
+                oauth_auth = oauth_manager.get_oauth_auth(
+                    server_name,
+                    remote_url,
+                    server_config.oauth_scopes,
+                    server_config.oauth_client_name
+                )
+                if oauth_auth:
+                    client = FastMCPClient(remote_url, auth=oauth_auth)
+                    log.info(f"🔐 Created remote client with OAuth authentication for {server_name}")
+                else:
+                    client = FastMCPClient(remote_url)
+                    log.warning(f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}")
+            else:
+                # Remote server without OAuth or needs auth
+                client = FastMCPClient(remote_url)
+                log.info(f"🌐 Created remote client for {server_name}")
+
+            # Log OAuth status warnings
+            if oauth_info.status == OAuthStatus.NEEDS_AUTH:
+                log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
+                          f"Server will be mounted without authentication and may fail.")
+            elif oauth_info.status == OAuthStatus.ERROR:
+                log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
+
+            # Create proxy from remote client
+            proxy = FastMCP.as_proxy(client)
+
+        else:
+            # Local server - create proxy directly from config (avoids union type issue)
+            log.info(f"🔧 Creating local process proxy for {server_name}")
+            proxy = FastMCP.as_proxy(fastmcp_config)
+
+        self.mount(proxy, prefix=server_name)
+        self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
+
+        server_type = "remote" if server_config.is_remote_server() else "local"
+        log.info(f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})")
 
     async def _rebuild_composite_proxy_without(self, excluded_server: str) -> bool:
         """Rebuild the composite proxy without the specified server."""
