@@ -586,7 +586,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                         const configData = await configResponse.json()
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
-                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         })
@@ -717,7 +717,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
     const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
-    
+
     // OAuth state
     const [oauthInfo, setOauthInfo] = useState<Record<string, OAuthServerInfo>>({})
     const [oauthLoading, setOauthLoading] = useState<Record<string, boolean>>({})
@@ -993,7 +993,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 // Get server config from the loaded config
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
@@ -1055,7 +1055,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             try {
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
@@ -1093,15 +1093,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const result = await reinitResponse.json()
             console.log('✅ MCP servers reinitialized successfully:', result)
             setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
-<<<<<<< HEAD
 
-=======
-            
             // Refresh OAuth status after successful reinitialization
             console.log('🔐 Refreshing OAuth status after reinitialization...')
             await loadOAuthStatus()
-            
->>>>>>> origin/main
+
         } catch (e) {
             console.error('❌ Failed to save and reinitialize:', e)
             setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
@@ -1296,22 +1292,22 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     // OAuth functions
     const loadOAuthStatus = async () => {
         if (!config) return
-        
+
         try {
             const serverHost = config.server.host || 'localhost'
             const serverPort = (config.server.port || 3000) + 1
             const apiKey = config.server.api_key || ''
-            
+
             const headers: Record<string, string> = {
                 'Accept': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             }
-            
+
             const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/status`, {
                 method: 'GET',
                 headers
             })
-            
+
             if (response.ok) {
                 const data: OAuthStatusResponse = await response.json()
                 setOauthInfo(data.oauth_status)
@@ -1323,38 +1319,38 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const testConnection = async (serverName: string) => {
         if (!config) return
-        
+
         setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
         setOauthError((prev: Record<string, string>) => {
             const next = { ...prev }
             delete next[serverName]
             return next
         })
-        
+
         try {
             const serverHost = config.server.host || 'localhost'
             const serverPort = (config.server.port || 3000) + 1
             const apiKey = config.server.api_key || ''
-            
+
             const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             }
-            
+
             const body: OAuthAuthorizeRequest = {
                 // Use server-specific OAuth configuration if available
             }
-            
+
             const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/test-connection/${serverName}`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body)
             })
-            
+
             if (response.ok) {
                 const data = await response.json()
                 setToast({ message: data.message, type: 'success' })
-                
+
                 // Refresh OAuth status after successful connection test
                 setTimeout(loadOAuthStatus, 1000)
             } else {
@@ -1372,27 +1368,27 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const clearServerTokens = async (serverName: string) => {
         if (!config) return
-        
+
         setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
-        
+
         try {
             const serverHost = config.server.host || 'localhost'
             const serverPort = (config.server.port || 3000) + 1
             const apiKey = config.server.api_key || ''
-            
+
             const headers: Record<string, string> = {
                 'Authorization': `Bearer ${apiKey}`
             }
-            
+
             const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/tokens/${serverName}`, {
                 method: 'DELETE',
                 headers
             })
-            
+
             if (response.ok) {
                 const data = await response.json()
                 setToast({ message: data.message, type: 'success' })
-                
+
                 // Update OAuth info immediately
                 setOauthInfo((prev: Record<string, OAuthServerInfo>) => ({
                     ...prev,
@@ -1418,24 +1414,24 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     const refreshServerOAuth = async (serverName: string) => {
         if (!config) return
-        
+
         setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
-        
+
         try {
             const serverHost = config.server.host || 'localhost'
             const serverPort = (config.server.port || 3000) + 1
             const apiKey = config.server.api_key || ''
-            
+
             const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             }
-            
+
             const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/refresh/${serverName}`, {
                 method: 'POST',
                 headers
             })
-            
+
             if (response.ok) {
                 const data = await response.json()
                 setOauthInfo((prev: Record<string, OAuthServerInfo>) => ({
@@ -1732,13 +1728,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         if (!serverConfig || !isRemoteServer(serverConfig)) {
                                                             return null
                                                         }
-                                                        
+
                                                         const oauthStatus = oauthInfo[def.name]?.status || 'unknown'
                                                         const oauthIcon = getOAuthStatusIcon(oauthStatus)
                                                         const oauthColor = getOAuthStatusColor(oauthStatus)
                                                         if (oauthStatus !== 'unknown' && oauthStatus !== 'not_required') {
                                                             return (
-                                                                <span 
+                                                                <span
                                                                     className={`text-sm ${oauthColor}`}
                                                                     title={`OAuth status: ${oauthStatus}`}
                                                                 >
@@ -1766,7 +1762,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     if (!serverConfig || !isRemoteServer(serverConfig)) {
                                                         return null
                                                     }
-                                                    
+
                                                     const oauthStatus = oauthInfo[def.name]?.status
                                                     const oauthErrorMsg = oauthInfo[def.name]?.error_message || oauthError[def.name]
                                                     if (oauthErrorMsg) {
@@ -1813,7 +1809,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         <button className="button" onClick={() => autoConfigure(def.name)}>Autoconfig</button>
                                                     ) : null
                                                 })()}
-                                                
+
                                                 {/* OAuth buttons */}
                                                 {(() => {
                                                     // Only show OAuth buttons for remote servers
@@ -1823,13 +1819,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     if (!serverConfig || !isRemoteServer(serverConfig)) {
                                                         return null
                                                     }
-                                                    
+
                                                     const oauthStatus = oauthInfo[def.name]?.status
                                                     const isOAuthLoading = oauthLoading[def.name]
-                                                    
+
                                                     if (oauthStatus === 'needs_auth') {
                                                         return (
-                                                            <button 
+                                                            <button
                                                                 className="button"
                                                                 onClick={() => testConnection(def.name)}
                                                                 disabled={isOAuthLoading}
@@ -1839,11 +1835,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                             </button>
                                                         )
                                                     }
-                                                    
+
                                                     if (oauthStatus === 'authenticated') {
                                                         return (
                                                             <div className="flex gap-2">
-                                                                <button 
+                                                                <button
                                                                     className="button"
                                                                     onClick={() => refreshServerOAuth(def.name)}
                                                                     disabled={isOAuthLoading}
@@ -1851,7 +1847,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                                 >
                                                                     {isOAuthLoading ? 'Refreshing...' : '🔄 Refresh OAuth'}
                                                                 </button>
-                                                                <button 
+                                                                <button
                                                                     className="button"
                                                                     onClick={() => clearServerTokens(def.name)}
                                                                     disabled={isOAuthLoading}
@@ -1862,11 +1858,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                             </div>
                                                         )
                                                     }
-                                                    
+
                                                     if (oauthStatus === 'error' || oauthStatus === 'expired') {
                                                         return (
                                                             <div className="flex gap-2">
-                                                                <button 
+                                                                <button
                                                                     className="button"
                                                                     onClick={() => refreshServerOAuth(def.name)}
                                                                     disabled={isOAuthLoading}
@@ -1874,7 +1870,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                                 >
                                                                     {isOAuthLoading ? 'Refreshing...' : '🔄 Refresh OAuth'}
                                                                 </button>
-                                                                <button 
+                                                                <button
                                                                     className="button"
                                                                     onClick={() => testConnection(def.name)}
                                                                     disabled={isOAuthLoading}
@@ -1885,7 +1881,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                             </div>
                                                         )
                                                     }
-                                                    
+
                                                     return null
                                                 })()}
                                             </div>

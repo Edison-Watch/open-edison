@@ -32,10 +32,8 @@ from src.config import get_config_dir  # type: ignore[reportMissingImports]
 from src.middleware.data_access_tracker import (
     DataAccessTracker,
     SecurityError,
-    classify_prompt_permissions,
-    classify_resource_permissions,
-    classify_tool_permissions,
 )
+from src.permissions import permissions as all_permissions
 from src.telemetry import (
     record_prompt_used,
     record_resource_used,
@@ -178,7 +176,7 @@ def get_session_from_db(session_id: str) -> MCPSession:
                     "has_external_communication", False
                 )
             # Restore ACL highest level if present
-            if isinstance(summary_data, dict) and "acl" in summary_data:
+            if isinstance(summary_data, dict) and "acl" in summary_data:  # type: ignore
                 acl_summary: Any = summary_data.get("acl")  # type: ignore
                 if isinstance(acl_summary, dict):
                     highest = acl_summary.get("highest_acl_level")  # type: ignore
@@ -270,9 +268,10 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for tool {tool_name}")
-            permissions = classify_tool_permissions(tool_name)
+            permissions = all_permissions.get_tool_permission(tool_name)
             log.trace(f"🔍 Tool permissions: {permissions}")
-            if permissions["enabled"]:
+            log.debug(f"🔍 Tool enabledment: Perm: {permissions.enabled}, Tool: {tool.enabled}")
+            if permissions.enabled:
                 allowed_tools.append(tool)
             else:
                 log.warning(
@@ -395,9 +394,9 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
-            permissions = classify_resource_permissions(resource_name)
+            permissions = all_permissions.get_resource_permission(resource_name)
             log.trace(f"🔍 Resource permissions: {permissions}")
-            if permissions["enabled"]:
+            if permissions.enabled:
                 allowed_resources.append(resource)
             else:
                 log.warning(
@@ -496,9 +495,9 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
-            permissions = classify_prompt_permissions(prompt_name)
+            permissions = all_permissions.get_prompt_permission(prompt_name)
             log.trace(f"🔍 Prompt permissions: {permissions}")
-            if permissions["enabled"]:
+            if permissions.enabled:
                 allowed_prompts.append(prompt)
             else:
                 log.warning(

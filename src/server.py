@@ -25,16 +25,16 @@ from pydantic import BaseModel, Field
 
 # get_session_from_db import removed; no longer needed for one-time approvals
 from src import events
-from src.config import config
+from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
 from src.oauth_manager import OAuthStatus, get_oauth_manager
+from src.permissions import permissions as all_permissions
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
-from src.user_config import clear_config_cache
 
 
 def _get_current_config():
@@ -433,8 +433,8 @@ class OpenEdisonProxy:
         )
         # Cache invalidation endpoint (no auth required - allowed to fail)
         app.add_api_route(
-            "/api/clear-caches",
-            self.clear_caches,
+            "/api/parmissions-changed",
+            self.permissions_changed,
             methods=["POST"],
         )
 
@@ -519,9 +519,8 @@ class OpenEdisonProxy:
 
             # Reload configuration from disk
             log.info("Reloading configuration from disk")
-            from src.config import Config
-
-            fresh_config = Config.load()
+            config.load()
+            all_permissions.reload()
             log.info("✅ Configuration reloaded from disk")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
@@ -529,7 +528,7 @@ class OpenEdisonProxy:
             self.single_user_mcp = SingleUserMCP()
 
             # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize(fresh_config)
+            await self.single_user_mcp.initialize()
 
             # Get final status
             final_mounted = await self.single_user_mcp.get_mounted_servers()
@@ -603,18 +602,21 @@ class OpenEdisonProxy:
             log.error(f"Failed to fetch sessions: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e
 
-    async def clear_caches(self) -> dict[str, str]:
-        """Clear all permission caches to force reload from configuration files."""
+    async def permissions_changed(self) -> dict[str, str]:
+        """Reload permissions from configuration files."""
         try:
-            log.info("🔄 Clearing all config caches via API endpoint")
-            clear_config_cache()
-            log.info("✅ All permission caches cleared successfully")
+            log.info("🔄 Reloading permissions from configuration files via API endpoint")
+            all_permissions.reload()
+            log.info("✅ Permissions reloaded from configuration files successfully")
 
-            return {"status": "success", "message": "All config caches cleared"}
+            return {"status": "success", "message": "Permissions reloaded from configuration files"}
         except Exception as e:
-            log.error(f"❌ Failed to clear config caches: {e}")
+            log.error(f"❌ Failed to reload permissions from configuration files: {e}")
             # Don't raise HTTPException - allow to fail gracefully as requested
-            return {"status": "error", "message": f"Failed to clear caches: {str(e)}"}
+            return {
+                "status": "error",
+                "message": f"Failed to reload permissions from configuration files: {str(e)}",
+            }
 
     # ---- MCP validation ----
     class _ValidateRequest(BaseModel):
@@ -788,7 +790,9 @@ class OpenEdisonProxy:
                         log.info(f"🔍 Proactively checking OAuth for remote server {server_name}")
 
                         # Check OAuth requirements for this remote server
-                        oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
+                        oauth_info = await oauth_manager.check_oauth_requirement(
+                            server_name, remote_url
+                        )
 
                         servers_info[server_name] = {
                             "server_name": oauth_info.server_name,
@@ -818,6 +822,17 @@ class OpenEdisonProxy:
                 detail=f"Failed to get OAuth status: {str(e)}",
             ) from e
 
+    def _find_server_config(self, server_name: str) -> MCPServerConfig:
+        """Find server configuration by name."""
+        current_config = _get_current_config()
+        for config_server in current_config.mcp_servers:
+            if config_server.name == server_name:
+                return config_server
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server configuration not found: {server_name}",
+        )
+
     async def get_oauth_status(self, server_name: str) -> dict[str, Any]:
         """Get OAuth status for a specific MCP server."""
         try:
@@ -828,9 +843,7 @@ class OpenEdisonProxy:
             remote_url = server_config.get_remote_url()
 
             # Check or refresh OAuth status
-            oauth_info = await oauth_manager.check_oauth_requirement(
-                server_name, remote_url
-            )
+            oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
 
             return {
                 "server_name": oauth_info.server_name,
@@ -857,9 +870,7 @@ class OpenEdisonProxy:
         client_name: str | None = Field(None, description="Client name for OAuth registration")
 
     async def oauth_test_connection(
-        self,
-        server_name: str,
-        body: _OAuthAuthorizeRequest | None = None
+        self, server_name: str, body: _OAuthAuthorizeRequest | None = None
     ) -> dict[str, Any]:
         """
         Test connection to a remote MCP server, triggering OAuth flow if needed.
@@ -876,15 +887,14 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             # Get OAuth configuration
@@ -912,7 +922,7 @@ class OpenEdisonProxy:
                 mcp_url=remote_url,
                 scopes=scopes,
                 client_name=client_name or "OpenEdison MCP Gateway",
-                token_storage_cache_dir=oauth_manager.cache_dir
+                token_storage_cache_dir=oauth_manager.cache_dir,
             )
 
             # Create a temporary client and test the connection
@@ -920,7 +930,9 @@ class OpenEdisonProxy:
             try:
                 async with FastMCPClient(remote_url, auth=oauth) as client:
                     # Try to ping the server - this triggers OAuth if needed
-                    log.info(f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)...")
+                    log.info(
+                        f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)..."
+                    )
                     await client.ping()
                     log.info(f"✅ Successfully connected to {server_name}")
 
@@ -945,8 +957,7 @@ class OpenEdisonProxy:
                         "server_name": server_name,
                     }
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"Connection test failed: {error_message}"
+                    status_code=500, detail=f"Connection test failed: {error_message}"
                 ) from None
 
         except HTTPException:
@@ -968,15 +979,14 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             success = oauth_manager.clear_tokens(server_name, remote_url)
@@ -988,8 +998,7 @@ class OpenEdisonProxy:
                     "server_name": server_name,
                 }
             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to clear OAuth tokens for {server_name}"
+                status_code=500, detail=f"Failed to clear OAuth tokens for {server_name}"
             )
 
         except HTTPException:
@@ -1011,21 +1020,18 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL (now guaranteed to be non-None for remote servers)
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             # Refresh OAuth status
-            oauth_info = await oauth_manager.refresh_server_status(
-                server_name, remote_url
-            )
+            oauth_info = await oauth_manager.refresh_server_status(server_name, remote_url)
 
             return {
                 "status": "refreshed",

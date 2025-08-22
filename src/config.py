@@ -76,15 +76,6 @@ def _default_config_path() -> Path:
     return get_config_dir() / "config.json"
 
 
-class ConfigError(Exception):
-    """Exception raised for configuration-related errors"""
-
-    def __init__(self, message: str, config_path: Path | None = None):
-        self.message = message
-        self.config_path = config_path
-        super().__init__(self.message)
-
-
 @dataclass
 class ServerConfig:
     """Server configuration"""
@@ -113,10 +104,6 @@ class MCPServerConfig:
     enabled: bool = True
     roots: list[str] | None = None
 
-    # OAuth-specific fields
-    oauth_required: bool | None = None
-    """Whether this server requires OAuth authentication. None = auto-detect."""
-
     oauth_scopes: list[str] | None = None
     """OAuth scopes to request for this server."""
 
@@ -135,10 +122,10 @@ class MCPServerConfig:
         Local servers run as child processes and don't need OAuth.
         """
         return (
-            self.command == "npx" and
-            len(self.args) >= 3 and
-            self.args[1] == "mcp-remote" and
-            self.args[2].startswith("https://")
+            self.command == "npx"
+            and len(self.args) >= 3
+            and self.args[1] == "mcp-remote"
+            and self.args[2].startswith("https://")
         )
 
     def get_remote_url(self) -> str | None:
@@ -151,14 +138,6 @@ class MCPServerConfig:
         if self.is_remote_server():
             return self.args[2]
         return None
-
-    def is_local_server(self) -> bool:
-        """
-        Check if this is a local MCP server (runs as child process).
-
-        Local servers typically use @modelcontextprotocol packages.
-        """
-        return not self.is_remote_server()
 
 
 @dataclass

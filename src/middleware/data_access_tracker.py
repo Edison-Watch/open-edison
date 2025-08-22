@@ -18,6 +18,14 @@ from typing import Any
 from loguru import logger as log
 
 from src import events
+from src.permissions import (
+    ACL_RANK,
+    PromptPermission,
+    ResourcePermission,
+    ToolPermission,
+    normalize_acl,
+)
+from src.permissions import permissions as all_permissions
 from src.telemetry import (
     record_private_data_access,
     record_prompt_access_blocked,
@@ -26,20 +34,6 @@ from src.telemetry import (
     record_untrusted_public_data,
     record_write_operation,
 )
-from src.user_config import (
-    ACL_RANK,
-    classify_prompt_permissions,
-    classify_resource_permissions,
-    classify_tool_permissions,
-    normalize_acl,
-)
-
-
-def enforce_tool_enabled(permissions: dict[str, Any], tool_name: str) -> None:
-    if permissions["enabled"] is False:
-        log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
-        record_tool_call_blocked(tool_name, "disabled")
-        raise SecurityError(f"'{tool_name}' / Tool disabled")
 
 
 @dataclass
@@ -68,38 +62,34 @@ class DataAccessTracker:
             and self.has_external_communication
         )
 
-    def _would_call_complete_trifecta(self, permissions: dict[str, Any]) -> bool:
+    def _would_call_complete_trifecta(
+        self, permissions: ToolPermission | ResourcePermission | PromptPermission
+    ) -> bool:
         """Return True if applying these permissions would complete the trifecta."""
-        would_private = self.has_private_data_access or bool(permissions.get("read_private_data"))
+        would_private = self.has_private_data_access or bool(permissions.read_private_data)
         would_untrusted = self.has_untrusted_content_exposure or bool(
-            permissions.get("read_untrusted_public_data")
+            permissions.read_untrusted_public_data
         )
-        would_write = self.has_external_communication or bool(permissions.get("write_operation"))
+        would_write = self.has_external_communication or bool(permissions.write_operation)
         return bool(would_private and would_untrusted and would_write)
-
-    def _enforce_acl_downgrade_block(
-        self, tool_acl: str, permissions: dict[str, Any], tool_name: str
-    ) -> None:
-        if permissions["write_operation"]:
-            current_rank = ACL_RANK.get(self.highest_acl_level, 0)
-            write_rank = ACL_RANK.get(tool_acl, 0)
-            if write_rank < current_rank:
-                log.error(
-                    f"🚫 BLOCKING tool call {tool_name} - write to lower ACL ({tool_acl}) while session has higher ACL {self.highest_acl_level}"
-                )
-                record_tool_call_blocked(tool_name, "acl_downgrade")
-                raise SecurityError(f"'{tool_name}' / ACL (level={self.highest_acl_level})")
 
     def _apply_permissions_effects(
         self,
-        permissions: dict[str, Any],
+        permissions: ToolPermission | ResourcePermission | PromptPermission,
         *,
         source_type: str,
         name: str,
     ) -> None:
         """Apply side effects (flags, ACL, telemetry) for any source type."""
-        acl_value: str = normalize_acl(permissions.get("acl"), default="PUBLIC")
-        if permissions["read_private_data"]:
+        # If it's a tool, it has a well-defined ACL
+        if source_type == "tool":
+            assert isinstance(permissions, ToolPermission)
+            acl_value = permissions.acl
+            acl_value: str = normalize_acl(acl_value, default="PUBLIC")
+        else:
+            acl_value = "PUBLIC"
+
+        if permissions.read_private_data:
             self.has_private_data_access = True
             log.info(f"🔒 Private data access detected via {source_type}: {name}")
             record_private_data_access(source_type, name)
@@ -109,12 +99,12 @@ class DataAccessTracker:
             if new_rank > current_rank:
                 self.highest_acl_level = acl_value
 
-        if permissions["read_untrusted_public_data"]:
+        if permissions.read_untrusted_public_data:
             self.has_untrusted_content_exposure = True
             log.info(f"🌐 Untrusted content exposure detected via {source_type}: {name}")
             record_untrusted_public_data(source_type, name)
 
-        if permissions["write_operation"]:
+        if permissions.write_operation:
             self.has_external_communication = True
             log.info(f"✍️ Write operation detected via {source_type}: {name}")
             record_write_operation(source_type, name)
@@ -145,14 +135,14 @@ class DataAccessTracker:
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         # Get tool permissions and update trifecta flags
-        permissions = classify_tool_permissions(tool_name)
+        permissions = all_permissions.get_tool_permission(tool_name)
 
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
         # Check if tool is enabled
-        try:
-            enforce_tool_enabled(permissions, tool_name)
-        except SecurityError:
+        if not all_permissions.is_tool_enabled(tool_name):
+            log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
+            record_tool_call_blocked(tool_name, "disabled")
             events.fire_and_forget(
                 {
                     "type": "mcp_pre_block",
@@ -161,13 +151,19 @@ class DataAccessTracker:
                     "reason": "disabled",
                 }
             )
-            raise
+            raise SecurityError(f"'{tool_name}' / Tool disabled")
 
         # ACL-based write downgrade prevention
-        tool_acl: str = normalize_acl(permissions.get("acl"), default="PUBLIC")
-        try:
-            self._enforce_acl_downgrade_block(tool_acl, permissions, tool_name)
-        except SecurityError:
+        tool_acl = permissions.acl
+        if permissions.write_operation:
+            current_rank = ACL_RANK.get(self.highest_acl_level, 0)
+            write_rank = ACL_RANK.get(tool_acl, 0)
+            if write_rank < current_rank:
+                log.error(
+                    f"🚫 BLOCKING tool call {tool_name} - write to lower ACL ({tool_acl}) while session has higher ACL {self.highest_acl_level}"
+                )
+                record_tool_call_blocked(tool_name, "acl_downgrade")
+                raise SecurityError(f"'{tool_name}' / ACL (level={self.highest_acl_level})")
             events.fire_and_forget(
                 {
                     "type": "mcp_pre_block",
@@ -223,7 +219,7 @@ class DataAccessTracker:
             raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         # Get resource permissions and update trifecta flags
-        permissions = classify_resource_permissions(resource_name)
+        permissions = all_permissions.get_resource_permission(resource_name)
 
         # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
@@ -270,7 +266,7 @@ class DataAccessTracker:
             raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         # Get prompt permissions and update trifecta flags
-        permissions = classify_prompt_permissions(prompt_name)
+        permissions = all_permissions.get_prompt_permission(prompt_name)
 
         # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
@@ -313,11 +309,11 @@ class DataAccessTracker:
     # Public helper: apply effects after a manual approval without re-checking
     def apply_effects_after_manual_approval(self, kind: str, name: str) -> None:
         if kind == "tool":
-            permissions = classify_tool_permissions(name)
+            permissions = all_permissions.get_tool_permission(name)
         elif kind == "resource":
-            permissions = classify_resource_permissions(name)
+            permissions = all_permissions.get_resource_permission(name)
         elif kind == "prompt":
-            permissions = classify_prompt_permissions(name)
+            permissions = all_permissions.get_prompt_permission(name)
         else:
             raise ValueError("Invalid kind")
         self._apply_permissions_effects(permissions, source_type=kind, name=name)

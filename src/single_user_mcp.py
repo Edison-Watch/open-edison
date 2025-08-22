@@ -8,7 +8,7 @@ Handles MCP protocol communication with running servers using a unified composit
 from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
@@ -17,6 +17,7 @@ from src.middleware.session_tracking import (
     get_current_session_data_tracker,
 )
 from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
+from src.permissions import permissions
 
 
 class MountedServerInfo(TypedDict):
@@ -190,39 +191,6 @@ class SingleUserMCP(FastMCP[Any]):
             f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})"
         )
 
-    async def _rebuild_composite_proxy_without(self, excluded_server: str) -> bool:
-        """Rebuild the composite proxy without the specified server."""
-        try:
-            # Remove from mounted servers
-            await self._cleanup_mounted_server(excluded_server)
-
-            # Get remaining servers that should be in composite proxy
-            remaining_configs = [
-                mounted["config"]
-                for name, mounted in self.mounted_servers.items()
-                if mounted["config"].command != "echo" and name != excluded_server
-            ]
-
-            if not remaining_configs:
-                log.info("No servers remaining for composite proxy")
-                self.composite_proxy = None
-                return True
-
-            # Rebuild composite proxy with remaining servers
-            log.info(f"Rebuilding composite proxy without {excluded_server}")
-            return await self.create_composite_proxy(remaining_configs)
-
-        except Exception as e:
-            log.error(f"Failed to rebuild composite proxy: {e}")
-            return False
-
-    async def _cleanup_mounted_server(self, server_name: str) -> None:
-        """Clean up mounted server resources."""
-        # TODO not sure this is possible for the self object? i.e. there is no self.unmount
-        if server_name in self.mounted_servers:
-            del self.mounted_servers[server_name]
-            log.info(f"✅ Unmounted MCP server: {server_name}")
-
     async def get_mounted_servers(self) -> list[ServerStatusInfo]:
         """Get list of currently mounted servers."""
         return [
@@ -333,7 +301,34 @@ class SingleUserMCP(FastMCP[Any]):
 
             return security_data
 
-        log.info("✅ Added built-in demo tools: echo, get_server_info, get_security_status")
+        @self.tool()  # noqa
+        async def get_available_tools() -> list[str]:
+            """
+            Get a list of all available tools. Use this tool to get an updated list of available tools.
+            """
+            tool_list = await self._tool_manager.list_tools()
+            available_tools: list[str] = []
+            for tool in tool_list:
+                is_enabled: bool | None = permissions.is_tool_enabled(tool.name)
+                if is_enabled:
+                    available_tools.append(tool.name)
+            return available_tools
+
+        @self.tool()  # noqa
+        async def tools_changed(ctx: Context) -> str:
+            """
+            Notify the MCP client that the tool list has changed. You should call this tool periodically
+            to ensure the client has the latest list of available tools.
+            """
+            await ctx.send_tool_list_changed()
+            await ctx.send_resource_list_changed()
+            await ctx.send_prompt_list_changed()
+
+            return "Notifications sent"
+
+        log.info(
+            "✅ Added built-in demo tools: echo, get_server_info, get_security_status, get_available_tools, tools_changed"
+        )
 
     def _setup_demo_resources(self) -> None:
         """Set up built-in demo resources for testing."""
