@@ -16,7 +16,7 @@ from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
 )
-from src.oauth_manager import OAuthStatus, get_oauth_manager
+from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 
 
 class MountedServerInfo(TypedDict):
@@ -140,7 +140,7 @@ class SingleUserMCP(FastMCP[Any]):
         self,
         server_config: MCPServerConfig,
         fastmcp_config: dict[str, Any],
-        oauth_manager
+        oauth_manager: OAuthManager
     ) -> None:
         """Mount a single MCP server with appropriate OAuth handling."""
         server_name = server_config.name
