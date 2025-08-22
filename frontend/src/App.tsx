@@ -477,7 +477,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                         const configData = await configResponse.json()
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
-                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         })
@@ -884,7 +884,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 // Get server config from the loaded config
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
@@ -946,7 +946,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             try {
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })

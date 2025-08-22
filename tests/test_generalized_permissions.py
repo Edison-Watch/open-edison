@@ -68,24 +68,6 @@ class TestGeneralizedTrifecta:
 class TestPermissionConfigIntegration:
     """Test integration between different permission configuration files."""
 
-    def test_all_config_files_loaded(self):
-        """Test that all permission configuration files are loaded."""
-        tracker = DataAccessTracker()
-
-        # Test that each config type works
-        tool_perms = tracker._load_tool_permissions()
-        resource_perms = tracker._load_resource_permissions()
-        prompt_perms = tracker._load_prompt_permissions()
-
-        assert isinstance(tool_perms, dict)
-        assert isinstance(resource_perms, dict)
-        assert isinstance(prompt_perms, dict)
-
-        # Should have metadata in each
-        assert "_metadata" in tool_perms
-        assert "_metadata" in resource_perms
-        assert "_metadata" in prompt_perms
-
     def test_consistent_permission_structure(self):
         """Test that all permission types use consistent structure."""
         tracker = DataAccessTracker()

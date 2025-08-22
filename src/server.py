@@ -24,14 +24,11 @@ from pydantic import BaseModel, Field
 
 from src.config import MCPServerConfig, config
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
-from src.middleware.data_access_tracker import (
-    clear_all_classify_permissions_caches,
-    clear_all_permissions_caches,
-)
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
+from src.permissions import clear_all_classify_permissions_caches, permissions
 from src.oauth_manager import OAuthStatus, get_oauth_manager
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
@@ -395,8 +392,8 @@ class OpenEdisonProxy:
         )
         # Cache invalidation endpoint (no auth required - allowed to fail)
         app.add_api_route(
-            "/api/clear-caches",
-            self.clear_caches,
+            "/api/parmissions-changed",
+            self.permissions_changed,
             methods=["POST"],
         )
 
@@ -500,11 +497,14 @@ class OpenEdisonProxy:
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
+            log.info("Clearing all permission caches")
+            clear_all_classify_permissions_caches()
+            log.info("✅ All permission caches cleared")
+
             # Reload configuration from disk
             log.info("Reloading configuration from disk")
-            from src.config import Config
-
-            fresh_config = Config.load()
+            config.load()
+            permissions.load()
             log.info("✅ Configuration reloaded from disk")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
@@ -512,7 +512,7 @@ class OpenEdisonProxy:
             self.single_user_mcp = SingleUserMCP()
 
             # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize(fresh_config)
+            await self.single_user_mcp.initialize()
 
             # Get final status
             final_mounted = await self.single_user_mcp.get_mounted_servers()
@@ -586,16 +586,16 @@ class OpenEdisonProxy:
             log.error(f"Failed to fetch sessions: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e
 
-    async def clear_caches(self) -> dict[str, str]:
+    async def permissions_changed(self) -> dict[str, str]:
         """Clear all permission caches to force reload from configuration files."""
         try:
-            log.info("🔄 Clearing all permission caches via API endpoint")
-            clear_all_permissions_caches()
-            log.info("✅ All permission caches cleared successfully")
-
             log.info("🔄 Clearing all classify permission caches via API endpoint")
             clear_all_classify_permissions_caches()
             log.info("✅ All classify permission caches cleared successfully")
+
+            log.info("🔄 Reloading permissions")
+            permissions.load()
+            log.info("✅ Permissions reloaded successfully")
 
             return {"status": "success", "message": "All permission caches cleared"}
         except Exception as e:

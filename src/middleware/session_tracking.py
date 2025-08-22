@@ -263,6 +263,7 @@ class SessionTrackingMiddleware(Middleware):
             log.trace(f"🔍 Getting permissions for tool {tool.name}")
             permissions = session.data_access_tracker.get_tool_permissions(tool.name)
             log.trace(f"🔍 Tool permissions: {permissions}")
+            log.debug(f"🔍 Tool enabledment: Perm: {permissions['enabled']}, Tool: {tool.enabled}")
             if permissions["enabled"]:
                 allowed_tools.append(tool)
             else:

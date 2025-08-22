@@ -24,6 +24,20 @@
             "read_private_data": false,
             "read_untrusted_public_data": false,
             "acl": "PUBLIC"
+        },
+        "get_available_tools": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "tools_changed": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
         }
     },
     "filesystem": {

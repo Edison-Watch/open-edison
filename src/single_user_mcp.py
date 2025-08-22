@@ -8,13 +8,18 @@ Handles MCP protocol communication with running servers using a unified composit
 from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from loguru import logger as log
 
 from src.config import MCPServerConfig, config
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
+)
+from src.permissions import (
+    classify_tool_permissions_cached,
+    clear_all_classify_permissions_caches,
+    permissions,
 )
 from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 
@@ -264,6 +269,7 @@ class SingleUserMCP(FastMCP[Any]):
 
     async def reinitialize(self, test_config: Any | None = None) -> dict[str, Any]:
         """
+        UNUSED
         Reinitialize all MCP servers by cleaning up existing ones and reloading config.
 
         This method:
@@ -298,21 +304,19 @@ class SingleUserMCP(FastMCP[Any]):
 
             log.info(f"✅ Cleaned up {len(mounted_server_names)} mounted servers")
 
-            # Step 2: Reload configuration if not using test config
-            config_to_use = test_config
-            if test_config is None:
-                log.info("Reloading configuration from disk")
-                # Import here to avoid circular imports
-                from src.config import Config
+            # Step 2: Clear all permission caches
+            log.info("Clearing all permission caches")
+            clear_all_classify_permissions_caches()
 
-                config_to_use = Config.load()
-                log.info("✅ Configuration reloaded from disk")
+            # Step 3: Reload configuration if not using test config
+            config.load()
+            permissions.load()
 
-            # Step 3: Reinitialize all servers
+            # Step 4: Reinitialize all servers
             log.info("Reinitializing servers with fresh configuration")
-            await self.initialize(config_to_use)
+            await self.initialize()
 
-            # Step 4: Get final status
+            # Step 5: Get final status
             final_mounted = await self.get_mounted_servers()
 
             result = {
@@ -419,7 +423,34 @@ class SingleUserMCP(FastMCP[Any]):
 
             return security_data
 
-        log.info("✅ Added built-in demo tools: echo, get_server_info, get_security_status")
+        @self.tool()
+        async def get_available_tools() -> list[str]:
+            """
+            Get a list of all available tools. Use this tool to get an updated list of available tools.
+            """
+            tool_list = await self._tool_manager.list_tools()
+            available_tools: list[str] = []
+            for tool in tool_list:
+                perms = classify_tool_permissions_cached(tool.name)
+                if perms.get("enabled"):
+                    available_tools.append(tool.name)
+            return available_tools
+
+        @self.tool()
+        async def tools_changed(ctx: Context) -> str:
+            """
+            Notify the MCP client that the tool list has changed. You should call this tool periodically
+            to ensure the client has the latest list of available tools.
+            """
+            await ctx.send_tool_list_changed()
+            await ctx.send_resource_list_changed()
+            await ctx.send_prompt_list_changed()
+
+            return "Notifications sent"
+
+        log.info(
+            "✅ Added built-in demo tools: echo, get_server_info, get_security_status, get_available_tools, tools_changed"
+        )
 
     def _setup_demo_resources(self) -> None:
         """Set up built-in demo resources for testing."""
