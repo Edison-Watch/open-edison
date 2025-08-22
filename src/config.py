@@ -223,6 +223,8 @@ class Config:
             default_config.save(config_path)
             return default_config
 
+        log.info(f"Loading configuration from {config_path}")
+
         with open(config_path) as f:
             data: dict[str, Any] = json.load(f)
 

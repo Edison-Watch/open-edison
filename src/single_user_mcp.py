@@ -182,6 +182,9 @@ class SingleUserMCP(FastMCP[Any]):
             elif oauth_info.status == OAuthStatus.ERROR:
                 log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
 
+            # TODO: Figure out how this unfreezes list_tools
+            # await client.__aenter__()  # Connect the client
+
             # Create proxy from remote client
             proxy = FastMCP.as_proxy(client)
 
