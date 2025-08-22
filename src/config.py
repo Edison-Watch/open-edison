@@ -267,6 +267,15 @@ class Config:
 
         log.info(f"Configuration saved to {config_path}")
 
+    def reload(self) -> None:
+        """Reload configuration from file"""
+        new_config = self.load()
+        self.server = new_config.server
+        self.logging = new_config.logging
+        self.mcp_servers = new_config.mcp_servers
+        self.telemetry = new_config.telemetry
+        log.info("✅ Configuration reloaded from file")
+
     @classmethod
     def create_default(cls) -> "Config":
         """Create default configuration"""

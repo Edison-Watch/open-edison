@@ -244,7 +244,7 @@ class Permissions:
 
     def reload(self) -> None:
         """Reload permissions from files"""
-        new_permissions = self.load(self._permissions_dir)
+        new_permissions = Permissions.load(self._permissions_dir)
         self.tool_permissions = new_permissions.tool_permissions
         self.resource_permissions = new_permissions.resource_permissions
         self.prompt_permissions = new_permissions.prompt_permissions
