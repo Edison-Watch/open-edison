@@ -503,8 +503,8 @@ class OpenEdisonProxy:
 
             # Reload configuration from disk
             log.info("Reloading configuration from disk")
-            config.load()
-            permissions.load()
+            config.reload()
+            permissions.reload()
             log.info("✅ Configuration reloaded from disk")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
@@ -594,7 +594,7 @@ class OpenEdisonProxy:
             log.info("✅ All classify permission caches cleared successfully")
 
             log.info("🔄 Reloading permissions")
-            permissions.load()
+            permissions.reload()
             log.info("✅ Permissions reloaded successfully")
 
             return {"status": "success", "message": "All permission caches cleared"}

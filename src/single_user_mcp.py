@@ -309,8 +309,8 @@ class SingleUserMCP(FastMCP[Any]):
             clear_all_classify_permissions_caches()
 
             # Step 3: Reload configuration if not using test config
-            config.load()
-            permissions.load()
+            config.reload()
+            permissions.reload()
 
             # Step 4: Reinitialize all servers
             log.info("Reinitializing servers with fresh configuration")
