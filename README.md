@@ -7,7 +7,7 @@ MCP security gateway that prevents data exfiltration—via direct access or tool
 </p>
 
 <div align="center">
-  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
+  <h2>📧 To get visibility, control and exfiltration blocker into AI's interaction with your company software, systems of record, DBs, <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
 </div>
 
 <p align="center">
@@ -23,6 +23,7 @@ MCP security gateway that prevents data exfiltration—via direct access or tool
 
 ## Features ✨
 
+- 🛑 **Prevent Data Leaks** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
 - 👤 **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
 - 🗂️ **JSON configuration** - Easy to configure and manage your MCP servers
 - 🖥️ **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
@@ -234,6 +235,8 @@ Each MCP server configuration includes:
 </details>
 
 </details>
+
+## 🛡️ Security & Permissions System
 
 <details>
 <summary>🛡️ Security & Permissions System</summary>
