@@ -956,6 +956,7 @@ class OpenEdisonProxy:
                 scopes=scopes,
                 client_name=client_name or "OpenEdison MCP Gateway",
                 token_storage_cache_dir=oauth_manager.cache_dir,
+                callback_port=50001,
             )
 
             # Create a temporary client and test the connection
