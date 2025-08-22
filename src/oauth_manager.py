@@ -221,7 +221,8 @@ class OAuthManager:
                 mcp_url=mcp_url,
                 scopes=scopes or info.scopes,
                 client_name=client_name or info.client_name,
-                token_storage_cache_dir=self.cache_dir
+                token_storage_cache_dir=self.cache_dir,
+                callback_port=50001
             )
             log.info(f"🔐 Created OAuth auth for {server_name}")
             return oauth

@@ -1208,7 +1208,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     }
 
-    const authorizeServer = async (serverName: string) => {
+    const testConnection = async (serverName: string) => {
         if (!config) return
         
         setOauthLoading((prev: Record<string, boolean>) => ({ ...prev, [serverName]: true }))
@@ -1232,7 +1232,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 // Use server-specific OAuth configuration if available
             }
             
-            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/authorize/${serverName}`, {
+            const response = await fetch(`http://${serverHost}:${serverPort}/mcp/oauth/test-connection/${serverName}`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(body)
@@ -1242,14 +1242,14 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 const data = await response.json()
                 setToast({ message: data.message, type: 'success' })
                 
-                // Refresh OAuth status after a delay to allow for authorization completion
-                setTimeout(loadOAuthStatus, 3000)
+                // Refresh OAuth status after successful connection test
+                setTimeout(loadOAuthStatus, 1000)
             } else {
                 const errorData = await response.json().catch(() => ({}))
-                throw new Error(errorData.detail || `Authorization failed (${response.status})`)
+                throw new Error(errorData.detail || `Connection test failed (${response.status})`)
             }
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Authorization failed'
+            const message = error instanceof Error ? error.message : 'Connection test failed'
             setOauthError((prev: Record<string, string>) => ({ ...prev, [serverName]: message }))
             setToast({ message, type: 'error' })
         } finally {
@@ -1718,11 +1718,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         return (
                                                             <button 
                                                                 className="button"
-                                                                onClick={() => authorizeServer(def.name)}
+                                                                onClick={() => testConnection(def.name)}
                                                                 disabled={isOAuthLoading}
-                                                                title="Authorize OAuth access for this server"
+                                                                title="Test connection and authorize OAuth if needed"
                                                             >
-                                                                {isOAuthLoading ? 'Authorizing...' : '🔐 Authorize OAuth'}
+                                                                {isOAuthLoading ? 'Testing...' : '🔗 Test Connection'}
                                                             </button>
                                                         )
                                                     }
@@ -1763,11 +1763,11 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                                 </button>
                                                                 <button 
                                                                     className="button"
-                                                                    onClick={() => authorizeServer(def.name)}
+                                                                    onClick={() => testConnection(def.name)}
                                                                     disabled={isOAuthLoading}
-                                                                    title="Re-authorize OAuth access"
+                                                                    title="Test connection and re-authorize OAuth"
                                                                 >
-                                                                    {isOAuthLoading ? 'Authorizing...' : '🔐 Re-authorize'}
+                                                                    {isOAuthLoading ? 'Testing...' : '🔗 Test Connection'}
                                                                 </button>
                                                             </div>
                                                         )

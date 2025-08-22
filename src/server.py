@@ -414,8 +414,8 @@ class OpenEdisonProxy:
             dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
-            "/mcp/oauth/authorize/{server_name}",
-            self.oauth_authorize,
+            "/mcp/oauth/test-connection/{server_name}",
+            self.oauth_test_connection,
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
@@ -855,17 +855,17 @@ class OpenEdisonProxy:
         scopes: list[str] | None = Field(None, description="OAuth scopes to request")
         client_name: str | None = Field(None, description="Client name for OAuth registration")
     
-    async def oauth_authorize(
+    async def oauth_test_connection(
         self, 
         server_name: str,
         body: _OAuthAuthorizeRequest | None = None
     ) -> dict[str, Any]:
         """
-        Initiate OAuth authorization flow for a server.
+        Test connection to a remote MCP server, triggering OAuth flow if needed.
         
-        Note: This endpoint will trigger the OAuth flow which opens a browser
-        and starts a local callback server. The flow completion is handled
-        automatically by FastMCP.
+        This endpoint creates a temporary FastMCP client with OAuth authentication
+        and attempts to make a connection. This automatically triggers FastMCP's
+        OAuth flow, which will open a browser for user authorization.
         """
         try:
             server_config = self._find_server_config(server_name)
@@ -900,44 +900,62 @@ class OpenEdisonProxy:
             if not client_name and server_config.oauth_client_name:
                 client_name = server_config.oauth_client_name
             
-            # Create OAuth auth object (this will trigger the flow)
-            oauth_auth = oauth_manager.get_oauth_auth(
-                server_name, remote_url, scopes, client_name
+            log.info(f"🔗 Testing connection to {server_name} at {remote_url}")
+            
+            # Import FastMCP client for testing
+            from fastmcp import Client as FastMCPClient
+            from fastmcp.client.auth import OAuth
+            
+            # Create OAuth auth object
+            oauth = OAuth(
+                mcp_url=remote_url,
+                scopes=scopes,
+                client_name=client_name or "OpenEdison MCP Gateway",
+                token_storage_cache_dir=oauth_manager.cache_dir
             )
             
-            if not oauth_auth:
-                # Check why OAuth auth couldn't be created
-                info = oauth_manager.get_server_info(server_name)
-                if info and info.status == OAuthStatus.NOT_REQUIRED:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Server {server_name} does not require OAuth authentication"
-                    )
+            # Create a temporary client and test the connection
+            # This will automatically trigger OAuth flow if tokens don't exist
+            try:
+                async with FastMCPClient(remote_url, auth=oauth) as client:
+                    # Try to ping the server - this triggers OAuth if needed
+                    log.info(f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)...")
+                    await client.ping()
+                    log.info(f"✅ Successfully connected to {server_name}")
+                    
+                    # Update OAuth status in manager
+                    await oauth_manager.check_oauth_requirement(server_name, remote_url)
+                    
+                    return {
+                        "status": "connection_successful",
+                        "message": f"Successfully connected to {server_name}. OAuth tokens are now cached.",
+                        "server_name": server_name,
+                    }
+                    
+            except Exception as e:
+                log.error(f"❌ Failed to connect to {server_name}: {e}")
+                
+                # Check if this was an OAuth-related error
+                error_message = str(e)
+                if "oauth" in error_message.lower() or "authorization" in error_message.lower():
+                    return {
+                        "status": "oauth_required",
+                        "message": f"OAuth authorization completed for {server_name}. Please try connecting again.",
+                        "server_name": server_name,
+                    }
                 else:
-                    error_msg = info.error_message if info else "Unknown error"
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to create OAuth authentication: {error_msg}"
+                        detail=f"Connection test failed: {error_message}"
                     )
-            
-            log.info(f"🔐 OAuth authorization flow initiated for {server_name}")
-            
-            # The OAuth flow is now initiated. The user will be redirected to
-            # the OAuth provider's authorization page in their browser.
-            return {
-                "status": "authorization_started",
-                "message": f"OAuth authorization flow initiated for {server_name}. "
-                          f"Please complete the authorization in your web browser.",
-                "server_name": server_name,
-            }
             
         except HTTPException:
             raise
         except Exception as e:
-            log.error(f"Failed to initiate OAuth for {server_name}: {e}")
+            log.error(f"Failed to test connection for {server_name}: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to initiate OAuth authorization: {str(e)}",
+                detail=f"Failed to test connection: {str(e)}",
             ) from e
     
     async def oauth_clear_tokens(self, server_name: str) -> dict[str, Any]:
