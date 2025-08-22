@@ -61,7 +61,7 @@ COPY resource_permissions.json ./resource_permissions.json
 COPY prompt_permissions.json ./prompt_permissions.json
 
 # Expose ports
-EXPOSE 3000 3001
+EXPOSE 3000 3001 50001
 
 # Start the API server via Rye directly (avoid login shell PATH resets)
 CMD ["/opt/rye/shims/rye", "run", "python", "main.py"]

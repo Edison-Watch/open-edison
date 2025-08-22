@@ -8,15 +8,15 @@
     "author": {
         "name": "Open Edison Team",
         "email": "team@openedison.dev",
-        "url": "https://github.com/GatlingX/open-edison"
+        "url": "https://github.com/Edison-Watch/open-edison"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/GatlingX/open-edison"
+        "url": "https://github.com/Edison-Watch/open-edison"
     },
-    "homepage": "https://github.com/GatlingX/open-edison",
-    "documentation": "https://github.com/GatlingX/open-edison/blob/main/README.md",
-    "support": "https://github.com/GatlingX/open-edison/issues",
+    "homepage": "https://github.com/Edison-Watch/open-edison",
+    "documentation": "https://github.com/Edison-Watch/open-edison/blob/main/README.md",
+    "support": "https://github.com/Edison-Watch/open-edison/issues",
     "icon": "icon.svg",
     "server": {
         "type": "node",

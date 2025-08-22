@@ -1,21 +1,37 @@
-# OpenEdison
+# OpenEdison 🔒⚡️
 
-Open-source single-user MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
+MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
+
+<p align="center">
+  <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
+</p>
 
 <div align="center">
-  <h2>📧 Interested in connecting AI to your business software with proper access controls? <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
+  <h2>📧 To get visibility, control and exfiltration blocker into AI's interaction with your company software, systems of record, DBs, <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
 </div>
 
-## Features
+<p align="center">
+  <img alt="Project Version" src="https://img.shields.io/pypi/v/open-edison?label=version&color=blue">
+  <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue?logo=python">
+  <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
 
-- **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
-- **JSON configuration** - Easy to configure and manage your MCP servers
-- **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
-- **Session tracking** - Track and monitor your MCP interactions
-- **Simple API** - REST API for managing MCP servers and proxying requests
-- **Docker support** - Run in a container for easy deployment
 
-## Quick Start
+</p>
+
+--- 
+
+
+## Features ✨
+
+- 🛑 **Prevent Data Leaks** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
+- 👤 **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
+- 🗂️ **JSON configuration** - Easy to configure and manage your MCP servers
+- 🖥️ **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
+- 📊 **Session tracking** - Track and monitor your MCP interactions
+- 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
+- 🐳 **Docker support** - Run in a container for easy deployment
+
+## Quick Start 🚀
 
 The fastest way to get started:
 
@@ -28,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
 
 <details>
-<summary>Install Node.js/npm (optional for MCP tools)</summary>
+<summary>⬇️ Install Node.js/npm (optional for MCP tools)</summary>
 
 If you need `npx` (for Node-based MCP tools like `mcp-remote`), install Node.js as well:
 
@@ -83,18 +99,18 @@ There is a dockerfile for simple local setup.
 
 ```bash
 # Single-line:
-git clone https://github.com/GatlingX/open-edison.git && cd open-edison && make docker_run
+git clone https://github.com/Edison-Watch/open-edison.git && cd open-edison && make docker_run
 
 # Or
 # Clone repo
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 # Enter repo
 cd open-edison
 # Build and run
 make docker_run
 ```
 
-The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`.
+The MCP server will be available at `http://localhost:3000` and the api + frontend at `http://localhost:3001`. 🌐
 
 </details>
 
@@ -104,7 +120,7 @@ The MCP server will be available at `http://localhost:3000` and the api + fronte
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 cd open-edison
 ```
 
@@ -135,12 +151,12 @@ make run
 open-edison run
 ```
 
-The server will be available at `http://localhost:3000`.
+The server will be available at `http://localhost:3000`. 🌐
 
 </details>
 
 <details>
-<summary>MCP Connection</summary>
+<summary>🔌 MCP Connection</summary>
 
 Connect any MCP client to Open Edison (requires Node.js/npm for `npx`):
 
@@ -164,20 +180,20 @@ Or add to your MCP client config:
 </details>
 
 <details>
-<summary>Usage</summary>
+<summary>🧭 Usage</summary>
 
 ### API Endpoints
 
 See [API Reference](docs/quick-reference/api_reference.md) for full API documentation.
 
 <details>
-<summary>Development</summary>
+<summary>🛠️ Development</summary>
 
-### Setup
+### Setup 🧰
 
 Setup from source as above.
 
-### Run
+### Run ▶️
 
 Server doesn't have any auto-reload at the moment, so you'll need to run & ctrl-c this during development.
 
@@ -185,7 +201,7 @@ Server doesn't have any auto-reload at the moment, so you'll need to run & ctrl-
 make run
 ```
 
-### Tests/code quality
+### Tests/code quality ✅
 
 We expect `make ci` to return cleanly.
 
@@ -198,7 +214,7 @@ make ci
 <details>
 <summary>⚙️ Configuration (config.json)</summary>
 
-## Configuration
+## Configuration ⚙️
 
 The `config.json` file contains all configuration:
 
@@ -220,18 +236,20 @@ Each MCP server configuration includes:
 
 </details>
 
+## 🔐 How Edison prevents data leakages
+
 <details>
-<summary>Security & Permissions System</summary>
+<summary>🔱 The lethal trifecta, agent lifecycle management</summary>
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
-<img src="media/lethal-trifecta.png" alt="The lethal trifecta diagram showing the three key AI agent security risks" width="30%">
+<img src="media/lethal-trifecta.png" alt="The lethal trifecta diagram showing the three key AI agent security risks" width="70%">
 
 1. **Private data access** - Access to sensitive local files/data
 2. **Untrusted content exposure** - Exposure to external/web content  
 3. **External communication** - Ability to write/send data externally
 
-<img src="media/pam-diagram.png" alt="Privileged Access Management (PAM) example showing the lethal trifecta in action" width="60%">
+<img src="media/pam-diagram.png" alt="Privileged Access Management (PAM) example showing the lethal trifecta in action" width="90%">
 
 The configuration allows you to classify these risks across **tools**, **resources**, and **prompts** using separate configuration files.
 
@@ -239,7 +257,7 @@ In addition to trifecta, we track Access Control Level (ACL) for each tool call,
 that is, each tool has an ACL level (one of PUBLIC, PRIVATE, or SECRET), and we track the highest ACL level for each session.
 If a write operation is attempted to a lower ACL level, it is blocked.
 
-### Tool Permissions (`tool_permissions.json`)
+### 🧰 Tool Permissions (`tool_permissions.json`)
 
 Defines security classifications for MCP tools. See full file: [tool_permissions.json](tool_permissions.json), it looks like:
 
@@ -257,7 +275,7 @@ Defines security classifications for MCP tools. See full file: [tool_permissions
 ```
 
 <details>
-<summary>Resource Permissions (`resource_permissions.json`)</summary>
+<summary>📁 Resource Permissions (`resource_permissions.json`)</summary>
 
 ### Resource Permissions (`resource_permissions.json`)
 
@@ -273,7 +291,7 @@ Defines security classifications for resource access patterns. See full file: [r
 </details>
 
 <details>
-<summary>Prompt Permissions (`prompt_permissions.json`)</summary>
+<summary>💬 Prompt Permissions (`prompt_permissions.json`)</summary>
 
 ### Prompt Permissions (`prompt_permissions.json`)
 
@@ -288,7 +306,7 @@ Defines security classifications for prompt types. See full file: [prompt_permis
 
 </details>
 
-### Wildcard Patterns
+### Wildcard Patterns ✨
 
 All permission types support wildcard patterns:
 
@@ -296,7 +314,7 @@ All permission types support wildcard patterns:
 - **Resources**: `scheme:*` (e.g., `file:*` matches all file resources)  
 - **Prompts**: `type:*` (e.g., `template:*` matches all template prompts)
 
-### Security Monitoring
+### Security Monitoring 🕵️
 
 **All items must be explicitly configured** - unknown tools/resources/prompts will be rejected for security.
 
@@ -304,20 +322,20 @@ Use the `get_security_status` tool to monitor your session's current risk level 
 
 </details>
 
-<details>
-<summary>Documentation</summary>
+
+
+## Documentation 📚
 
 📚 **Complete documentation available in [`docs/`](docs/)**
 
-- **[Getting Started](docs/quick-reference/config_quick_start.md)** - Quick setup guide
-- **[Configuration](docs/core/configuration.md)** - Complete configuration reference
-- **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
-- **[Development Guide](docs/development/development_guide.md)** - Contributing and development
+- 🚀 **[Getting Started](docs/quick-reference/config_quick_start.md)** - Quick setup guide
+- ⚙️ **[Configuration](docs/core/configuration.md)** - Complete configuration reference
+- 📡 **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
+- 🧑‍💻 **[Development Guide](docs/development/development_guide.md)** - Contributing and development
 
-</details>
 
 <details>
-<summary>License</summary>
+<summary>📄 License</summary>
 
 GPL-3.0 License - see [LICENSE](LICENSE) for details.
 

@@ -56,7 +56,7 @@ npm install -g @anthropic-ai/dxt
 ### Step 2: Clone and Navigate
 
 ```bash
-git clone https://github.com/GatlingX/open-edison
+git clone https://github.com/Edison-Watch/open-edison
 cd open-edison/desktop_ext
 ```
 
@@ -186,7 +186,7 @@ curl -X POST \
 
 ### For Extension Issues
 
-- Check the [Open Edison repository](https://github.com/GatlingX/open-edison)
+- Check the [Open Edison repository](https://github.com/Edison-Watch/open-edison)
 - Create an issue with logs and configuration details
 
 ### For General Desktop Extension Support

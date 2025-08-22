@@ -24,7 +24,7 @@ This guide covers installing and running Open Edison directly on your local mach
 
 ```bash
 # Clone the repository
-git clone https://github.com/GatlingX/open-edison.git
+git clone https://github.com/Edison-Watch/open-edison.git
 cd open-edison
 ```
 
