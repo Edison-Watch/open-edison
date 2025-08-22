@@ -236,10 +236,10 @@ Each MCP server configuration includes:
 
 </details>
 
-## 🛡️ Security & Permissions System
+## 🔐 How Edison prevents data leakages
 
 <details>
-<summary>🛡️ Security & Permissions System</summary>
+<summary>🔱 The lethal trifecta, agent lifecycle management</summary>
 
 Open Edison includes a comprehensive security monitoring system that tracks the "lethal trifecta" of AI agent risks, as described in [Simon Willison's blog post](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/):
 
