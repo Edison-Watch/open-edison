@@ -118,21 +118,21 @@ class MCPServerConfig:
     env: dict[str, str] | None = None
     enabled: bool = True
     roots: list[str] | None = None
-    
+
     # OAuth-specific fields
     oauth_required: bool | None = None
     """Whether this server requires OAuth authentication. None = auto-detect."""
-    
+
     oauth_scopes: list[str] | None = None
     """OAuth scopes to request for this server."""
-    
+
     oauth_client_name: str | None = None
     """Custom client name for OAuth registration."""
 
     def __post_init__(self):
         if self.env is None:
             self.env = {}
-    
+
     def is_remote_server(self) -> bool:
         """
         Check if this is a remote MCP server (connects to external HTTPS endpoint).
@@ -141,12 +141,12 @@ class MCPServerConfig:
         Local servers run as child processes and don't need OAuth.
         """
         return (
-            self.command == "npx" and 
-            len(self.args) >= 3 and 
+            self.command == "npx" and
+            len(self.args) >= 3 and
             self.args[1] == "mcp-remote" and
             self.args[2].startswith("https://")
         )
-    
+
     def get_remote_url(self) -> str | None:
         """
         Get the remote URL for a remote MCP server.
@@ -157,7 +157,7 @@ class MCPServerConfig:
         if self.is_remote_server():
             return self.args[2]
         return None
-    
+
     def is_local_server(self) -> bool:
         """
         Check if this is a local MCP server (runs as child process).

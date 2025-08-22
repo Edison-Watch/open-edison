@@ -16,7 +16,7 @@ from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
 )
-from src.oauth_manager import get_oauth_manager, OAuthStatus
+from src.oauth_manager import OAuthStatus, get_oauth_manager
 
 
 class MountedServerInfo(TypedDict):
@@ -116,27 +116,27 @@ class SingleUserMCP(FastMCP[Any]):
         # Import the composite proxy into this main server
         # Tools and resources will be automatically namespaced by server name
         oauth_manager = get_oauth_manager()
-        
+
         for server_config in enabled_servers:
             server_name = server_config.name
-            
+
             # Skip if this server would produce an empty config (e.g., misconfigured)
             fastmcp_config = self._convert_to_fastmcp_config([server_config])
             if not fastmcp_config.get("mcpServers"):
                 log.warning(f"Skipping server '{server_name}' due to empty MCP config")
                 continue
-            
+
             try:
                 # Check OAuth requirements for this server
                 remote_url = server_config.get_remote_url()
                 oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
-                
+
                 # Create the FastMCP client
                 if server_config.is_remote_server() and oauth_info.status == OAuthStatus.AUTHENTICATED:
                     # Remote server with OAuth - create client with authentication
                     oauth_auth = oauth_manager.get_oauth_auth(
-                        server_name, 
-                        remote_url, 
+                        server_name,
+                        remote_url,
                         server_config.oauth_scopes,
                         server_config.oauth_client_name
                     )
@@ -156,20 +156,20 @@ class SingleUserMCP(FastMCP[Any]):
                     # Local server - use process-based configuration
                     client = FastMCPClient(fastmcp_config)
                     log.info(f"🔧 Created local process client for {server_name}")
-                
+
                 if oauth_info.status == OAuthStatus.NEEDS_AUTH:
                     log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
                               f"Server will be mounted without authentication and may fail.")
                 elif oauth_info.status == OAuthStatus.ERROR:
                     log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
-                
+
                 proxy = FastMCP.as_proxy(client)
                 self.mount(proxy, prefix=server_name)
                 self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
-                
+
                 server_type = "remote" if server_config.is_remote_server() else "local"
                 log.info(f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})")
-                
+
             except Exception as e:
                 log.error(f"❌ Failed to mount server {server_name}: {e}")
                 # Continue with other servers even if one fails

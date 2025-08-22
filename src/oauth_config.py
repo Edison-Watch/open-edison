@@ -6,25 +6,25 @@ and server metadata for MCP servers requiring authentication.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
 class OAuthConfig:
     """OAuth-specific configuration for an MCP server."""
-    
+
     required: bool = False
     """Whether this server requires OAuth authentication."""
-    
-    scopes: Optional[List[str]] = None
+
+    scopes: list[str] | None = None
     """OAuth scopes to request for this server."""
-    
+
     client_name: str = "OpenEdison MCP Gateway"
     """Client name to use during OAuth registration."""
-    
+
     auto_refresh: bool = True
     """Whether to automatically refresh expired tokens."""
-    
+
     timeout_seconds: float = 30.0
     """Timeout for OAuth operations in seconds."""
 
@@ -32,22 +32,22 @@ class OAuthConfig:
 @dataclass
 class OAuthRuntimeStatus:
     """Runtime OAuth status for an MCP server."""
-    
+
     status: str = "unknown"
     """Current OAuth status: unknown, not_required, needs_auth, authenticated, error, expired."""
-    
-    last_check: Optional[str] = None
+
+    last_check: str | None = None
     """Timestamp of last OAuth status check."""
-    
-    error_message: Optional[str] = None
+
+    error_message: str | None = None
     """Error message if OAuth failed."""
-    
-    token_expires_at: Optional[str] = None
+
+    token_expires_at: str | None = None
     """When the current access token expires."""
-    
+
     has_refresh_token: bool = False
     """Whether we have a refresh token for this server."""
-    
+
     metadata_discovered: bool = False
     """Whether OAuth metadata was successfully discovered."""
 
@@ -55,16 +55,16 @@ class OAuthRuntimeStatus:
 @dataclass
 class ServerOAuthMetadata:
     """OAuth metadata discovered from an MCP server."""
-    
-    authorization_endpoint: Optional[str] = None
-    token_endpoint: Optional[str] = None
-    scopes_supported: Optional[List[str]] = None
-    response_types_supported: Optional[List[str]] = None
-    grant_types_supported: Optional[List[str]] = None
-    token_endpoint_auth_methods_supported: Optional[List[str]] = None
-    
+
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
+    scopes_supported: list[str] | None = None
+    response_types_supported: list[str] | None = None
+    grant_types_supported: list[str] | None = None
+    token_endpoint_auth_methods_supported: list[str] | None = None
+
     @classmethod
-    def from_discovery(cls, metadata: Dict[str, Any]) -> "ServerOAuthMetadata":
+    def from_discovery(cls, metadata: dict[str, Any]) -> "ServerOAuthMetadata":
         """Create metadata from OAuth discovery response."""
         return cls(
             authorization_endpoint=metadata.get("authorization_endpoint"),
@@ -81,28 +81,28 @@ class ServerOAuthMetadata:
 @dataclass
 class OAuthServerPreset:
     """Preset OAuth configuration for well-known MCP servers."""
-    
+
     server_pattern: str
     """Pattern to match server names or URLs."""
-    
+
     display_name: str
     """Human-readable name for this server type."""
-    
-    default_scopes: List[str]
+
+    default_scopes: list[str]
     """Default OAuth scopes for this server type."""
-    
+
     client_name: str = "OpenEdison MCP Gateway"
     """Default client name for this server type."""
-    
+
     description: str = ""
     """Description of this server type and its capabilities."""
-    
-    documentation_url: Optional[str] = None
+
+    documentation_url: str | None = None
     """URL to documentation for setting up OAuth with this server."""
 
 
 # Preset configurations for common OAuth-enabled MCP servers
-OAUTH_SERVER_PRESETS: List[OAuthServerPreset] = [
+OAUTH_SERVER_PRESETS: list[OAuthServerPreset] = [
     OAuthServerPreset(
         server_pattern="google_drive",
         display_name="Google Drive",
@@ -147,7 +147,7 @@ OAUTH_SERVER_PRESETS: List[OAuthServerPreset] = [
 ]
 
 
-def get_oauth_preset(server_name: str) -> Optional[OAuthServerPreset]:
+def get_oauth_preset(server_name: str) -> OAuthServerPreset | None:
     """
     Get OAuth preset configuration for a server name.
     
@@ -158,15 +158,15 @@ def get_oauth_preset(server_name: str) -> Optional[OAuthServerPreset]:
         Matching OAuthServerPreset, or None if no preset matches
     """
     server_name_lower = server_name.lower()
-    
+
     for preset in OAUTH_SERVER_PRESETS:
         if preset.server_pattern.lower() in server_name_lower:
             return preset
-    
+
     return None
 
 
-def suggest_oauth_scopes(server_name: str) -> List[str]:
+def suggest_oauth_scopes(server_name: str) -> list[str]:
     """
     Suggest OAuth scopes for a server based on its name.
     
@@ -179,12 +179,12 @@ def suggest_oauth_scopes(server_name: str) -> List[str]:
     preset = get_oauth_preset(server_name)
     if preset:
         return preset.default_scopes
-    
+
     # Generic fallback scopes
     return ["read", "write"]
 
 
-def get_oauth_documentation_url(server_name: str) -> Optional[str]:
+def get_oauth_documentation_url(server_name: str) -> str | None:
     """
     Get OAuth documentation URL for a server.
     

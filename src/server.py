@@ -32,7 +32,7 @@ from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
-from src.oauth_manager import get_oauth_manager, OAuthStatus
+from src.oauth_manager import OAuthStatus, get_oauth_manager
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -399,7 +399,7 @@ class OpenEdisonProxy:
             self.clear_caches,
             methods=["POST"],
         )
-        
+
         # OAuth endpoints
         app.add_api_route(
             "/mcp/oauth/status",
@@ -756,20 +756,20 @@ class OpenEdisonProxy:
             "name": prefix + "_" + str(name) if name is not None else "",
             "description": description,
         }
-    
+
     # ---- OAuth endpoints ----
-    
+
     async def get_oauth_status_all(self) -> dict[str, Any]:
         """Get OAuth status for all configured MCP servers."""
         try:
             current_config = _get_current_config()
             oauth_manager = get_oauth_manager()
-            
+
             servers_info = {}
             for server_config in current_config.mcp_servers:
                 server_name = server_config.name
                 info = oauth_manager.get_server_info(server_name)
-                
+
                 if info:
                     # Use cached OAuth info
                     servers_info[server_name] = {
@@ -785,10 +785,10 @@ class OpenEdisonProxy:
                     if server_config.is_remote_server():
                         remote_url = server_config.get_remote_url()
                         log.info(f"🔍 Proactively checking OAuth for remote server {server_name}")
-                        
+
                         # Check OAuth requirements for this remote server
                         oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
-                        
+
                         servers_info[server_name] = {
                             "server_name": oauth_info.server_name,
                             "status": oauth_info.status.value,
@@ -807,30 +807,30 @@ class OpenEdisonProxy:
                             "has_refresh_token": False,
                             "scopes": None,
                         }
-            
+
             return {"oauth_status": servers_info}
-            
+
         except Exception as e:
             log.error(f"Failed to get OAuth status for all servers: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to get OAuth status: {str(e)}",
             ) from e
-    
+
     async def get_oauth_status(self, server_name: str) -> dict[str, Any]:
         """Get OAuth status for a specific MCP server."""
         try:
             server_config = self._find_server_config(server_name)
             oauth_manager = get_oauth_manager()
-            
+
             # Get the remote URL if this is a remote server
             remote_url = server_config.get_remote_url()
-            
+
             # Check or refresh OAuth status
             oauth_info = await oauth_manager.check_oauth_requirement(
                 server_name, remote_url
             )
-            
+
             return {
                 "server_name": oauth_info.server_name,
                 "mcp_url": oauth_info.mcp_url,
@@ -841,7 +841,7 @@ class OpenEdisonProxy:
                 "scopes": oauth_info.scopes,
                 "client_name": oauth_info.client_name,
             }
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -850,13 +850,13 @@ class OpenEdisonProxy:
                 status_code=500,
                 detail=f"Failed to get OAuth status: {str(e)}",
             ) from e
-    
+
     class _OAuthAuthorizeRequest(BaseModel):
         scopes: list[str] | None = Field(None, description="OAuth scopes to request")
         client_name: str | None = Field(None, description="Client name for OAuth registration")
-    
+
     async def oauth_test_connection(
-        self, 
+        self,
         server_name: str,
         body: _OAuthAuthorizeRequest | None = None
     ) -> dict[str, Any]:
@@ -870,14 +870,14 @@ class OpenEdisonProxy:
         try:
             server_config = self._find_server_config(server_name)
             oauth_manager = get_oauth_manager()
-            
+
             # Check if this is a remote server
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
                     detail=f"Server {server_name} is a local server and does not support OAuth"
                 )
-            
+
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
@@ -885,27 +885,27 @@ class OpenEdisonProxy:
                     status_code=400,
                     detail=f"Server {server_name} does not have a valid remote URL"
                 )
-            
+
             # Get OAuth configuration
             scopes = None
             client_name = None
-            
+
             if body:
                 scopes = body.scopes
                 client_name = body.client_name
-            
+
             # Use server config OAuth settings if not provided in request
             if not scopes and server_config.oauth_scopes:
                 scopes = server_config.oauth_scopes
             if not client_name and server_config.oauth_client_name:
                 client_name = server_config.oauth_client_name
-            
+
             log.info(f"🔗 Testing connection to {server_name} at {remote_url}")
-            
+
             # Import FastMCP client for testing
             from fastmcp import Client as FastMCPClient
             from fastmcp.client.auth import OAuth
-            
+
             # Create OAuth auth object
             oauth = OAuth(
                 mcp_url=remote_url,
@@ -913,7 +913,7 @@ class OpenEdisonProxy:
                 client_name=client_name or "OpenEdison MCP Gateway",
                 token_storage_cache_dir=oauth_manager.cache_dir
             )
-            
+
             # Create a temporary client and test the connection
             # This will automatically trigger OAuth flow if tokens don't exist
             try:
@@ -922,19 +922,19 @@ class OpenEdisonProxy:
                     log.info(f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)...")
                     await client.ping()
                     log.info(f"✅ Successfully connected to {server_name}")
-                    
+
                     # Update OAuth status in manager
                     await oauth_manager.check_oauth_requirement(server_name, remote_url)
-                    
+
                     return {
                         "status": "connection_successful",
                         "message": f"Successfully connected to {server_name}. OAuth tokens are now cached.",
                         "server_name": server_name,
                     }
-                    
+
             except Exception as e:
                 log.error(f"❌ Failed to connect to {server_name}: {e}")
-                
+
                 # Check if this was an OAuth-related error
                 error_message = str(e)
                 if "oauth" in error_message.lower() or "authorization" in error_message.lower():
@@ -943,12 +943,11 @@ class OpenEdisonProxy:
                         "message": f"OAuth authorization completed for {server_name}. Please try connecting again.",
                         "server_name": server_name,
                     }
-                else:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Connection test failed: {error_message}"
-                    )
-            
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Connection test failed: {error_message}"
+                )
+
         except HTTPException:
             raise
         except Exception as e:
@@ -957,20 +956,20 @@ class OpenEdisonProxy:
                 status_code=500,
                 detail=f"Failed to test connection: {str(e)}",
             ) from e
-    
+
     async def oauth_clear_tokens(self, server_name: str) -> dict[str, Any]:
         """Clear stored OAuth tokens for a server."""
         try:
             server_config = self._find_server_config(server_name)
             oauth_manager = get_oauth_manager()
-            
+
             # Check if this is a remote server
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
                     detail=f"Server {server_name} is a local server and does not support OAuth"
                 )
-            
+
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
@@ -978,21 +977,20 @@ class OpenEdisonProxy:
                     status_code=400,
                     detail=f"Server {server_name} does not have a valid remote URL"
                 )
-            
+
             success = oauth_manager.clear_tokens(server_name, remote_url)
-            
+
             if success:
                 return {
                     "status": "success",
                     "message": f"OAuth tokens cleared for {server_name}",
                     "server_name": server_name,
                 }
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to clear OAuth tokens for {server_name}"
-                )
-                
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to clear OAuth tokens for {server_name}"
+            )
+
         except HTTPException:
             raise
         except Exception as e:
@@ -1001,21 +999,21 @@ class OpenEdisonProxy:
                 status_code=500,
                 detail=f"Failed to clear OAuth tokens: {str(e)}",
             ) from e
-    
+
     async def oauth_refresh_status(self, server_name: str) -> dict[str, Any]:
         """Refresh OAuth status for a server."""
         try:
             server_config = self._find_server_config(server_name)
             oauth_manager = get_oauth_manager()
-            
+
             # Get the remote URL if this is a remote server
             remote_url = server_config.get_remote_url()
-            
+
             # Refresh OAuth status
             oauth_info = await oauth_manager.refresh_server_status(
                 server_name, remote_url
             )
-            
+
             return {
                 "status": "refreshed",
                 "server_name": oauth_info.server_name,
@@ -1025,7 +1023,7 @@ class OpenEdisonProxy:
                 "has_refresh_token": oauth_info.has_refresh_token,
                 "scopes": oauth_info.scopes,
             }
-            
+
         except HTTPException:
             raise
         except Exception as e:
