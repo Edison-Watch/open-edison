@@ -1,6 +1,11 @@
 # OpenEdison 🔒⚡️
 
-MCP security gateway that prevents data exfiltration—via direct access or tool chaining—with full monitoring for local single‑user deployments. Provides core functionality of <https://edison.watch> for local use.
+> The secure MCP proxy gateway
+
+Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing. No more "approve fatigue" with the MCP tool-call approvals.
+
+OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & dat exfiltration by malicious actors.
+
 
 <p align="center">
   <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
@@ -23,13 +28,18 @@ MCP security gateway that prevents data exfiltration—via direct access or tool
 
 ## Features ✨
 
-- 🛑 **Prevent Data Leaks** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
-- 👤 **Single-user MCP proxy** - No multi-user complexity, just a simple proxy for your MCP servers
-- 🗂️ **JSON configuration** - Easy to configure and manage your MCP servers
-- 🖥️ **Simple local frontend** - Track and monitor your MCP interactions, servers, and sessions.
-- 📊 **Session tracking** - Track and monitor your MCP interactions
+- 🛑 **Data leak blocker** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
+- 🕰️ **Deterministic execution** - Deterministic execution. Guaranteed data exfiltration blocker.
+- 🗂️ **Easily configurable** - Easy to configure and manage your MCP servers
+- 📊 **Visibility into agent interactions** - Track and monitor your agents and their interactions with connected software/data via MCP calls
 - 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
 - 🐳 **Docker support** - Run in a container for easy deployment
+
+## About Edison.watch 🏢
+
+Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance. 
+
+
 
 ## Quick Start 🚀
 
