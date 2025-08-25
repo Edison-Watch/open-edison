@@ -11,11 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from src.permissions import (
-    DEFAULT_PERMISSIONS,
+from src.permissions import (  # type: ignore
     Permissions,
     PermissionsError,
-    apply_permission_defaults,
+    PromptPermission,
+    ResourcePermission,
+    ToolPermission,
     normalize_acl,
 )
 
@@ -45,59 +46,6 @@ class TestNormalizeAcl:
         """Test that custom defaults work correctly."""
         assert normalize_acl("invalid", default="PRIVATE") == "PRIVATE"
         assert normalize_acl(None, default="SECRET") == "SECRET"
-
-
-class TestApplyPermissionDefaults:
-    """Test permission defaults application."""
-
-    def test_apply_permission_defaults_empty(self):
-        """Test applying defaults to empty config."""
-        result = apply_permission_defaults({})
-        assert result == DEFAULT_PERMISSIONS
-
-    def test_apply_permission_defaults_partial(self):
-        """Test applying defaults to partial config."""
-        config = {"enabled": True, "write_operation": True}
-        result = apply_permission_defaults(config)
-
-        assert result["enabled"] is True
-        assert result["write_operation"] is True
-        assert result["read_private_data"] is False  # Default
-        assert result["read_untrusted_public_data"] is False  # Default
-        assert result["acl"] == "PUBLIC"  # Default
-
-    def test_apply_permission_defaults_acl_derivation(self):
-        """Test ACL derivation based on read_private_data."""
-        # When read_private_data is True, ACL should default to PRIVATE
-        config = {"read_private_data": True}
-        result = apply_permission_defaults(config)
-        assert result["acl"] == "PRIVATE"
-
-        # When read_private_data is False, ACL should default to PUBLIC
-        config = {"read_private_data": False}
-        result = apply_permission_defaults(config)
-        assert result["acl"] == "PUBLIC"
-
-    def test_apply_permission_defaults_explicit_acl(self):
-        """Test that explicit ACL values take precedence."""
-        config = {"read_private_data": True, "acl": "SECRET"}
-        result = apply_permission_defaults(config)
-        assert result["acl"] == "SECRET"
-
-    def test_apply_permission_defaults_boolean_conversion(self):
-        """Test that boolean values are properly converted."""
-        config = {
-            "enabled": True,
-            "write_operation": True,
-            "read_private_data": False,
-            "read_untrusted_public_data": False,
-        }
-        result = apply_permission_defaults(config)
-
-        assert result["enabled"] is True
-        assert result["write_operation"] is True
-        assert result["read_private_data"] is False
-        assert result["read_untrusted_public_data"] is False
 
 
 class TestPermissionsLoad:
@@ -162,9 +110,9 @@ class TestPermissionsLoad:
 
             # Verify structure
             assert isinstance(permissions, Permissions)
-            assert "tool1" in permissions.tool_permissions
-            assert "resource1" in permissions.resource_permissions
-            assert "prompt1" in permissions.prompt_permissions
+            assert "server1_tool1" in permissions.tool_permissions
+            assert "server1_resource1" in permissions.resource_permissions
+            assert "server1_prompt1" in permissions.prompt_permissions
 
             # Verify metadata
             assert permissions.tool_metadata is not None
@@ -183,6 +131,8 @@ class TestPermissionsLoad:
                 "server1": {"tool1": {"enabled": True}},
             }
             (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load permissions (should not raise error)
             permissions = Permissions.load(temp_path)
@@ -191,27 +141,6 @@ class TestPermissionsLoad:
             assert len(permissions.tool_permissions) == 1
             assert len(permissions.resource_permissions) == 0
             assert len(permissions.prompt_permissions) == 0
-
-    def test_load_with_duplicate_items_different_servers(self):
-        """Test that duplicate items across different servers raise error."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-
-            tool_perms = {
-                "_metadata": {"description": "Test", "last_updated": "2025-01-01"},
-                "server1": {"tool1": {"enabled": True}},
-                "server2": {
-                    "tool1": {"enabled": False}  # Same name, different server
-                },
-            }
-
-            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
-            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
-            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
-
-            # Should raise PermissionsError due to duplicate
-            with pytest.raises(PermissionsError, match="Duplicate item"):
-                Permissions.load(temp_path)
 
     def test_load_with_invalid_json(self):
         """Test loading with invalid JSON files."""
@@ -241,9 +170,9 @@ class TestPermissionsLoad:
             (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
-            # Should load successfully but skip invalid data
-            permissions = Permissions.load(temp_path)
-            assert len(permissions.tool_permissions) == 0
+            # Should error on invalid server data
+            with pytest.raises(PermissionsError):
+                Permissions.load(temp_path)
 
     def test_load_with_invalid_item_data(self):
         """Test loading with invalid item data structure."""
@@ -261,9 +190,9 @@ class TestPermissionsLoad:
             (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
-            # Should load successfully but skip invalid data
-            permissions = Permissions.load(temp_path)
-            assert len(permissions.tool_permissions) == 0
+            # Should error on invalid item data
+            with pytest.raises(PermissionsError):
+                Permissions.load(temp_path)
 
 
 class TestPermissionsLoadTwice:
@@ -287,12 +216,12 @@ class TestPermissionsLoadTwice:
             # Load first time
             permissions1 = Permissions.load(temp_path)
             assert len(permissions1.tool_permissions) == 1
-            assert "tool1" in permissions1.tool_permissions
+            assert "server1_tool1" in permissions1.tool_permissions
 
             # Load second time
             permissions2 = Permissions.load(temp_path)
             assert len(permissions2.tool_permissions) == 1
-            assert "tool1" in permissions2.tool_permissions
+            assert "server1_tool1" in permissions2.tool_permissions
 
             # Should be different instances but same content
             assert permissions1 is not permissions2
@@ -327,8 +256,8 @@ class TestPermissionsLoadTwice:
             # Load second time
             permissions2 = Permissions.load(temp_path)
             assert len(permissions2.tool_permissions) == 2
-            assert permissions2.tool_permissions["tool1"]["enabled"] is False
-            assert permissions2.tool_permissions["tool2"]["enabled"] is True
+            assert permissions2.tool_permissions["server1_tool1"].enabled is False
+            assert permissions2.tool_permissions["server1_tool2"].enabled is True
 
             # Should be different content
             assert permissions1.tool_permissions != permissions2.tool_permissions
@@ -355,7 +284,7 @@ class TestPermissionsReload:
             # Load permissions
             permissions = Permissions.load(temp_path)
             assert len(permissions.tool_permissions) == 1
-            assert permissions.tool_permissions["tool1"]["enabled"] is True
+            assert permissions.tool_permissions["server1_tool1"].enabled is True
 
             # Update the file
             updated_tool_perms = {
@@ -369,8 +298,8 @@ class TestPermissionsReload:
 
             # Verify changes
             assert len(permissions.tool_permissions) == 2
-            assert permissions.tool_permissions["tool1"]["enabled"] is False
-            assert permissions.tool_permissions["tool2"]["enabled"] is True
+            assert permissions.tool_permissions["server1_tool1"].enabled is False
+            assert permissions.tool_permissions["server1_tool2"].enabled is True
 
     def test_reload_with_deleted_files(self):
         """Test reloading permissions when files are deleted."""
@@ -395,10 +324,8 @@ class TestPermissionsReload:
             (temp_path / "tool_permissions.json").unlink()
 
             # Reload permissions
-            permissions.reload()
-
-            # Should have empty tool permissions
-            assert len(permissions.tool_permissions) == 0
+            with pytest.raises(PermissionsError):
+                permissions.reload()
 
     def test_reload_preserves_instance(self):
         """Test that reload preserves the same instance."""
@@ -431,7 +358,7 @@ class TestPermissionsReload:
             # Should be the same instance
             assert id(permissions) == original_id
             assert len(permissions.tool_permissions) == 1
-            assert "tool2" in permissions.tool_permissions
+            assert "server1_tool2" in permissions.tool_permissions
 
 
 class TestPermissionsAccessors:
@@ -441,8 +368,8 @@ class TestPermissionsAccessors:
         """Test getting tool permissions."""
         permissions = Permissions(
             tool_permissions={
-                "tool1": {"enabled": True, "write_operation": False},
-                "tool2": {"enabled": False, "write_operation": True},
+                "tool1": ToolPermission(enabled=True, write_operation=False),
+                "tool2": ToolPermission(enabled=False, write_operation=True),
             },
             resource_permissions={},
             prompt_permissions={},
@@ -451,18 +378,19 @@ class TestPermissionsAccessors:
         # Test existing tool
         tool1_perm = permissions.get_tool_permission("tool1")
         assert tool1_perm is not None
-        assert tool1_perm["enabled"] is True
+        assert tool1_perm.enabled is True
 
         # Test non-existing tool
-        assert permissions.get_tool_permission("nonexistent") is None
+        with pytest.raises(PermissionsError):
+            permissions.get_tool_permission("nonexistent")
 
     def test_get_resource_permission(self):
         """Test getting resource permissions."""
         permissions = Permissions(
             tool_permissions={},
             resource_permissions={
-                "resource1": {"enabled": True, "write_operation": False},
-                "resource2": {"enabled": False, "write_operation": True},
+                "resource1": ResourcePermission(enabled=True, write_operation=False),
+                "resource2": ResourcePermission(enabled=False, write_operation=True),
             },
             prompt_permissions={},
         )
@@ -470,10 +398,11 @@ class TestPermissionsAccessors:
         # Test existing resource
         resource1_perm = permissions.get_resource_permission("resource1")
         assert resource1_perm is not None
-        assert resource1_perm["enabled"] is True
+        assert resource1_perm.enabled is True
 
         # Test non-existing resource
-        assert permissions.get_resource_permission("nonexistent") is None
+        with pytest.raises(PermissionsError):
+            permissions.get_resource_permission("nonexistent")
 
     def test_get_prompt_permission(self):
         """Test getting prompt permissions."""
@@ -481,26 +410,27 @@ class TestPermissionsAccessors:
             tool_permissions={},
             resource_permissions={},
             prompt_permissions={
-                "prompt1": {"enabled": True, "write_operation": False},
-                "prompt2": {"enabled": False, "write_operation": True},
+                "prompt1": PromptPermission(enabled=True, write_operation=False),
+                "prompt2": PromptPermission(enabled=False, write_operation=True),
             },
         )
 
         # Test existing prompt
         prompt1_perm = permissions.get_prompt_permission("prompt1")
         assert prompt1_perm is not None
-        assert prompt1_perm["enabled"] is True
+        assert prompt1_perm.enabled is True
 
         # Test non-existing prompt
-        assert permissions.get_prompt_permission("nonexistent") is None
+        with pytest.raises(PermissionsError):
+            permissions.get_prompt_permission("nonexistent")
 
     def test_is_tool_enabled(self):
         """Test checking if tools are enabled."""
         permissions = Permissions(
             tool_permissions={
-                "enabled_tool": {"enabled": True},
-                "disabled_tool": {"enabled": False},
-                "no_enabled_field": {"write_operation": True},
+                "enabled_tool": ToolPermission(enabled=True),
+                "disabled_tool": ToolPermission(enabled=False),
+                "no_enabled_field": ToolPermission(write_operation=True),
             },
             resource_permissions={},
             prompt_permissions={},
@@ -509,16 +439,17 @@ class TestPermissionsAccessors:
         assert permissions.is_tool_enabled("enabled_tool") is True
         assert permissions.is_tool_enabled("disabled_tool") is False
         assert permissions.is_tool_enabled("no_enabled_field") is False
-        assert permissions.is_tool_enabled("nonexistent") is False
+        with pytest.raises(PermissionsError):
+            permissions.is_tool_enabled("nonexistent")
 
     def test_is_resource_enabled(self):
         """Test checking if resources are enabled."""
         permissions = Permissions(
             tool_permissions={},
             resource_permissions={
-                "enabled_resource": {"enabled": True},
-                "disabled_resource": {"enabled": False},
-                "no_enabled_field": {"write_operation": True},
+                "enabled_resource": ResourcePermission(enabled=True),
+                "disabled_resource": ResourcePermission(enabled=False),
+                "no_enabled_field": ResourcePermission(write_operation=True),
             },
             prompt_permissions={},
         )
@@ -526,7 +457,8 @@ class TestPermissionsAccessors:
         assert permissions.is_resource_enabled("enabled_resource") is True
         assert permissions.is_resource_enabled("disabled_resource") is False
         assert permissions.is_resource_enabled("no_enabled_field") is False
-        assert permissions.is_resource_enabled("nonexistent") is False
+        with pytest.raises(PermissionsError):
+            permissions.is_resource_enabled("nonexistent")
 
     def test_is_prompt_enabled(self):
         """Test checking if prompts are enabled."""
@@ -534,28 +466,32 @@ class TestPermissionsAccessors:
             tool_permissions={},
             resource_permissions={},
             prompt_permissions={
-                "enabled_prompt": {"enabled": True},
-                "disabled_prompt": {"enabled": False},
-                "no_enabled_field": {"write_operation": True},
+                "enabled_prompt": PromptPermission(enabled=True),
+                "disabled_prompt": PromptPermission(enabled=False),
+                "no_enabled_field": PromptPermission(write_operation=True),
             },
         )
 
         assert permissions.is_prompt_enabled("enabled_prompt") is True
         assert permissions.is_prompt_enabled("disabled_prompt") is False
         assert permissions.is_prompt_enabled("no_enabled_field") is False
-        assert permissions.is_prompt_enabled("nonexistent") is False
+        with pytest.raises(PermissionsError):
+            permissions.is_prompt_enabled("nonexistent")
 
     def test_get_all_methods(self):
         """Test getting all permissions of each type."""
         permissions = Permissions(
-            tool_permissions={"tool1": {"enabled": True}, "tool2": {"enabled": False}},
-            resource_permissions={"resource1": {"enabled": True}},
-            prompt_permissions={"prompt1": {"enabled": False}},
+            tool_permissions={
+                "tool1": ToolPermission(enabled=True),
+                "tool2": ToolPermission(enabled=False),
+            },
+            resource_permissions={"resource1": ResourcePermission(enabled=True)},
+            prompt_permissions={"prompt1": PromptPermission(enabled=False)},
         )
 
-        all_tools = permissions.get_all_tools()
-        all_resources = permissions.get_all_resources()
-        all_prompts = permissions.get_all_prompts()
+        all_tools = set(permissions.tool_permissions.keys())
+        all_resources = set(permissions.resource_permissions.keys())
+        all_prompts = set(permissions.prompt_permissions.keys())
 
         assert len(all_tools) == 2
         assert len(all_resources) == 1
@@ -569,22 +505,28 @@ class TestPermissionsAccessors:
         """Test getting only enabled permissions of each type."""
         permissions = Permissions(
             tool_permissions={
-                "enabled_tool": {"enabled": True},
-                "disabled_tool": {"enabled": False},
+                "enabled_tool": ToolPermission(enabled=True),
+                "disabled_tool": ToolPermission(enabled=False),
             },
             resource_permissions={
-                "enabled_resource": {"enabled": True},
-                "disabled_resource": {"enabled": False},
+                "enabled_resource": ResourcePermission(enabled=True),
+                "disabled_resource": ResourcePermission(enabled=False),
             },
             prompt_permissions={
-                "enabled_prompt": {"enabled": True},
-                "disabled_prompt": {"enabled": False},
+                "enabled_prompt": PromptPermission(enabled=True),
+                "disabled_prompt": PromptPermission(enabled=False),
             },
         )
 
-        enabled_tools = permissions.get_enabled_tools()
-        enabled_resources = permissions.get_enabled_resources()
-        enabled_prompts = permissions.get_enabled_prompts()
+        enabled_tools = {
+            name for name, perm in permissions.tool_permissions.items() if perm.enabled
+        }
+        enabled_resources = {
+            name for name, perm in permissions.resource_permissions.items() if perm.enabled
+        }
+        enabled_prompts = {
+            name for name, perm in permissions.prompt_permissions.items() if perm.enabled
+        }
 
         assert len(enabled_tools) == 1
         assert len(enabled_resources) == 1
@@ -693,44 +635,61 @@ class TestPermissionsIntegration:
             permissions = Permissions.load(temp_path)
 
             # Test tool permissions
-            assert permissions.is_tool_enabled("read_file") is True
-            assert permissions.is_tool_enabled("write_file") is True
-            assert permissions.is_tool_enabled("query") is False
+            assert permissions.is_tool_enabled("filesystem_read_file") is True
+            assert permissions.is_tool_enabled("filesystem_write_file") is True
+            assert permissions.is_tool_enabled("database_query") is False
 
-            read_file_perm = permissions.get_tool_permission("read_file")
+            read_file_perm = permissions.get_tool_permission("filesystem_read_file")
             assert read_file_perm is not None
-            assert read_file_perm["read_private_data"] is True
-            assert read_file_perm["write_operation"] is False
-            assert read_file_perm["acl"] == "PRIVATE"
+            assert read_file_perm.read_private_data is True
+            assert read_file_perm.write_operation is False
+            assert read_file_perm.acl == "PRIVATE"
 
             # Test resource permissions
-            assert permissions.is_resource_enabled("file:///home/user") is True
+            assert permissions.is_resource_enabled("filesystem_file:///home/user") is True
 
             # Test prompt permissions
-            assert permissions.is_prompt_enabled("system_prompt") is True
+            assert permissions.is_prompt_enabled("system_system_prompt") is True
 
             # Test enabled collections
-            enabled_tools = permissions.get_enabled_tools()
+            enabled_tools = {
+                name for name, perm in permissions.tool_permissions.items() if perm.enabled
+            }
             assert len(enabled_tools) == 2
-            assert "read_file" in enabled_tools
-            assert "write_file" in enabled_tools
-            assert "query" not in enabled_tools
+            assert "filesystem_read_file" in enabled_tools
+            assert "filesystem_write_file" in enabled_tools
+            assert "database_query" not in enabled_tools
 
             # Test metadata
             assert permissions.tool_metadata is not None
             assert permissions.tool_metadata.description == "Comprehensive tool permissions"
 
             # Test reload
-            # Update tool permissions
-            tool_perms["filesystem"]["read_file"]["enabled"] = False
-            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            # Update tool permissions by writing a new structure
+            updated_tool_perms = {
+                "_metadata": tool_perms["_metadata"],
+                "filesystem": {
+                    "read_file": {
+                        "enabled": False,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                    "write_file": tool_perms["filesystem"]["write_file"],
+                },
+                "database": tool_perms["database"],
+            }
+            (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
             permissions.reload()
 
-            assert permissions.is_tool_enabled("read_file") is False
-            enabled_tools_after_reload = permissions.get_enabled_tools()
+            assert permissions.is_tool_enabled("filesystem_read_file") is False
+            enabled_tools_after_reload = {
+                name for name, perm in permissions.tool_permissions.items() if perm.enabled
+            }
             assert len(enabled_tools_after_reload) == 1
-            assert "write_file" in enabled_tools_after_reload
+            assert "filesystem_write_file" in enabled_tools_after_reload
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import mcp.types as mt
 from fastmcp.prompts.prompt import FunctionPrompt
@@ -72,7 +72,10 @@ class MCPSessionModel(Base):  # type: ignore
     data_access_summary = Column(JSON)  # type: ignore
 
 
-current_session_id_ctxvar: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+current_session_id_ctxvar: ContextVar[str | None] = ContextVar(
+    "current_session_id",
+    default=cast(str | None, None),  # noqa: B039
+)
 
 
 def get_current_session_data_tracker() -> DataAccessTracker | None:

@@ -4,81 +4,69 @@ Tests for Data Access Tracker
 Tests the lethal trifecta monitoring functionality.
 """
 
-from collections.abc import Callable
-from typing import Any
-from unittest.mock import patch
-
 import pytest
 
-from src.middleware.data_access_tracker import DataAccessTracker, SecurityError
+from src.middleware.data_access_tracker import (  # type: ignore[reportMissingTypeStubs]
+    DataAccessTracker,
+    SecurityError,
+)
+from src.permissions import PermissionsError  # type: ignore[reportMissingTypeStubs]
+from tests.test_template import TestTemplate  # type: ignore[reportMissingTypeStubs]
 
 
-def test_data_access_tracker_initialization():
-    """Test that the tracker initializes with safe defaults."""
-    tracker = DataAccessTracker()
+class TestDataAccessTracker(TestTemplate):
+    def test_data_access_tracker_initialization(self):
+        """Test that the tracker initializes with safe defaults."""
+        tracker = DataAccessTracker()
 
-    assert not tracker.has_private_data_access
-    assert not tracker.has_untrusted_content_exposure
-    assert not tracker.has_external_communication
-    assert not tracker.is_trifecta_achieved()
+        assert not tracker.has_private_data_access
+        assert not tracker.has_untrusted_content_exposure
+        assert not tracker.has_external_communication
+        assert not tracker.is_trifecta_achieved()
 
+    def test_private_data_access_detection(self):
+        """Test detection of private data access through tool names."""
+        tracker = DataAccessTracker()
 
-def test_private_data_access_detection():
-    """Test detection of private data access through tool names."""
-    tracker = DataAccessTracker()
+        # Test real filesystem tools
+        tracker.add_tool_call("filesystem_read_file")
+        assert tracker.has_private_data_access
 
-    # Test real filesystem tools
-    tracker.add_tool_call("filesystem_read_file")
-    assert tracker.has_private_data_access
+        # Test another real filesystem tool
+        tracker2 = DataAccessTracker()
+        tracker2.add_tool_call("filesystem_list_directory")
+        assert tracker2.has_private_data_access
 
-    # Test another real filesystem tool
-    tracker2 = DataAccessTracker()
-    tracker2.add_tool_call("filesystem_list_directory")
-    assert tracker2.has_private_data_access
+    def test_unknown_tool(self):
+        """Test tool that doesn't exist"""
+        tracker = DataAccessTracker()
 
+        with pytest.raises(PermissionsError, match="not found in permissions"):
+            tracker.add_tool_call("noserver_notool")
 
-def test_untrusted_content_exposure_detection():
-    """Test detection of untrusted content exposure."""
-    # Note: Current Open Edison tools don't include web/external content tools
-    # So we'll test that unknown tools raise ValueError
-    tracker = DataAccessTracker()
+    def test_external_communication_detection(self):
+        """Test detection of external communication capabilities."""
+        tracker = DataAccessTracker()
 
-    # Test an unknown tool (should raise ValueError)
-    import pytest
+        # Test real write operations - filesystem write
+        tracker.add_tool_call("filesystem_write_file")
+        assert tracker.has_external_communication
 
-    with pytest.raises(ValueError, match="No security configuration found"):
-        tracker.add_tool_call("hypothetical_web_tool")
+    def test_lethal_trifecta_achievement(self):
+        """Test that the lethal trifecta is detected correctly."""
+        tracker = DataAccessTracker()
 
+        # Add each component of the trifecta using real tools
+        tracker.add_tool_call("filesystem_read_file")  # Private data
+        assert not tracker.is_trifecta_achieved()  # Only 1/3
 
-def test_external_communication_detection():
-    """Test detection of external communication capabilities."""
-    tracker = DataAccessTracker()
+        tracker.add_tool_call("sqlite_create_record")  # External communication (write)
+        assert not tracker.is_trifecta_achieved()  # Only 2/3 (missing untrusted content)
 
-    # Test real write operations - filesystem write
-    tracker.add_tool_call("filesystem_write_file")
-    assert tracker.has_external_communication
-
-    # Test database write operations
-    tracker2 = DataAccessTracker()
-    tracker2.add_tool_call("sqlite_create_record")
-    assert tracker2.has_external_communication
-
-
-def test_lethal_trifecta_achievement():
-    """Test that the lethal trifecta is detected correctly."""
-    tracker = DataAccessTracker()
-
-    # Add each component of the trifecta using real tools
-    tracker.add_tool_call("filesystem_read_file")  # Private data
-    assert not tracker.is_trifecta_achieved()  # Only 1/3
-
-    tracker.add_tool_call("sqlite_create_record")  # External communication (write)
-    assert not tracker.is_trifecta_achieved()  # Only 2/3 (missing untrusted content)
-
-    # Since current Open Edison doesn't have web tools, we can't achieve trifecta with real tools
-    # But we can test by manually setting the untrusted content flag
-    tracker.has_untrusted_content_exposure = True
-    assert tracker.is_trifecta_achieved()  # All 3 achieved!
+        # Since current Open Edison doesn't have web tools, we can't achieve trifecta with real tools
+        # But we can test by manually setting the untrusted content flag
+        tracker.has_untrusted_content_exposure = True
+        assert tracker.is_trifecta_achieved()  # All 3 achieved!
 
 
 def test_safe_tools_remain_safe():
@@ -102,8 +90,8 @@ def test_namespace_based_classification():
     # Test that unknown tools properly raise ValueError
     tracker = DataAccessTracker()
 
-    # Test unknown namespaced tool - should raise ValueError
-    with pytest.raises(ValueError, match="No security configuration found"):
+    # Test unknown namespaced tool - should raise PermissionsError
+    with pytest.raises(PermissionsError, match="not found in permissions"):
         tracker.add_tool_call("unknown_server/some_tool")
 
     # Test that real tools work correctly
@@ -184,143 +172,6 @@ def test_trifecta_prevent_immediate_block():
     # A write-operation tool would complete the trifecta → block
     with pytest.raises(SecurityError, match="trifecta"):
         tracker.add_tool_call("sqlite_create_record")
-
-
-def test_mock_load_tool_permissions_with_json():
-    """Test mocking _load_tool_permissions with custom JSON input."""
-    # Define custom JSON permissions data
-    mock_permissions = {
-        "custom_tool": {
-            "enabled": True,
-            "write_operation": True,
-            "read_private_data": True,
-            "read_untrusted_public_data": False,
-        },
-        "web_tool": {
-            "enabled": True,
-            "write_operation": False,
-            "read_private_data": False,
-            "read_untrusted_public_data": True,
-        },
-        "disabled_tool": {
-            "enabled": False,
-            "write_operation": False,
-            "read_private_data": False,
-            "read_untrusted_public_data": False,
-        },
-    }
-
-    # Mock the module-level function that loads permissions
-    with patch(
-        "src.user_config._flat_permissions_loader",
-        return_value=mock_permissions,
-    ):
-        tracker = DataAccessTracker()
-
-        # Test that our custom tool triggers the expected flags
-        tracker.add_tool_call("custom_tool")
-        assert tracker.has_private_data_access
-        assert tracker.has_external_communication
-        assert not tracker.has_untrusted_content_exposure
-
-        # Test web tool
-        tracker2 = DataAccessTracker()
-        tracker2.add_tool_call("web_tool")
-        assert tracker2.has_untrusted_content_exposure
-        assert not tracker2.has_private_data_access
-        assert not tracker2.has_external_communication
-
-        # Test disabled tool
-        tracker3 = DataAccessTracker()
-        with pytest.raises(SecurityError, match=r"'disabled_tool' / Tool disabled"):
-            tracker3.add_tool_call("disabled_tool")
-
-
-def test_mock_load_tool_permissions_with_json_argument():
-    """Test mocking _load_tool_permissions that accepts JSON input as an argument."""
-    # Define custom JSON permissions data
-    custom_json_permissions = {
-        "test_tool": {
-            "enabled": True,
-            "write_operation": True,
-            "read_private_data": True,
-            "read_untrusted_public_data": True,
-        }
-    }
-
-    # Mock the module-level function that loads permissions
-    with patch(
-        "src.user_config._flat_permissions_loader",
-        return_value=custom_json_permissions,
-    ):
-        tracker = DataAccessTracker()
-
-        # Immediate blocking when a single tool would complete the trifecta
-        with pytest.raises(SecurityError, match="trifecta"):
-            tracker.add_tool_call("test_tool")
-
-
-def test_mock_with_dynamic_json_input():
-    """Test creating a mock that can handle dynamic JSON input."""
-
-    # Create a mock function that can accept different JSON inputs
-    def create_mock_with_json(json_input: dict[str, Any]) -> Callable[[Any], dict[str, Any]]:
-        """Factory function that creates a mock with specific JSON input."""
-
-        def mock_function(a: Any) -> dict[str, Any]:
-            return json_input
-
-        return mock_function
-
-    # Test with different JSON configurations
-    test_configs = [
-        {
-            "tool1": {
-                "enabled": True,
-                "write_operation": True,
-                "read_private_data": False,
-                "read_untrusted_public_data": False,
-            }
-        },
-        {
-            "tool2": {
-                "enabled": True,
-                "write_operation": False,
-                "read_private_data": True,
-                "read_untrusted_public_data": False,
-            }
-        },
-        {
-            "tool3": {
-                "enabled": True,
-                "write_operation": False,
-                "read_private_data": False,
-                "read_untrusted_public_data": True,
-            }
-        },
-    ]
-
-    for i, config in enumerate(test_configs):
-        mock_func = create_mock_with_json(config)
-
-        with patch(
-            "src.user_config._flat_permissions_loader",
-            side_effect=mock_func,
-        ):
-            tracker = DataAccessTracker()
-
-            # Test the tool from this config
-            tool_name = f"tool{i + 1}"
-            tracker.add_tool_call(tool_name)
-
-            # Verify the expected flags are set based on the config
-            expected_write = config[tool_name]["write_operation"]
-            expected_private = config[tool_name]["read_private_data"]
-            expected_untrusted = config[tool_name]["read_untrusted_public_data"]
-
-            assert tracker.has_external_communication == expected_write
-            assert tracker.has_private_data_access == expected_private
-            assert tracker.has_untrusted_content_exposure == expected_untrusted
 
 
 if __name__ == "__main__":

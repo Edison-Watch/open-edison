@@ -5,7 +5,6 @@ Provides base test class with server setup and common fixtures.
 """
 
 import asyncio
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -17,6 +16,7 @@ import uvicorn
 from fastapi.testclient import TestClient
 
 from src.config import Config, LoggingConfig, MCPServerConfig, ServerConfig
+from src.permissions import Permissions
 from src.server import OpenEdisonProxy
 
 # Test markers
@@ -34,63 +34,14 @@ class TestTemplate:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Setup test environment with temporary configuration"""
-        # Create temporary directory for test config
-        self.temp_dir = tempfile.mkdtemp()
-        self.config_path = Path(self.temp_dir) / "test_config.json"
+        # Use repo root as config dir so we pick up repo-local JSON files
+        self.config_dir = Path(__file__).parent.parent
 
-        # Create test configuration
-        self.test_config = Config(
-            server=ServerConfig(
-                host="localhost",
-                port=3001,  # Use different port for tests
-                api_key="test-api-key-for-testing",
-            ),
-            logging=LoggingConfig(
-                level="DEBUG", database_path=str(Path(self.temp_dir) / "test_sessions.db")
-            ),
-            mcp_servers=[
-                MCPServerConfig(
-                    name="test-echo",
-                    command="echo",  # Simple command for testing
-                    args=["hello", "test"],
-                    env={"TEST_MODE": "true"},
-                    enabled=True,
-                )
-            ],
-        )
+        # Provide a default test config available to tests
+        self.test_config = create_test_config()
 
-        # Save test config
-        self.test_config.save(self.config_path)
-
-        # Set up test attributes
-        self.api_key = self.test_config.server.api_key
-        self.base_url = f"http://{self.test_config.server.host}:{self.test_config.server.port}"
-
-    @pytest.fixture
-    def test_client(self) -> Any:
-        """Create a test client for the FastAPI app"""
-        # Mock the global config to use test config BEFORE creating proxy
-        import src.config
-
-        original_config = src.config.config
-        src.config.config = self.test_config
-
-        try:
-            # Create proxy AFTER mocking config so it reads test config
-            proxy = OpenEdisonProxy(
-                host=self.test_config.server.host, port=self.test_config.server.port
-            )
-
-            with TestClient(proxy.fastapi_app) as client:
-                yield client
-        finally:
-            # Restore original config
-            src.config.config = original_config
-
-    @pytest.fixture
-    def auth_headers(self) -> dict[str, str]:
-        """Authentication headers for API requests"""
-        return {"Authorization": f"Bearer {self.api_key}"}
+        global all_permissions
+        all_permissions = Permissions.load(self.config_dir)
 
     @pytest.fixture
     def test_server_config(self) -> dict[str, Any]:
@@ -102,6 +53,24 @@ class TestTemplate:
             "env": {"TEST": "true"},
             "enabled": True,
         }
+
+    @pytest.fixture
+    def test_client(self):
+        """FastAPI TestClient bound to an OpenEdisonProxy using test config."""
+        # Patch global config during the test client lifetime
+        import src.config as cfg
+
+        original_config = cfg.config
+        cfg.config = self.test_config
+        try:
+            proxy = OpenEdisonProxy(
+                host=self.test_config.server.host,
+                port=self.test_config.server.port,
+            )
+            client = TestClient(proxy.fastapi_app)
+            yield client
+        finally:
+            cfg.config = original_config
 
 
 class BackgroundServerTemplate(TestTemplate):
@@ -188,47 +157,30 @@ class BackgroundServerTemplate(TestTemplate):
             # Restore original config
             src.config.config = original_config
 
+    @pytest.fixture
+    def requests_session(self):
+        """Provide a requests.Session for integration tests."""
+        session = requests.Session()
+        try:
+            yield session
+        finally:
+            session.close()
+
     def _wait_for_server(self, timeout: int = 5) -> None:
         """Wait for server to start accepting connections"""
-        try:
-            import requests
-        except ImportError:
-            pytest.skip("requests not available")
-
         start_time = time.time()
 
         while time.time() - start_time < timeout:
             try:
-                response = requests.get(f"{self.base_url}/health", timeout=1)
+                response = requests.get(f"{self.base_url}/health", timeout=1)  # type: ignore
                 if response.status_code == 200:
                     return
-            except requests.exceptions.RequestException:
+            except Exception:
+                # Server not up yet; keep retrying until timeout
                 pass
             time.sleep(0.1)
 
         raise TimeoutError(f"Server did not start within {timeout} seconds")
-
-    @pytest.fixture
-    def requests_session(self, auth_headers) -> Any:
-        """HTTP session for making requests to background server"""
-        print(f"DEBUG: Setting up requests session with auth headers: {auth_headers}")
-        print(f"DEBUG: Base URL: {self.base_url}")
-
-        # Create a session with debug logging
-        session = requests.Session()
-        session.headers.update(auth_headers)
-
-        original_request = session.request
-
-        def debug_request(method, url, **kwargs):
-            print(f"DEBUG: Making {method} request to {url}")
-            response = original_request(method, url, **kwargs)
-            print(f"DEBUG: Response: {response.status_code} - {response.text[:100]}...")
-            return response
-
-        session.request = debug_request
-        yield session
-        session.close()
 
 
 class MockMCPServer:
@@ -259,8 +211,8 @@ class MockMCPServer:
 # Utility functions for tests
 def create_test_config(**overrides: Any) -> Config:
     """Create test configuration with optional overrides"""
-    config_data = {
-        "server": {"host": "localhost", "port": 3001, "api_key": "test-api-key"},
+    config_data: dict[str, Any] = {
+        "server": {"host": "localhost", "port": 3001, "api_key": "test-api-key-for-testing"},
         "logging": {"level": "DEBUG", "database_path": "/tmp/test_sessions.db"},
         "mcp_servers": [
             {"name": "test-echo", "command": "echo", "args": ["hello"], "env": {}, "enabled": True}
@@ -268,10 +220,10 @@ def create_test_config(**overrides: Any) -> Config:
     }
 
     # Apply overrides
-    def deep_update(d: dict[str, Any], u: dict[str, Any]) -> dict[str, Any]:
+    def deep_update(d: dict[str, Any], u: dict[str, Any]) -> dict[str, Any]:  # type: ignore
         for k, v in u.items():
             if isinstance(v, dict):
-                d[k] = deep_update(d.get(k, {}), v)
+                d[k] = deep_update(d.get(k, {}), v)  # type: ignore
             else:
                 d[k] = v
         return d
@@ -282,7 +234,7 @@ def create_test_config(**overrides: Any) -> Config:
     return Config(
         server=ServerConfig(**config_data["server"]),
         logging=LoggingConfig(**config_data["logging"]),
-        mcp_servers=[MCPServerConfig(**server) for server in config_data["mcp_servers"]],
+        mcp_servers=[MCPServerConfig(**server) for server in config_data["mcp_servers"]],  # type: ignore
     )
 
 
@@ -315,6 +267,6 @@ def test_template_sanity() -> None:
     """Test that test template works correctly"""
     config = create_test_config()
     assert config.server.host == "localhost"
-    assert config.server.api_key == "test-api-key"
+    assert config.server.api_key == "test-api-key-for-testing"
     assert len(config.mcp_servers) == 1
     assert config.mcp_servers[0].name == "test-echo"

@@ -14,6 +14,25 @@ from loguru import logger as log
 
 from src.config import get_config_dir
 
+# Detect repository root (same logic as in src.config)
+_ROOT_DIR = Path(__file__).parent.parent
+
+
+def _default_permissions_dir() -> Path:
+    """Resolve default permissions directory.
+
+    In development (repo checkout with pyproject.toml), prefer repository root so
+    we use repo-local tool/resource/prompt permissions JSON files. Otherwise fall
+    back to the standard user config directory.
+    """
+    try:
+        if (_ROOT_DIR / "pyproject.toml").exists():
+            return _ROOT_DIR
+    except Exception:
+        pass
+    return get_config_dir()
+
+
 # ACL ranking for permission levels
 ACL_RANK: dict[str, int] = {"PUBLIC": 0, "PRIVATE": 1, "SECRET": 2}
 
@@ -92,14 +111,15 @@ class Permissions:
         )
 
     @classmethod
-    def _validate_server_data(cls, server_name: str, server_items_data: Any) -> bool:
+    def _validate_server_data(cls, server_name: str, server_items_data: Any) -> None:
         """Validate server data structure."""
         if not isinstance(server_items_data, dict):
             log.warning(
                 f"Invalid server data for {server_name}: expected dict, got {type(server_items_data)}"
             )
-            return False
-        return True
+            raise PermissionsError(
+                f"Invalid server data for {server_name}: expected dict, got {type(server_items_data)}"
+            )
 
     @classmethod
     def _validate_item_data(cls, server_name: str, item_name: str, item_data: Any) -> None:
@@ -110,29 +130,6 @@ class Permissions:
             )
             raise PermissionsError(
                 f"Invalid item permissions for {server_name}/{item_name}: expected dict, got {type(item_data)}"
-            )
-
-    @classmethod
-    def _check_duplicate_in_server(
-        cls, item_name: str, server_name: str, server_items_tracking: dict[str, set[str]]
-    ) -> None:
-        """Check for duplicate items within the same server."""
-        if item_name in server_items_tracking[server_name]:
-            log.error(f"Duplicate item '{item_name}' found in server '{server_name}'")
-            raise PermissionsError(f"Duplicate item '{item_name}' found in server '{server_name}'")
-
-    @classmethod
-    def _check_duplicate_across_servers(
-        cls, item_name: str, server_name: str, item_to_server: dict[str, str]
-    ) -> None:
-        """Check for duplicate items across different servers."""
-        if item_name in item_to_server:
-            existing_server = item_to_server[item_name]
-            log.error(
-                f"Duplicate item '{item_name}' found in servers '{existing_server}' and '{server_name}'"
-            )
-            raise PermissionsError(
-                f"Duplicate item '{item_name}' found in servers '{existing_server}' and '{server_name}'"
             )
 
     @classmethod
@@ -149,8 +146,7 @@ class Permissions:
         metadata: PermissionsMetadata | None = None
 
         if not file_path.exists():
-            log.warning(f"Permissions file not found at {file_path}")
-            return permissions, metadata
+            raise PermissionsError(f"Permissions file not found at {file_path}")
 
         with open(file_path) as f:
             data: dict[str, Any] = json.load(f)
@@ -158,42 +154,24 @@ class Permissions:
         # Extract metadata
         metadata = cls._extract_metadata(data)
 
-        # Tracking maps for duplicate detection
-        item_to_server: dict[str, str] = {}
-        server_items_tracking: dict[str, set[str]] = {}
-
         # Parse permissions with duplicate checking
         for server_name, server_items_data in data.items():
             if server_name == "_metadata":
                 continue
 
-            if not cls._validate_server_data(server_name, server_items_data):
-                continue
-
-            server_items_tracking[server_name] = set()
+            cls._validate_server_data(server_name, server_items_data)
 
             for item_name, item_data in server_items_data.items():  # type: ignore
-                if not cls._validate_item_data(server_name, item_name, item_data):
-                    continue
+                cls._validate_item_data(server_name, item_name, item_data)
 
                 # Type casting for clarity
                 item_name_str: str = str(item_name)  # type: ignore
                 item_data_dict: dict[str, Any] = item_data  # type: ignore
 
-                # Check for duplicates
-                cls._check_duplicate_in_server(item_name_str, server_name, server_items_tracking)
-                cls._check_duplicate_across_servers(item_name_str, server_name, item_to_server)
-
-                # Add to tracking maps
-                item_to_server[item_name_str] = server_name
-                server_items_tracking[server_name].add(item_name_str)
-
                 # Create permission object (flat structure)
-                permissions[item_name_str] = permission_class(**item_data_dict)
+                permissions[server_name + "_" + item_name_str] = permission_class(**item_data_dict)
 
-        log.debug(
-            f"Loaded {len(item_to_server)} items from {len(server_items_tracking)} servers in {file_path}"
-        )
+        log.debug(f"Loaded {len(permissions)} items from {len(data)} servers in {file_path}")
 
         return permissions, metadata
 
@@ -204,7 +182,7 @@ class Permissions:
         If no directory is provided, uses get_config_dir().
         """
         if permissions_dir is None:
-            permissions_dir = get_config_dir()
+            permissions_dir = _default_permissions_dir()
 
         tool_permissions_path = permissions_dir / "tool_permissions.json"
         resource_permissions_path = permissions_dir / "resource_permissions.json"

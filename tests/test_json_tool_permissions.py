@@ -9,6 +9,7 @@ are tested in test_generalized_permissions.py.
 import pytest
 
 from src.middleware.data_access_tracker import DataAccessTracker
+from src.permissions import PermissionsError
 
 
 def test_json_config_loading():
@@ -45,14 +46,14 @@ def test_json_exact_match():
     assert not tracker3.has_external_communication
 
 
-def test_json_specific_overrides_wildcard():
+def test_write_file_permission():
     """Test that specific tool definitions take precedence over wildcard patterns."""
     # Since we enforce strict JSON configuration, tools must be explicitly defined
     tracker = DataAccessTracker()
 
     # Test specific filesystem tool
     tracker.add_tool_call("filesystem_write_file")
-    assert tracker.has_private_data_access
+    assert not tracker.has_private_data_access
     assert tracker.has_external_communication  # Write operation
     assert not tracker.has_untrusted_content_exposure
 
@@ -62,7 +63,7 @@ def test_unknown_tool_raises_error():
     tracker = DataAccessTracker()
 
     # Unknown tool should raise ValueError
-    with pytest.raises(ValueError, match="No security configuration found"):
+    with pytest.raises(PermissionsError, match="not found in permissions"):
         tracker.add_tool_call("unknown_dangerous_tool")
 
 

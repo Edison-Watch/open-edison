@@ -72,9 +72,9 @@
         "write_file": {
             "enabled": true,
             "write_operation": true,
-            "read_private_data": true,
+            "read_private_data": false,
             "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
+            "acl": "PUBLIC"
         },
         "edit_file": {
             "enabled": true,
@@ -222,61 +222,9 @@
             "read_private_data": true,
             "read_untrusted_public_data": true,
             "acl": "PUBLIC"
-        },
-        "getConfluenceSpaces": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC"
-        },
-        "getPagesInConfluenceSpace": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC"
-        },
-        "searchConfluenceUsingCql": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC"
-        },
-        "createConfluencePage": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
         }
     },
     "zapier": {
-        "confluence_cloud_search_for_page_or_blog_post": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC",
-            "description": "Searches for pages or blog posts in Confluence Cloud"
-        },
-        "confluence_cloud_create_page_or_blog_post": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC",
-            "description": "Creates a new page or blog post in Confluence Cloud"
-        },
-        "confluence_cloud_api_request_beta": {
-            "enabled": false,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC",
-            "description": "Makes raw HTTP requests with Confluence Cloud authentication (advanced action). Caution: Disabled because it can perform reads and writes"
-        },
         "add_tools": {
             "enabled": true,
             "write_operation": false,

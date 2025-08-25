@@ -5,16 +5,17 @@ Tests the enhanced permission system that handles tools, resources, and prompts
 with separate JSON configuration files for each type.
 """
 
+import json
+import tempfile
 from pathlib import Path
 
 import pytest
 
-from src.middleware.data_access_tracker import DataAccessTracker
-from src.user_config import (
-    _flat_permissions_loader,
-    classify_prompt_permissions,
-    classify_resource_permissions,
-    classify_tool_permissions,
+from src.middleware.data_access_tracker import DataAccessTracker  # type: ignore
+from src.permissions import (  # type: ignore
+    Permissions,
+    PermissionsError,
+    ToolPermission,
 )
 
 
@@ -25,14 +26,14 @@ class TestResourcePermissions:
         """Test that unknown resource schemes raise ValueError."""
         tracker = DataAccessTracker()
 
-        # Since config is empty, all resources should raise ValueError
-        with pytest.raises(ValueError, match="No security configuration found"):
+        # Since config is empty, permissions lookup raises PermissionsError
+        with pytest.raises(PermissionsError):
             tracker.add_resource_access("file:/home/user/config.json")
 
-        with pytest.raises(ValueError, match="No security configuration found"):
+        with pytest.raises(PermissionsError):
             tracker.add_resource_access("http://example.com/data.json")
 
-        with pytest.raises(ValueError, match="No security configuration found"):
+        with pytest.raises(PermissionsError):
             tracker.add_resource_access("database:user_table")
 
 
@@ -43,14 +44,14 @@ class TestPromptPermissions:
         """Test that unknown prompt types raise ValueError."""
         tracker = DataAccessTracker()
 
-        # Since config is empty, all prompts should raise ValueError
-        with pytest.raises(ValueError, match="No security configuration found"):
+        # Since config is empty, permissions lookup raises PermissionsError
+        with pytest.raises(PermissionsError):
             tracker.add_prompt_access("system")
 
-        with pytest.raises(ValueError, match="No security configuration found"):
+        with pytest.raises(PermissionsError):
             tracker.add_prompt_access("external_prompt")
 
-        with pytest.raises(ValueError, match="No security configuration found"):
+        with pytest.raises(PermissionsError):
             tracker.add_prompt_access("template:system_message")
 
 
@@ -78,46 +79,61 @@ class TestPermissionConfigIntegration:
 
     def test_all_config_files_loaded(self):
         """Test that all permission configuration files are loaded."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
 
-        # Test that each config type works
-        tool_perms = _flat_permissions_loader(Path("tool_permissions.json"))
-        resource_perms = _flat_permissions_loader(Path("resource_permissions.json"))
-        prompt_perms = _flat_permissions_loader(Path("prompt_permissions.json"))
+            tool_perms = {"_metadata": {"description": "Tool perms", "last_updated": "2025-01-01"}}
+            resource_perms = {
+                "_metadata": {"description": "Resource perms", "last_updated": "2025-01-01"}
+            }
+            prompt_perms = {
+                "_metadata": {"description": "Prompt perms", "last_updated": "2025-01-01"}
+            }
 
-        assert isinstance(tool_perms, dict)
-        assert isinstance(resource_perms, dict)
-        assert isinstance(prompt_perms, dict)
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
 
-        # Should have metadata in each
-        assert "_metadata" in tool_perms
-        assert "_metadata" in resource_perms
-        assert "_metadata" in prompt_perms
+            perms = Permissions.load(temp_path)
+            assert isinstance(perms, Permissions)
+            assert perms.tool_metadata is not None
+            assert perms.resource_metadata is not None
+            assert perms.prompt_metadata is not None
 
     def test_consistent_permission_structure(self):
         """Test that all permission types use consistent structure."""
-        # Test tool permission structure (this works since tool_permissions.json has data)
-        tool_perms = classify_tool_permissions("filesystem_read_file")
-        assert "write_operation" in tool_perms
-        assert "read_private_data" in tool_perms
-        assert "read_untrusted_public_data" in tool_perms
+        # Build temp config and validate tool structure and error consistency
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
 
-        # Test that resource and prompt classification methods exist
-        # (they will raise ValueError for unknown items, but the structure is consistent)
-        assert callable(classify_resource_permissions)
-        assert callable(classify_prompt_permissions)
+            tool_perms = {
+                "_metadata": {"description": "Tool perms", "last_updated": "2025-01-01"},
+                "filesystem": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    }
+                },
+            }
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
-        # Test the error format is consistent
-        try:
-            classify_resource_permissions("file:/test.txt")
-            raise AssertionError("Should have raised ValueError")
-        except ValueError as e:
-            assert "resource_permissions.json" in str(e)
+            perms = Permissions.load(temp_path)
+            tp = perms.get_tool_permission("filesystem_read_file")
+            assert isinstance(tp, ToolPermission)
+            assert tp.enabled is True
+            assert tp.read_private_data is True
+            assert tp.write_operation is False
 
-        try:
-            classify_prompt_permissions("system")
-            raise AssertionError("Should have raised ValueError")
-        except ValueError as e:
-            assert "prompt_permissions.json" in str(e)
+            # Unknown resource/prompt raise PermissionsError
+            with pytest.raises(PermissionsError):
+                perms.get_resource_permission("file:/test.txt")
+            with pytest.raises(PermissionsError):
+                perms.get_prompt_permission("system")
 
 
 if __name__ == "__main__":

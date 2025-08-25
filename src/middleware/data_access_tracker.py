@@ -163,16 +163,15 @@ class DataAccessTracker:
                     f"🚫 BLOCKING tool call {tool_name} - write to lower ACL ({tool_acl}) while session has higher ACL {self.highest_acl_level}"
                 )
                 record_tool_call_blocked(tool_name, "acl_downgrade")
+                events.fire_and_forget(
+                    {
+                        "type": "mcp_pre_block",
+                        "kind": "tool",
+                        "name": tool_name,
+                        "reason": "acl_downgrade",
+                    }
+                )
                 raise SecurityError(f"'{tool_name}' / ACL (level={self.highest_acl_level})")
-            events.fire_and_forget(
-                {
-                    "type": "mcp_pre_block",
-                    "kind": "tool",
-                    "name": tool_name,
-                    "reason": "acl_downgrade",
-                }
-            )
-            raise
 
         # Pre-check: would this call achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
@@ -221,6 +220,20 @@ class DataAccessTracker:
         # Get resource permissions and update trifecta flags
         permissions = all_permissions.get_resource_permission(resource_name)
 
+        # Check if resource is enabled
+        if not all_permissions.is_resource_enabled(resource_name):
+            log.warning(f"🚫 BLOCKING resource access {resource_name} - resource is disabled")
+            record_resource_access_blocked(resource_name, "disabled")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "resource",
+                    "name": resource_name,
+                    "reason": "disabled",
+                }
+            )
+            raise SecurityError(f"'{resource_name}' / Resource disabled")
+
         # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
             log.error(
@@ -267,6 +280,20 @@ class DataAccessTracker:
 
         # Get prompt permissions and update trifecta flags
         permissions = all_permissions.get_prompt_permission(prompt_name)
+
+        # Check if prompt is enabled
+        if not all_permissions.is_prompt_enabled(prompt_name):
+            log.warning(f"🚫 BLOCKING prompt access {prompt_name} - prompt is disabled")
+            record_prompt_access_blocked(prompt_name, "disabled")
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "prompt",
+                    "name": prompt_name,
+                    "reason": "disabled",
+                }
+            )
+            raise SecurityError(f"'{prompt_name}' / Prompt disabled")
 
         # Pre-check: would this access achieve the lethal trifecta? If so, block immediately
         if self._would_call_complete_trifecta(permissions):
