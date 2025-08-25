@@ -96,6 +96,7 @@ class Permissions:
     tool_metadata: PermissionsMetadata | None = None
     resource_metadata: PermissionsMetadata | None = None
     prompt_metadata: PermissionsMetadata | None = None
+
     _permissions_dir: Path | None = None
 
     @classmethod
@@ -243,15 +244,47 @@ class Permissions:
         return permission.enabled
 
     def reload(self) -> None:
-        """Reload permissions from files"""
-        new_permissions = Permissions.load(self._permissions_dir)
+        """Reload permissions from files, preserving existing server_disabled values"""
+        # Load new permissions
+        new_permissions = self.load(self._permissions_dir)
         self.tool_permissions = new_permissions.tool_permissions
         self.resource_permissions = new_permissions.resource_permissions
         self.prompt_permissions = new_permissions.prompt_permissions
         self.tool_metadata = new_permissions.tool_metadata
         self.resource_metadata = new_permissions.resource_metadata
         self.prompt_metadata = new_permissions.prompt_metadata
+
         log.info("✅ Permissions reloaded from files")
+
+    def debug_print_server_tools_server_disabled_report(self, server_name: str) -> None:
+        """Print a report of all tools for a given server with 2-space indent.
+
+        Args:
+            server_name: The name of the server to generate a report for
+        """
+        prefix = f"{server_name}_"
+        server_tool_perms = {k: v for k, v in self.tool_permissions.items() if k.startswith(prefix)}
+        if not server_tool_perms:
+            print(f"  No tools found for server '{server_name}'")
+            return
+
+        print(f"  server_disabled for server '{server_name}'")
+        for tool_name, tool_perm in sorted(server_tool_perms.items()):
+            print(f"    {tool_name}: {tool_perm.enabled}")
+
+    def debug_print_all_server_disabled_report(self) -> None:
+        """Print a report of all tools for all servers with 2-space indent."""
+        for server_name in self.tool_permissions:
+            self.debug_print_server_tools_server_disabled_report(server_name)
+
+    def set_server_disabled(self, server_name: str, disabled: bool) -> None:
+        """Set the server disabled flag for all tools in the server."""
+        prefix = f"{server_name}_"
+        server_tool_perms = {k: v for k, v in self.tool_permissions.items() if k.startswith(prefix)}
+        for tool_name, tool_perm in sorted(server_tool_perms.items()):
+            tool_perm.enabled = not disabled
+            self.tool_permissions[tool_name] = tool_perm
+        log.info(f"✅ Server {server_name} tools disabled flag set to {disabled}")
 
 
 def normalize_acl(value: str | None, *, default: str = "PUBLIC") -> str:

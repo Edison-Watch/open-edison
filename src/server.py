@@ -513,41 +513,69 @@ class OpenEdisonProxy:
 
     async def reinitialize_mcp_servers(self) -> dict[str, Any]:
         """Reinitialize all MCP servers by creating a fresh instance and reloading config."""
-        old_mcp = None
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
+            # List current MCP servers in config
+            log.debug("Current enabled MCP servers in config:")
+            for server in [s for s in config.mcp_servers if s.enabled]:
+                log.debug(f"  - {server.name}")
+            all_permissions.debug_print_all_server_disabled_report()
+
             # Reload configuration from disk
             log.info("Reloading configuration from disk")
-            config.load()
+            config.reload()
             all_permissions.reload()
             log.info("✅ Configuration reloaded from disk")
 
-            # Create a completely new SingleUserMCP instance to ensure clean state
-            old_mcp = self.single_user_mcp
-            self.single_user_mcp = SingleUserMCP()
+            # List current MCP servers in config
+            log.debug("New enabled MCP servers in config:")
+            for server in [s for s in config.mcp_servers if s.enabled]:
+                log.debug(f"  - {server.name}")
 
-            # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize()
+            # Get currently mounted servers
+            mounted_servers = await self.single_user_mcp.get_mounted_servers()
+            # Create a dict of mounted server names for fast lookup and deletion
+            mounted_server_names = {server["name"] for server in mounted_servers}
+            log.debug(f"Created set of mounted server names: {list(mounted_server_names)}")
 
-            # Get final status
-            final_mounted = await self.single_user_mcp.get_mounted_servers()
+            for config_server in config.mcp_servers:
+                config_server_name = config_server.name
+                if config_server.enabled:
+                    if config_server_name in mounted_server_names:
+                        # Server is mounted and enabled - do nothing
+                        log.info(f"Server {config_server_name} is mounted and enabled")
+                    else:
+                        # Server is not mounted but enabled - mount it
+                        log.info(
+                            f"Server {config_server_name} is enabled but not mounted - mounting"
+                        )
+                        await self.single_user_mcp.create_composite_proxy([config_server])
+                else:
+                    # Server is disabled in config
+                    if config_server_name in mounted_server_names:
+                        # Server is mounted but disabled - update permissions to disable all tools/resources/prompts
+                        log.info(
+                            f"Server {config_server_name} is mounted but disabled - updating permissions"
+                        )
+                        all_permissions.set_server_disabled(config_server_name, True)
+                    else:
+                        # Server is not mounted and disabled - do nothing
+                        log.info(
+                            f"Server {config_server_name} is not mounted and disabled - no action needed"
+                        )
 
-            result = {
+            all_permissions.debug_print_all_server_disabled_report()
+
+            return {
                 "status": "success",
                 "message": "MCP servers reinitialized successfully",
-                "final_mounted_servers": [server["name"] for server in final_mounted],
-                "total_final_mounted": len(final_mounted),
+                "mounted_servers": [server["name"] for server in mounted_servers],
+                "total_mounted": len(mounted_servers),
             }
-
-            log.info("✅ MCP servers reinitialized successfully via API")
-            return result
 
         except Exception as e:
             log.error(f"❌ Failed to reinitialize MCP servers: {e}")
-            # Restore the old instance on failure
-            if old_mcp is not None:
-                self.single_user_mcp = old_mcp
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to reinitialize MCP servers: {str(e)}",
