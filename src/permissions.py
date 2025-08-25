@@ -7,6 +7,7 @@ Reads tool, resource, and prompt permission files and provides a singleton inter
 
 import json
 from dataclasses import dataclass
+from src.config import config
 from pathlib import Path
 from typing import Any
 
@@ -229,19 +230,52 @@ class Permissions:
         return self.prompt_permissions[prompt_name]
 
     def is_tool_enabled(self, tool_name: str) -> bool:
-        """Check if a tool is enabled"""
+        """Check if a tool is enabled
+        Also checks if the server is enabled"""
         permission = self.get_tool_permission(tool_name)
-        return permission.enabled
+        server_name = self.server_name_from_tool_name(tool_name)
+        server_enabled = self.is_server_enabled(server_name)
+        return permission.enabled and server_enabled
 
     def is_resource_enabled(self, resource_name: str) -> bool:
-        """Check if a resource is enabled"""
+        """Check if a resource is enabled
+        Also checks if the server is enabled"""
         permission = self.get_resource_permission(resource_name)
-        return permission.enabled
+        server_name = self.server_name_from_tool_name(resource_name)
+        server_enabled = self.is_server_enabled(server_name)
+        return permission.enabled and server_enabled
 
     def is_prompt_enabled(self, prompt_name: str) -> bool:
-        """Check if a prompt is enabled"""
+        """Check if a prompt is enabled
+        Also checks if the server is enabled"""
         permission = self.get_prompt_permission(prompt_name)
-        return permission.enabled
+        server_name = self.server_name_from_tool_name(prompt_name)
+        server_enabled = self.is_server_enabled(server_name)
+        return permission.enabled and server_enabled
+
+    @staticmethod
+    def server_name_from_tool_name(tool_name: str) -> str:
+        """Get the server name from a tool name"""
+        parts = tool_name.split("_")
+        if len(parts) == 0:
+            raise PermissionsError(f"Tool name {tool_name} is invalid")
+        elif parts[0] == "builtin":
+            return "builtin"
+
+        server_names = {s.name for s in config.mcp_servers}
+        for i in range(len(parts)):
+            server_name = "_".join(parts[:i])
+            if server_name in server_names:
+                return server_name
+        raise PermissionsError(f"Server name not found for tool {tool_name}")
+
+    @staticmethod
+    def is_server_enabled(server_name: str) -> bool:
+        """Check if a server is enabled"""
+        if server_name == "builtin":
+            return True
+        server_config = next((s for s in config.mcp_servers if s.name == server_name), None)
+        return server_config is not None and server_config.enabled
 
     def reload(self) -> None:
         """Reload permissions from files, preserving existing server_disabled values"""
@@ -255,36 +289,6 @@ class Permissions:
         self.prompt_metadata = new_permissions.prompt_metadata
 
         log.info("✅ Permissions reloaded from files")
-
-    def debug_print_server_tools_server_disabled_report(self, server_name: str) -> None:
-        """Print a report of all tools for a given server with 2-space indent.
-
-        Args:
-            server_name: The name of the server to generate a report for
-        """
-        prefix = f"{server_name}_"
-        server_tool_perms = {k: v for k, v in self.tool_permissions.items() if k.startswith(prefix)}
-        if not server_tool_perms:
-            print(f"  No tools found for server '{server_name}'")
-            return
-
-        print(f"  server_disabled for server '{server_name}'")
-        for tool_name, tool_perm in sorted(server_tool_perms.items()):
-            print(f"    {tool_name}: {tool_perm.enabled}")
-
-    def debug_print_all_server_disabled_report(self) -> None:
-        """Print a report of all tools for all servers with 2-space indent."""
-        for server_name in self.tool_permissions:
-            self.debug_print_server_tools_server_disabled_report(server_name)
-
-    def set_server_disabled(self, server_name: str, disabled: bool) -> None:
-        """Set the server disabled flag for all tools in the server."""
-        prefix = f"{server_name}_"
-        server_tool_perms = {k: v for k, v in self.tool_permissions.items() if k.startswith(prefix)}
-        for tool_name, tool_perm in sorted(server_tool_perms.items()):
-            tool_perm.enabled = not disabled
-            self.tool_permissions[tool_name] = tool_perm
-        log.info(f"✅ Server {server_name} tools disabled flag set to {disabled}")
 
 
 def normalize_acl(value: str | None, *, default: str = "PUBLIC") -> str:

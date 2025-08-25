@@ -271,10 +271,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for tool {tool_name}")
-            permissions = all_permissions.get_tool_permission(tool_name)
-            log.trace(f"🔍 Tool permissions: {permissions}")
-            log.debug(f"🔍 Tool enabledment: Perm: {permissions.enabled}, Tool: {tool.enabled}")
-            if permissions.enabled:
+            if all_permissions.is_tool_enabled(tool_name):
                 allowed_tools.append(tool)
             else:
                 log.warning(
@@ -397,9 +394,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
-            permissions = all_permissions.get_resource_permission(resource_name)
-            log.trace(f"🔍 Resource permissions: {permissions}")
-            if permissions.enabled:
+            if all_permissions.is_resource_enabled(resource_name):
                 allowed_resources.append(resource)
             else:
                 log.warning(
@@ -498,9 +493,7 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
-            permissions = all_permissions.get_prompt_permission(prompt_name)
-            log.trace(f"🔍 Prompt permissions: {permissions}")
-            if permissions.enabled:
+            if all_permissions.is_prompt_enabled(prompt_name):
                 allowed_prompts.append(prompt)
             else:
                 log.warning(

@@ -17,7 +17,7 @@ from src.middleware.session_tracking import (
     get_current_session_data_tracker,
 )
 from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
-from src.permissions import permissions
+from src.permissions import PermissionsError, permissions
 
 
 class MountedServerInfo(TypedDict):
@@ -35,6 +35,10 @@ class ServerStatusInfo(TypedDict):
     mounted: bool
 
 
+# Module level because needs to be read by permissions etc
+mounted_servers: dict[str, MountedServerInfo] = {}
+
+
 class SingleUserMCP(FastMCP[Any]):
     """
     Single-user MCP server implementation for Open Edison.
@@ -46,7 +50,6 @@ class SingleUserMCP(FastMCP[Any]):
 
     def __init__(self):
         super().__init__(name="open-edison-single-user")
-        self.mounted_servers: dict[str, MountedServerInfo] = {}
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
@@ -119,7 +122,7 @@ class SingleUserMCP(FastMCP[Any]):
                 continue
 
         log.info(
-            f"✅ Created composite proxy with {len(enabled_servers)} servers ({self.mounted_servers.keys()})"
+            f"✅ Created composite proxy with {len(enabled_servers)} servers ({mounted_servers.keys()})"
         )
         return True
 
@@ -183,8 +186,8 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
-        self.mount(proxy, prefix=server_name)
-        self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
+        super().mount(proxy, prefix=server_name)
+        mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
         log.info(
@@ -195,8 +198,84 @@ class SingleUserMCP(FastMCP[Any]):
         """Get list of currently mounted servers."""
         return [
             ServerStatusInfo(name=name, config=mounted["config"].__dict__, mounted=True)
-            for name, mounted in self.mounted_servers.items()
+            for name, mounted in mounted_servers.items()
         ]
+
+    async def mount_server(self, server_name: str) -> bool:
+        """
+        Mount a server by name if not already mounted.
+
+        Returns True if newly mounted, False if it was already mounted or failed.
+        """
+        if server_name in mounted_servers:
+            log.info(f"🔁 Server {server_name} already mounted")
+            return False
+
+        # Find server configuration
+        server_config: MCPServerConfig | None = next(
+            (s for s in config.mcp_servers if s.name == server_name), None
+        )
+
+        if server_config is None:
+            log.error(f"❌ Server configuration not found: {server_name}")
+            return False
+
+        # Build minimal FastMCP backend config for just this server
+        fastmcp_config = self._convert_to_fastmcp_config([server_config])
+        if not fastmcp_config.get("mcpServers"):
+            log.error(f"❌ Invalid/empty MCP config for server: {server_name}")
+            return False
+
+        try:
+            oauth_manager = get_oauth_manager()
+            await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
+            # Warm lists after mount
+            _ = await self._tool_manager.list_tools()
+            _ = await self._resource_manager.list_resources()
+            _ = await self._prompt_manager.list_prompts()
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.error(f"❌ Failed to mount server {server_name}: {e}")
+            return False
+
+    async def unmount(self, server_name: str) -> bool:
+        """
+        Unmount a previously mounted server by name.
+
+        Returns True if it was unmounted, False if it wasn't mounted.
+        """
+        info = mounted_servers.pop(server_name, None)
+        if info is None:
+            log.info(f"ℹ️  Server {server_name} was not mounted")
+            return False
+
+        proxy = info.get("proxy")
+
+        # Manually remove from FastMCP managers' mounted lists
+        for manager_name in ("_tool_manager", "_resource_manager", "_prompt_manager"):
+            manager = getattr(self, manager_name, None)
+            mounted_list = getattr(manager, "_mounted_servers", None)
+            if mounted_list is None:
+                continue
+
+            # Prefer removing by both prefix and object identity; fallback to prefix-only
+            new_list = [
+                m
+                for m in mounted_list
+                if not (m.prefix == server_name and (proxy is None or m.server is proxy))
+            ]
+            if len(new_list) == len(mounted_list):
+                new_list = [m for m in mounted_list if m.prefix != server_name]
+
+            mounted_list[:] = new_list
+
+        # Invalidate and warm lists to ensure reload
+        _ = await self._tool_manager.list_tools()
+        _ = await self._resource_manager.list_resources()
+        _ = await self._prompt_manager.list_prompts()
+
+        log.info(f"🧹 Unmounted server {server_name} and cleared references")
+        return True
 
     async def initialize(self, test_config: Any | None = None) -> None:
         """Initialize the FastMCP server using unified composite proxy approach."""
@@ -272,8 +351,8 @@ class SingleUserMCP(FastMCP[Any]):
             return {
                 "name": "Open Edison Single User",
                 "version": config.version,
-                "mounted_servers": list(self.mounted_servers.keys()),
-                "total_mounted": len(self.mounted_servers),
+                "mounted_servers": list(mounted_servers.keys()),
+                "total_mounted": len(mounted_servers),
             }
 
         @self.tool()  # noqa
@@ -302,20 +381,27 @@ class SingleUserMCP(FastMCP[Any]):
             return security_data
 
         @self.tool()  # noqa
-        async def get_available_tools() -> list[str]:
+        async def builtin_get_available_tools() -> list[str]:
             """
             Get a list of all available tools. Use this tool to get an updated list of available tools.
             """
             tool_list = await self._tool_manager.list_tools()
             available_tools: list[str] = []
             for tool in tool_list:
-                is_enabled: bool | None = permissions.is_tool_enabled(tool.name)
+                # Use the prefixed key (e.g., "filesystem_read_file") to match flattened permissions
+                perm_key = tool.key
+                try:
+                    is_enabled: bool = permissions.is_tool_enabled(perm_key)
+                except PermissionsError:
+                    # Unknown in permissions → treat as disabled
+                    is_enabled = False
                 if is_enabled:
-                    available_tools.append(tool.name)
+                    # Return the invocable name (key), which matches the MCP-exposed name
+                    available_tools.append(tool.key)
             return available_tools
 
         @self.tool()  # noqa
-        async def tools_changed(ctx: Context) -> str:
+        async def builtin_tools_changed(ctx: Context) -> str:
             """
             Notify the MCP client that the tool list has changed. You should call this tool periodically
             to ensure the client has the latest list of available tools.
@@ -327,7 +413,7 @@ class SingleUserMCP(FastMCP[Any]):
             return "Notifications sent"
 
         log.info(
-            "✅ Added built-in demo tools: echo, get_server_info, get_security_status, get_available_tools, tools_changed"
+            "✅ Added built-in demo tools: echo, get_server_info, get_security_status, builtin_get_available_tools, builtin_tools_changed"
         )
 
     def _setup_demo_resources(self) -> None:
@@ -338,8 +424,8 @@ class SingleUserMCP(FastMCP[Any]):
             """Get application configuration."""
             return {
                 "version": config.version,
-                "mounted_servers": list(self.mounted_servers.keys()),
-                "total_mounted": len(self.mounted_servers),
+                "mounted_servers": list(mounted_servers.keys()),
+                "total_mounted": len(mounted_servers),
             }
 
         log.info("✅ Added built-in demo resources: config://app")

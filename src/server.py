@@ -425,6 +425,18 @@ class OpenEdisonProxy:
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
+        app.add_api_route(
+            "/mcp/mount/{server_name}",
+            self.mount_mcp_server,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
+            "/mcp/mount/{server_name}",
+            self.unmount_mcp_server,
+            methods=["DELETE"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
         # Public sessions endpoint (no auth) for simple local dashboard
         app.add_api_route(
             "/sessions",
@@ -511,12 +523,16 @@ class OpenEdisonProxy:
                 detail=f"Failed to get mounted servers: {str(e)}",
             ) from e
 
-    async def reinitialize_mcp_servers(self) -> None:
-        """Reinitialize all MCP servers by creating a fresh instance and reloading config."""
+    async def reinitialize_mcp_servers(self) -> dict[str, Any]:
+        """Reinitialize all MCP servers by creating a fresh instance and reloading config.
+
+        Returns a JSON payload summarizing the final mounted servers so callers can display status.
+        """
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
-            config.load()
+            # Reload config in-place to pick up latest saved settings
+            config.reload()
             all_permissions.reload()
             log.info("✅ Configuration reloaded from disk")
 
@@ -528,11 +544,47 @@ class OpenEdisonProxy:
             # Initialize the new instance with fresh config
             await self.single_user_mcp.initialize()
 
+            # Summarize final mounted servers
+            try:
+                mounted = await self.single_user_mcp.get_mounted_servers()
+            except Exception:
+                log.error("Failed to get mounted servers")
+                mounted = []
+
+            names = [m.get("name", "") for m in mounted]
+            return {
+                "status": "ok",
+                "total_final_mounted": len(mounted),
+                "mounted_servers": names,
+            }
+
         except Exception as e:
             log.error(f"❌ Failed to reinitialize MCP servers: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to reinitialize MCP servers: {str(e)}",
+            ) from e
+
+    async def mount_mcp_server(self, server_name: str) -> dict[str, Any]:
+        """Mount a single MCP server by name (auth required)."""
+        try:
+            ok = await self.single_user_mcp.mount_server(server_name)
+            return {"mounted": bool(ok), "server": server_name}
+        except Exception as e:
+            log.error(f"❌ Failed to mount server {server_name}: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to mount server {server_name}: {str(e)}"
+            ) from e
+
+    async def unmount_mcp_server(self, server_name: str) -> dict[str, Any]:
+        """Unmount a previously mounted MCP server by name (auth required)."""
+        try:
+            ok = await self.single_user_mcp.unmount(server_name)
+            return {"unmounted": bool(ok), "server": server_name}
+        except Exception as e:
+            log.error(f"❌ Failed to unmount server {server_name}: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to unmount server {server_name}: {str(e)}"
             ) from e
 
     async def get_sessions(self) -> dict[str, Any]:
@@ -588,6 +640,8 @@ class OpenEdisonProxy:
         """Reload permissions from configuration files."""
         try:
             log.info("🔄 Reloading permissions from configuration files via API endpoint")
+            # Reload config in-place to pick up latest saved settings
+            config.reload()
             all_permissions.reload()
             log.info("✅ Permissions reloaded from configuration files successfully")
 

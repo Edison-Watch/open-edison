@@ -69,10 +69,15 @@ def _default_config_path() -> Path:
     repo_config = root_dir / "config.json"
 
     # If pyproject.toml exists next to src/, we are likely in a repo checkout
+    # Prefer the user config directory if a config already exists there (runtime source of truth),
+    # otherwise fall back to the repo copy.
     if repo_pyproject.exists():
+        user_cfg = get_config_dir() / "config.json"
+        if user_cfg.exists():
+            return user_cfg
         return repo_config
 
-    # Otherwise, prefer user config directory
+    # Installed package: prefer user config directory
     return get_config_dir() / "config.json"
 
 
@@ -190,6 +195,8 @@ class Config:
             if config_path.is_dir():
                 config_path = config_path / "config.json"
 
+        log.info(f"Loading configuration from {config_path}")
+
         if not config_path.exists():
             log.warning(f"Config file not found at {config_path}, creating default config")
             default_config = cls.create_default()
@@ -267,15 +274,6 @@ class Config:
 
         log.info(f"Configuration saved to {config_path}")
 
-    def reload(self) -> None:
-        """Reload configuration from file"""
-        new_config = self.load()
-        self.server = new_config.server
-        self.logging = new_config.logging
-        self.mcp_servers = new_config.mcp_servers
-        self.telemetry = new_config.telemetry
-        log.info("✅ Configuration reloaded from file")
-
     @classmethod
     def create_default(cls) -> "Config":
         """Create default configuration"""
@@ -295,6 +293,19 @@ class Config:
                 otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
             ),
         )
+
+    def reload(self) -> None:
+        """Reload configuration from file"""
+        new_config = Config.load()
+        del self.server
+        self.server = new_config.server
+        del self.logging
+        self.logging = new_config.logging
+        del self.mcp_servers
+        self.mcp_servers = new_config.mcp_servers
+        del self.telemetry
+        self.telemetry = new_config.telemetry
+        log.info("✅ Configuration reloaded from file")
 
 
 # Load global configuration
