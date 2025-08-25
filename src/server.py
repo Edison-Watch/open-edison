@@ -28,8 +28,8 @@ from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
 )
-from src.permissions import clear_all_classify_permissions_caches, permissions
 from src.oauth_manager import OAuthStatus, get_oauth_manager
+from src.permissions import clear_all_classify_permissions_caches, permissions
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -493,7 +493,6 @@ class OpenEdisonProxy:
 
     async def reinitialize_mcp_servers(self) -> dict[str, Any]:
         """Reinitialize all MCP servers by creating a fresh instance and reloading config."""
-        old_mcp = None
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
@@ -501,37 +500,69 @@ class OpenEdisonProxy:
             clear_all_classify_permissions_caches()
             log.info("✅ All permission caches cleared")
 
+            # List current MCP servers in config
+            log.debug("Current enabled MCP servers in config:")
+            for server in [s for s in config.mcp_servers if s.enabled]:
+                log.debug(f"  - {server.name}")
+            permissions.debug_print_all_server_disabled_report()
+
             # Reload configuration from disk
             log.info("Reloading configuration from disk")
             config.reload()
             permissions.reload()
             log.info("✅ Configuration reloaded from disk")
 
-            # Create a completely new SingleUserMCP instance to ensure clean state
-            old_mcp = self.single_user_mcp
-            self.single_user_mcp = SingleUserMCP()
+            # List current MCP servers in config
+            log.debug("New enabled MCP servers in config:")
+            for server in [s for s in config.mcp_servers if s.enabled]:
+                log.debug(f"  - {server.name}")
 
-            # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize()
+            # Get currently mounted servers
+            mounted_servers = await self.single_user_mcp.get_mounted_servers()
+            # Create a dict of mounted server names for fast lookup and deletion
+            mounted_server_names = {server["name"] for server in mounted_servers}
+            log.debug(f"Created set of mounted server names: {list(mounted_server_names)}")
 
-            # Get final status
-            final_mounted = await self.single_user_mcp.get_mounted_servers()
+            for config_server in config.mcp_servers:
+                config_server_name = config_server.name
+                if config_server.enabled:
+                    if config_server_name in mounted_server_names:
+                        # Server is mounted and enabled - do nothing
+                        log.info(f"Server {config_server_name} is mounted and enabled")
+                        if permissions.has_server_disabled_permissions():
+                            log.info(" - has disabled permissions -> updating permissions")
+                            permissions.set_server_disabled(config_server_name, False)
+                    else:
+                        # Server is not mounted but enabled - mount it
+                        log.info(
+                            f"Server {config_server_name} is enabled but not mounted - mounting"
+                        )
+                        await self.single_user_mcp.create_composite_proxy([config_server])
+                else:
+                    # Server is disabled in config
+                    if config_server_name in mounted_server_names:
+                        # Server is mounted but disabled - update permissions to disable all tools/resources/prompts
+                        log.info(
+                            f"Server {config_server_name} is mounted but disabled - updating permissions"
+                        )
+                        permissions.set_server_disabled(config_server_name, True)
+                    else:
+                        # Server is not mounted and disabled - do nothing
+                        log.info(
+                            f"Server {config_server_name} is not mounted and disabled - no action needed"
+                        )
 
-            result = {
+            permissions.debug_print_all_server_disabled_report()
+
+            return {
                 "status": "success",
                 "message": "MCP servers reinitialized successfully",
-                "final_mounted_servers": [server["name"] for server in final_mounted],
-                "total_final_mounted": len(final_mounted),
+                "mounted_servers": [server["name"] for server in mounted_servers],
+                "total_mounted": len(mounted_servers),
             }
-
-            log.info("✅ MCP servers reinitialized successfully via API")
-            return result
 
         except Exception as e:
             log.error(f"❌ Failed to reinitialize MCP servers: {e}")
-            # Restore the old instance on failure
-            if old_mcp is not None:
-                self.single_user_mcp = old_mcp
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to reinitialize MCP servers: {str(e)}",
@@ -787,7 +818,9 @@ class OpenEdisonProxy:
                         log.info(f"🔍 Proactively checking OAuth for remote server {server_name}")
 
                         # Check OAuth requirements for this remote server
-                        oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
+                        oauth_info = await oauth_manager.check_oauth_requirement(
+                            server_name, remote_url
+                        )
 
                         servers_info[server_name] = {
                             "server_name": oauth_info.server_name,
@@ -827,9 +860,7 @@ class OpenEdisonProxy:
             remote_url = server_config.get_remote_url()
 
             # Check or refresh OAuth status
-            oauth_info = await oauth_manager.check_oauth_requirement(
-                server_name, remote_url
-            )
+            oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
 
             return {
                 "server_name": oauth_info.server_name,
@@ -856,9 +887,7 @@ class OpenEdisonProxy:
         client_name: str | None = Field(None, description="Client name for OAuth registration")
 
     async def oauth_test_connection(
-        self,
-        server_name: str,
-        body: _OAuthAuthorizeRequest | None = None
+        self, server_name: str, body: _OAuthAuthorizeRequest | None = None
     ) -> dict[str, Any]:
         """
         Test connection to a remote MCP server, triggering OAuth flow if needed.
@@ -875,15 +904,14 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             # Get OAuth configuration
@@ -911,7 +939,7 @@ class OpenEdisonProxy:
                 mcp_url=remote_url,
                 scopes=scopes,
                 client_name=client_name or "OpenEdison MCP Gateway",
-                token_storage_cache_dir=oauth_manager.cache_dir
+                token_storage_cache_dir=oauth_manager.cache_dir,
             )
 
             # Create a temporary client and test the connection
@@ -919,7 +947,9 @@ class OpenEdisonProxy:
             try:
                 async with FastMCPClient(remote_url, auth=oauth) as client:
                     # Try to ping the server - this triggers OAuth if needed
-                    log.info(f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)...")
+                    log.info(
+                        f"🔐 Attempting to connect to {server_name} (may open browser for OAuth)..."
+                    )
                     await client.ping()
                     log.info(f"✅ Successfully connected to {server_name}")
 
@@ -944,8 +974,7 @@ class OpenEdisonProxy:
                         "server_name": server_name,
                     }
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"Connection test failed: {error_message}"
+                    status_code=500, detail=f"Connection test failed: {error_message}"
                 ) from None
 
         except HTTPException:
@@ -967,15 +996,14 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             success = oauth_manager.clear_tokens(server_name, remote_url)
@@ -987,8 +1015,7 @@ class OpenEdisonProxy:
                     "server_name": server_name,
                 }
             raise HTTPException(
-                status_code=500,
-                detail=f"Failed to clear OAuth tokens for {server_name}"
+                status_code=500, detail=f"Failed to clear OAuth tokens for {server_name}"
             )
 
         except HTTPException:
@@ -1010,21 +1037,18 @@ class OpenEdisonProxy:
             if not server_config.is_remote_server():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Server {server_name} is a local server and does not support OAuth"
+                    detail=f"Server {server_name} is a local server and does not support OAuth",
                 )
 
             # Get the remote URL (now guaranteed to be non-None for remote servers)
             remote_url = server_config.get_remote_url()
             if not remote_url:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Server {server_name} does not have a valid remote URL"
+                    status_code=400, detail=f"Server {server_name} does not have a valid remote URL"
                 )
 
             # Refresh OAuth status
-            oauth_info = await oauth_manager.refresh_server_status(
-                server_name, remote_url
-            )
+            oauth_info = await oauth_manager.refresh_server_status(server_name, remote_url)
 
             return {
                 "status": "refreshed",

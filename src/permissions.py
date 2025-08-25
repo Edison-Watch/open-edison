@@ -6,7 +6,7 @@ Reads tool, resource, and prompt permission files and provides a singleton inter
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -46,6 +46,7 @@ DEFAULT_PERMISSIONS: dict[str, Any] = {
     "read_private_data": False,
     "read_untrusted_public_data": False,
     "acl": "PUBLIC",
+    "server_disabled": False,
 }
 
 
@@ -74,6 +75,7 @@ def _apply_permission_defaults(config_perms: dict[str, Any]) -> dict[str, Any]:
     read_untrusted_public_data = bool(
         config_perms.get("read_untrusted_public_data", merged["read_untrusted_public_data"])
     )
+    server_disabled = bool(config_perms.get("server_disabled", merged["server_disabled"]))
 
     # ACL: explicit value wins; otherwise default PRIVATE if read_private_data True, else default
     if "acl" in config_perms and config_perms.get("acl") is not None:
@@ -88,6 +90,7 @@ def _apply_permission_defaults(config_perms: dict[str, Any]) -> dict[str, Any]:
             "read_private_data": read_private_data,
             "read_untrusted_public_data": read_untrusted_public_data,
             "acl": acl,
+            "server_disabled": server_disabled,
         }
     )
     return merged
@@ -257,6 +260,7 @@ class ToolPermission(TypedDict, total=False):
     """Individual tool permission configuration"""
 
     enabled: bool
+    server_disabled: bool
     write_operation: bool
     read_private_data: bool
     read_untrusted_public_data: bool
@@ -268,6 +272,7 @@ class ResourcePermission(TypedDict, total=False):
     """Individual resource permission configuration"""
 
     enabled: bool
+    server_disabled: bool
     write_operation: bool
     read_private_data: bool
     read_untrusted_public_data: bool
@@ -277,6 +282,7 @@ class PromptPermission(TypedDict, total=False):
     """Individual prompt permission configuration"""
 
     enabled: bool
+    server_disabled: bool
     write_operation: bool
     read_private_data: bool
     read_untrusted_public_data: bool
@@ -301,6 +307,9 @@ class Permissions:
     resource_metadata: PermissionsMetadata | None = None
     prompt_metadata: PermissionsMetadata | None = None
     _permissions_dir: Path | None = None
+    _by_server: dict[str, dict[str, list[str]]] = field(
+        default_factory=lambda: {"tools": {}, "resources": {}, "prompts": {}}
+    )
 
     @classmethod
     def _extract_metadata(cls, data: dict[str, Any]) -> PermissionsMetadata | None:
@@ -362,27 +371,26 @@ class Permissions:
         cls,
         file_path: Path,
         permission_class: type[ToolPermission] | type[ResourcePermission] | type[PromptPermission],
-    ) -> tuple[dict[str, Any], PermissionsMetadata | None]:
+    ) -> tuple[dict[str, Any], PermissionsMetadata | None, dict[str, set[str]]]:
         """Load permissions from a single JSON file.
 
         Returns a tuple of (permissions_dict, metadata)
         """
         permissions: dict[str, Any] = {}
         metadata: PermissionsMetadata | None = None
+        # Tracking maps for duplicate detection
+        item_to_server: dict[str, str] = {}
+        server_items_tracking: dict[str, set[str]] = {}
 
         if not file_path.exists():
             log.warning(f"Permissions file not found at {file_path}")
-            return permissions, metadata
+            return permissions, metadata, server_items_tracking
 
         with open(file_path) as f:
             data: dict[str, Any] = json.load(f)
 
         # Extract metadata
         metadata = cls._extract_metadata(data)
-
-        # Tracking maps for duplicate detection
-        item_to_server: dict[str, str] = {}
-        server_items_tracking: dict[str, set[str]] = {}
 
         # Parse permissions with duplicate checking
         for server_name, server_items_data in data.items():
@@ -417,7 +425,7 @@ class Permissions:
             f"Loaded {len(item_to_server)} items from {len(server_items_tracking)} servers in {file_path}"
         )
 
-        return permissions, metadata
+        return permissions, metadata, server_items_tracking
 
     @classmethod
     def load(cls, permissions_dir: Path | None = None) -> "Permissions":
@@ -433,17 +441,18 @@ class Permissions:
         prompt_permissions_path = permissions_dir / "prompt_permissions.json"
 
         # Load all permission types using the helper method
-        tool_permissions, tool_metadata = cls._load_permission_file(
+        tool_permissions, tool_metadata, server_tools = cls._load_permission_file(
             tool_permissions_path, ToolPermission
         )
-        resource_permissions, resource_metadata = cls._load_permission_file(
+        resource_permissions, resource_metadata, server_resources = cls._load_permission_file(
             resource_permissions_path, ResourcePermission
         )
-        prompt_permissions, prompt_metadata = cls._load_permission_file(
+        prompt_permissions, prompt_metadata, server_prompts = cls._load_permission_file(
             prompt_permissions_path, PromptPermission
         )
 
-        return cls(
+        # Create instance
+        instance = cls(
             tool_permissions=tool_permissions,
             resource_permissions=resource_permissions,
             prompt_permissions=prompt_permissions,
@@ -452,6 +461,11 @@ class Permissions:
             prompt_metadata=prompt_metadata,
             _permissions_dir=permissions_dir,
         )
+
+        # Populate _by_server by analyzing the loaded permissions
+        instance._populate_by_server(server_tools, server_resources, server_prompts)
+
+        return instance
 
     def get_tool_permission(self, tool_name: str) -> ToolPermission | None:
         """Get permission for a specific tool"""
@@ -516,8 +530,56 @@ class Permissions:
             if prompt_perm.get("enabled", False)
         }
 
+    def _populate_by_server(
+        self,
+        server_tools: dict[str, set[str]],
+        server_resources: dict[str, set[str]],
+        server_prompts: dict[str, set[str]],
+    ) -> None:
+        """Populate the _by_server field using server mappings from loaded permissions."""
+        self._by_server = {
+            "tools": {server: list(items) for server, items in server_tools.items()},
+            "resources": {server: list(items) for server, items in server_resources.items()},
+            "prompts": {server: list(items) for server, items in server_prompts.items()},
+        }
+
+    def _restore_server_disabled_values(
+        self,
+        old_tool_permissions: dict[str, ToolPermission],
+        old_resource_permissions: dict[str, ResourcePermission],
+        old_prompt_permissions: dict[str, PromptPermission],
+    ) -> None:
+        """Restore server_disabled values from old permissions to new ones."""
+        for tool_name, new_perm in self.tool_permissions.items():
+            if tool_name in old_tool_permissions:
+                old_server_disabled = old_tool_permissions[tool_name].get("server_disabled", False)
+                if old_server_disabled:
+                    new_perm["server_disabled"] = old_server_disabled
+
+        for resource_name, new_perm in self.resource_permissions.items():
+            if resource_name in old_resource_permissions:
+                old_server_disabled = old_resource_permissions[resource_name].get(
+                    "server_disabled", False
+                )
+                if old_server_disabled:
+                    new_perm["server_disabled"] = old_server_disabled
+
+        for prompt_name, new_perm in self.prompt_permissions.items():
+            if prompt_name in old_prompt_permissions:
+                old_server_disabled = old_prompt_permissions[prompt_name].get(
+                    "server_disabled", False
+                )
+                if old_server_disabled:
+                    new_perm["server_disabled"] = old_server_disabled
+
     def reload(self) -> None:
-        """Reload permissions from files"""
+        """Reload permissions from files, preserving existing server_disabled values"""
+        # Store old permissions for server_disabled restoration
+        old_tool_permissions = self.tool_permissions
+        old_resource_permissions = self.resource_permissions
+        old_prompt_permissions = self.prompt_permissions
+
+        # Load new permissions
         new_permissions = self.load(self._permissions_dir)
         self.tool_permissions = new_permissions.tool_permissions
         self.resource_permissions = new_permissions.resource_permissions
@@ -525,7 +587,92 @@ class Permissions:
         self.tool_metadata = new_permissions.tool_metadata
         self.resource_metadata = new_permissions.resource_metadata
         self.prompt_metadata = new_permissions.prompt_metadata
+        self._by_server = new_permissions._by_server
+
+        # Restore server_disabled values from old permissions
+        self._restore_server_disabled_values(
+            old_tool_permissions, old_resource_permissions, old_prompt_permissions
+        )
+
         log.info("✅ Permissions reloaded from files")
+
+    def set_server_disabled(self, server_name: str, disabled: bool) -> None:
+        """Set server_disabled value for all tool, resource, and prompt permissions for a given server.
+
+        Args:
+            server_name: The name of the server to update permissions for
+            disabled: The value to set for server_disabled field
+        """
+
+        # Update tool permissions for the server
+        if server_name in self._by_server["tools"]:
+            for tool_name in self._by_server["tools"][server_name]:
+                if tool_name in self.tool_permissions:
+                    self.tool_permissions[tool_name]["server_disabled"] = disabled
+
+        # Update resource permissions for the server
+        if server_name in self._by_server["resources"]:
+            for resource_name in self._by_server["resources"][server_name]:
+                if resource_name in self.resource_permissions:
+                    self.resource_permissions[resource_name]["server_disabled"] = disabled
+
+        # Update prompt permissions for the server
+        if server_name in self._by_server["prompts"]:
+            for prompt_name in self._by_server["prompts"][server_name]:
+                if prompt_name in self.prompt_permissions:
+                    self.prompt_permissions[prompt_name]["server_disabled"] = disabled
+
+        log.info(f"Set server_disabled={disabled} for permissions in server '{server_name}'")
+
+    def has_server_disabled_permissions(self) -> bool:
+        """Check if at least one tool, resource, or prompt has server_disabled=True.
+
+        Returns:
+            True if any permission has server_disabled=True, False otherwise
+        """
+        # Check tool permissions
+        for tool_perm in self.tool_permissions.values():
+            if tool_perm.get("server_disabled", False):
+                return True
+
+        # Check resource permissions
+        for resource_perm in self.resource_permissions.values():
+            if resource_perm.get("server_disabled", False):
+                return True
+
+        # Check prompt permissions
+        for prompt_perm in self.prompt_permissions.values():
+            if prompt_perm.get("server_disabled", False):
+                return True
+
+        return False
+
+    def debug_print_server_tools_server_disabled_report(self, server_name: str) -> None:
+        """Print a report of all tools for a given server with 2-space indent.
+
+        Args:
+            server_name: The name of the server to generate a report for
+        """
+        if server_name not in self._by_server["tools"]:
+            print(f"  No tools found for server '{server_name}'")
+            return
+
+        tools = self._by_server["tools"][server_name]
+        if not tools:
+            print(f"  No tools found for server '{server_name}'")
+            return
+
+        print(f"  server_disabled for server '{server_name}'")
+        for tool_name in sorted(tools):
+            tool_perm = self.tool_permissions.get(tool_name, {})
+            server_disabled = tool_perm.get("server_disabled", False)
+
+            print(f"    {tool_name}: {server_disabled}")
+
+    def debug_print_all_server_disabled_report(self) -> None:
+        """Print a report of all tools for all servers with 2-space indent."""
+        for server_name in self._by_server["tools"]:
+            self.debug_print_server_tools_server_disabled_report(server_name)
 
 
 # Load global permissions singleton

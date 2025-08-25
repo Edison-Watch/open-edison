@@ -733,5 +733,447 @@ class TestPermissionsIntegration:
             assert "write_file" in enabled_tools_after_reload
 
 
+class TestReloadWithServerDisabled:
+    """Test reload functionality with server_disabled flags."""
+
+    def test_reload_preserves_server_disabled_tools(self):
+        """Test that reload preserves server_disabled flags for tools."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create tool permissions with server mappings
+            tool_perms = {
+                "_metadata": {
+                    "description": "Test tool permissions with server mappings",
+                    "last_updated": "2025-01-01",
+                },
+                "test_server": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                    "write_file": {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": False,
+                        "read_untrusted_public_data": False,
+                        "acl": "PUBLIC",
+                    },
+                },
+                "another_server": {
+                    "query": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "SECRET",
+                    }
+                },
+            }
+
+            # Create resource permissions with server mappings
+            resource_perms = {
+                "_metadata": {
+                    "description": "Test resource permissions with server mappings",
+                    "last_updated": "2025-01-01",
+                },
+                "test_server": {
+                    "file:///home/user": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                    }
+                },
+            }
+
+            # Create prompt permissions with server mappings
+            prompt_perms = {
+                "_metadata": {
+                    "description": "Test prompt permissions with server mappings",
+                    "last_updated": "2025-01-01",
+                },
+                "test_server": {
+                    "system_prompt": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": False,
+                        "read_untrusted_public_data": False,
+                    }
+                },
+            }
+
+            # Write files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
+
+            # Load permissions
+            permissions = Permissions.load(temp_path)
+
+            # Initially, no server_disabled flags should be set
+            assert not permissions.has_server_disabled_permissions()
+
+            # Set server_disabled for test_server
+            permissions.set_server_disabled("test_server", True)
+
+            # Verify server_disabled flags are set
+            assert permissions.has_server_disabled_permissions()
+
+            read_file_perm = permissions.get_tool_permission("read_file")
+            write_file_perm = permissions.get_tool_permission("write_file")
+            user_file_perm = permissions.get_resource_permission("file:///home/user")
+            system_prompt_perm = permissions.get_prompt_permission("system_prompt")
+
+            assert read_file_perm["server_disabled"] is True
+            assert write_file_perm["server_disabled"] is True
+            assert user_file_perm["server_disabled"] is True
+            assert system_prompt_perm["server_disabled"] is True
+
+            # Verify another_server permissions are not affected
+            query_perm = permissions.get_tool_permission("query")
+            assert query_perm["server_disabled"] is False
+
+            # Modify the permission files to change enabled status
+            tool_perms["test_server"]["read_file"]["enabled"] = False
+            tool_perms["test_server"]["write_file"]["enabled"] = False
+            resource_perms["test_server"]["file:///home/user"]["enabled"] = False
+            prompt_perms["test_server"]["system_prompt"]["enabled"] = False
+
+            # Write updated files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
+
+            # Reload permissions
+            permissions.reload()
+
+            # Verify that server_disabled flags are preserved even after reload
+            assert permissions.has_server_disabled_permissions()
+
+            read_file_perm_after = permissions.get_tool_permission("read_file")
+            write_file_perm_after = permissions.get_tool_permission("write_file")
+            user_file_perm_after = permissions.get_resource_permission("file:///home/user")
+            system_prompt_perm_after = permissions.get_prompt_permission("system_prompt")
+
+            assert read_file_perm_after["server_disabled"] is True
+            assert write_file_perm_after["server_disabled"] is True
+            assert user_file_perm_after["server_disabled"] is True
+            assert system_prompt_perm_after["server_disabled"] is True
+
+            # Verify that the enabled status was updated from the files
+            assert read_file_perm_after["enabled"] is False
+            assert write_file_perm_after["enabled"] is False
+            assert user_file_perm_after["enabled"] is False
+            assert system_prompt_perm_after["enabled"] is False
+
+            # Verify another_server permissions are still not affected
+            query_perm_after = permissions.get_tool_permission("query")
+            assert query_perm_after["server_disabled"] is False
+            assert query_perm_after["enabled"] is True
+
+    def test_reload_preserves_server_disabled_when_adding_new_permissions(self):
+        """Test that reload preserves server_disabled flags when new permissions are added."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create initial tool permissions
+            tool_perms = {
+                "_metadata": {
+                    "description": "Initial tool permissions",
+                    "last_updated": "2025-01-01",
+                },
+                "test_server": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                },
+            }
+
+            # Write initial files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
+
+            # Load permissions
+            permissions = Permissions.load(temp_path)
+
+            # Set server_disabled for test_server
+            permissions.set_server_disabled("test_server", True)
+
+            # Verify server_disabled is set
+            read_file_perm = permissions.get_tool_permission("read_file")
+            assert read_file_perm["server_disabled"] is True
+
+            # Add new permissions to the file
+            tool_perms["test_server"]["write_file"] = {
+                "enabled": True,
+                "write_operation": True,
+                "read_private_data": False,
+                "read_untrusted_public_data": False,
+                "acl": "PUBLIC",
+            }
+
+            # Write updated file
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+
+            # Reload permissions
+            permissions.reload()
+
+            # Verify that existing server_disabled flags are preserved
+            read_file_perm_after = permissions.get_tool_permission("read_file")
+            assert read_file_perm_after["server_disabled"] is True
+
+            # Verify that new permissions don't have server_disabled set
+            write_file_perm_after = permissions.get_tool_permission("write_file")
+            assert write_file_perm_after["server_disabled"] is False
+
+    def test_reload_preserves_server_disabled_when_removing_permissions(self):
+        """Test that reload handles server_disabled flags when permissions are removed."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create initial tool permissions
+            tool_perms = {
+                "_metadata": {
+                    "description": "Initial tool permissions",
+                    "last_updated": "2025-01-01",
+                },
+                "test_server": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                    "write_file": {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": False,
+                        "read_untrusted_public_data": False,
+                        "acl": "PUBLIC",
+                    },
+                },
+            }
+
+            # Write initial files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
+
+            # Load permissions
+            permissions = Permissions.load(temp_path)
+
+            # Set server_disabled for test_server
+            permissions.set_server_disabled("test_server", True)
+
+            # Verify server_disabled is set for both tools
+            read_file_perm = permissions.get_tool_permission("read_file")
+            write_file_perm = permissions.get_tool_permission("write_file")
+            assert read_file_perm["server_disabled"] is True
+            assert write_file_perm["server_disabled"] is True
+
+            # Remove one permission from the file
+            del tool_perms["test_server"]["write_file"]
+
+            # Write updated file
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+
+            # Reload permissions
+            permissions.reload()
+
+            # Verify that remaining permission still has server_disabled preserved
+            read_file_perm_after = permissions.get_tool_permission("read_file")
+            assert read_file_perm_after["server_disabled"] is True
+
+            # Verify that removed permission is no longer present
+            write_file_perm_after = permissions.get_tool_permission("write_file")
+            assert write_file_perm_after is None
+
+    def test_reload_preserves_server_disabled_across_multiple_servers(self):
+        """Test that reload preserves server_disabled flags across multiple servers."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create tool permissions with multiple servers
+            tool_perms = {
+                "_metadata": {
+                    "description": "Multi-server tool permissions",
+                    "last_updated": "2025-01-01",
+                },
+                "server1": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                },
+                "server2": {
+                    "write_file": {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": False,
+                        "read_untrusted_public_data": False,
+                        "acl": "PUBLIC",
+                    },
+                },
+                "server3": {
+                    "query": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "SECRET",
+                    }
+                },
+            }
+
+            # Write files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
+
+            # Load permissions
+            permissions = Permissions.load(temp_path)
+
+            # Set server_disabled for different servers
+            permissions.set_server_disabled("server1", True)
+            permissions.set_server_disabled("server3", True)
+
+            # Verify server_disabled flags are set correctly
+            read_file_perm = permissions.get_tool_permission("read_file")
+            write_file_perm = permissions.get_tool_permission("write_file")
+            query_perm = permissions.get_tool_permission("query")
+
+            assert read_file_perm["server_disabled"] is True
+            assert write_file_perm["server_disabled"] is False
+            assert query_perm["server_disabled"] is True
+
+            # Modify permissions in files
+            tool_perms["server1"]["read_file"]["enabled"] = False
+            tool_perms["server2"]["write_file"]["enabled"] = False
+            tool_perms["server3"]["query"]["enabled"] = False
+
+            # Write updated files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+
+            # Reload permissions
+            permissions.reload()
+
+            # Verify that server_disabled flags are preserved for all servers
+            read_file_perm_after = permissions.get_tool_permission("read_file")
+            write_file_perm_after = permissions.get_tool_permission("write_file")
+            query_perm_after = permissions.get_tool_permission("query")
+
+            assert read_file_perm_after["server_disabled"] is True
+            assert write_file_perm_after["server_disabled"] is False
+            assert query_perm_after["server_disabled"] is True
+
+            # Verify that enabled status was updated from files
+            assert read_file_perm_after["enabled"] is False
+            assert write_file_perm_after["enabled"] is False
+            assert query_perm_after["enabled"] is False
+
+    def test_reload_preserves_server_disabled_with_mixed_permission_types(self):
+        """Test that reload preserves server_disabled flags across all permission types."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create permissions with server mappings for all types
+            tool_perms = {
+                "_metadata": {"description": "Tool permissions", "last_updated": "2025-01-01"},
+                "test_server": {
+                    "read_file": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                        "acl": "PRIVATE",
+                    },
+                },
+            }
+
+            resource_perms = {
+                "_metadata": {"description": "Resource permissions", "last_updated": "2025-01-01"},
+                "test_server": {
+                    "file:///home/user": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": False,
+                    }
+                },
+            }
+
+            prompt_perms = {
+                "_metadata": {"description": "Prompt permissions", "last_updated": "2025-01-01"},
+                "test_server": {
+                    "system_prompt": {
+                        "enabled": True,
+                        "write_operation": False,
+                        "read_private_data": False,
+                        "read_untrusted_public_data": False,
+                    }
+                },
+            }
+
+            # Write files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
+
+            # Load permissions
+            permissions = Permissions.load(temp_path)
+
+            # Set server_disabled for test_server
+            permissions.set_server_disabled("test_server", True)
+
+            # Verify server_disabled flags are set for all permission types
+            read_file_perm = permissions.get_tool_permission("read_file")
+            user_file_perm = permissions.get_resource_permission("file:///home/user")
+            system_prompt_perm = permissions.get_prompt_permission("system_prompt")
+
+            assert read_file_perm["server_disabled"] is True
+            assert user_file_perm["server_disabled"] is True
+            assert system_prompt_perm["server_disabled"] is True
+
+            # Modify all permission types
+            tool_perms["test_server"]["read_file"]["enabled"] = False
+            resource_perms["test_server"]["file:///home/user"]["enabled"] = False
+            prompt_perms["test_server"]["system_prompt"]["enabled"] = False
+
+            # Write updated files
+            (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms))
+            (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
+            (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
+
+            # Reload permissions
+            permissions.reload()
+
+            # Verify that server_disabled flags are preserved for all permission types
+            read_file_perm_after = permissions.get_tool_permission("read_file")
+            user_file_perm_after = permissions.get_resource_permission("file:///home/user")
+            system_prompt_perm_after = permissions.get_prompt_permission("system_prompt")
+
+            assert read_file_perm_after["server_disabled"] is True
+            assert user_file_perm_after["server_disabled"] is True
+            assert system_prompt_perm_after["server_disabled"] is True
+
+            # Verify that enabled status was updated from files
+            assert read_file_perm_after["enabled"] is False
+            assert user_file_perm_after["enabled"] is False
+            assert system_prompt_perm_after["enabled"] is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

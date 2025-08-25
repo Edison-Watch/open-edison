@@ -249,22 +249,12 @@ class SessionTrackingMiddleware(Middleware):
         allowed_tools: list[FunctionTool | ProxyTool | Any] = []
         for tool in response:
             log.trace(f"🔍 Processing tool listing {tool.name}")
-            if isinstance(tool, FunctionTool):
-                log.trace("🔍 Tool is built-in")
-                log.trace(f"🔍 Tool is a FunctionTool: {tool}")
-            elif isinstance(tool, ProxyTool):
-                log.trace("🔍 Tool is a user-mounted tool")
-                log.trace(f"🔍 Tool is a ProxyTool: {tool}")
-            else:
-                log.warning("🔍 Tool is of unknown type and will be disabled")
-                log.trace(f"🔍 Tool is a unknown type: {tool}")
-                continue
+            assert isinstance(tool, FunctionTool | ProxyTool)
 
             log.trace(f"🔍 Getting permissions for tool {tool.name}")
             permissions = session.data_access_tracker.get_tool_permissions(tool.name)
             log.trace(f"🔍 Tool permissions: {permissions}")
-            log.debug(f"🔍 Tool enabledment: Perm: {permissions['enabled']}, Tool: {tool.enabled}")
-            if permissions["enabled"]:
+            if permissions["enabled"] and not permissions.get("server_disabled"):
                 allowed_tools.append(tool)
             else:
                 log.warning(
@@ -354,21 +344,12 @@ class SessionTrackingMiddleware(Middleware):
         for resource in response:
             resource_name = str(resource.uri)
             log.trace(f"🔍 Processing resource listing {resource_name}")
-            if isinstance(resource, FunctionResource):
-                log.trace("🔍 Resource is built-in")
-                log.trace(f"🔍 Resource is a FunctionResource: {resource}")
-            elif isinstance(resource, ProxyResource):
-                log.trace("🔍 Resource is a user-mounted tool")
-                log.trace(f"🔍 Resource is a ProxyResource: {resource}")
-            else:
-                log.warning("🔍 Resource is of unknown type and will be disabled")
-                log.trace(f"🔍 Resource is a unknown type: {resource}")
-                continue
+            assert isinstance(resource, FunctionResource | ProxyResource)
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
             permissions = session.data_access_tracker.get_resource_permissions(resource_name)
             log.trace(f"🔍 Resource permissions: {permissions}")
-            if permissions["enabled"]:
+            if permissions["enabled"] and not permissions.get("server_disabled"):
                 allowed_resources.append(resource)
             else:
                 log.warning(
@@ -436,21 +417,12 @@ class SessionTrackingMiddleware(Middleware):
         for prompt in response:
             prompt_name = str(prompt.name)
             log.trace(f"🔍 Processing prompt listing {prompt_name}")
-            if isinstance(prompt, FunctionPrompt):
-                log.trace("🔍 Prompt is built-in")
-                log.trace(f"🔍 Prompt is a FunctionPrompt: {prompt}")
-            elif isinstance(prompt, ProxyPrompt):
-                log.trace("🔍 Prompt is a user-mounted tool")
-                log.trace(f"🔍 Prompt is a ProxyPrompt: {prompt}")
-            else:
-                log.warning("🔍 Prompt is of unknown type and will be disabled")
-                log.trace(f"🔍 Prompt is a unknown type: {prompt}")
-                continue
+            assert isinstance(prompt, ProxyPrompt | FunctionPrompt)
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
             permissions = session.data_access_tracker.get_prompt_permissions(prompt_name)
             log.trace(f"🔍 Prompt permissions: {permissions}")
-            if permissions["enabled"]:
+            if permissions["enabled"] and not permissions.get("server_disabled"):
                 allowed_prompts.append(prompt)
             else:
                 log.warning(

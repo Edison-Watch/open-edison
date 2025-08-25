@@ -141,10 +141,10 @@ class MCPServerConfig:
         Local servers run as child processes and don't need OAuth.
         """
         return (
-            self.command == "npx" and
-            len(self.args) >= 3 and
-            self.args[1] == "mcp-remote" and
-            self.args[2].startswith("https://")
+            self.command == "npx"
+            and len(self.args) >= 3
+            and self.args[1] == "mcp-remote"
+            and self.args[2].startswith("https://")
         )
 
     def get_remote_url(self) -> str | None:

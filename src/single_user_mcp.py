@@ -16,12 +16,12 @@ from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
 )
+from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 from src.permissions import (
     classify_tool_permissions_cached,
     clear_all_classify_permissions_caches,
     permissions,
 )
-from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 
 
 class MountedServerInfo(TypedDict):
@@ -145,7 +145,7 @@ class SingleUserMCP(FastMCP[Any]):
         self,
         server_config: MCPServerConfig,
         fastmcp_config: dict[str, Any],
-        oauth_manager: OAuthManager
+        oauth_manager: OAuthManager,
     ) -> None:
         """Mount a single MCP server with appropriate OAuth handling."""
         server_name = server_config.name
@@ -167,14 +167,18 @@ class SingleUserMCP(FastMCP[Any]):
                     server_name,
                     remote_url,
                     server_config.oauth_scopes,
-                    server_config.oauth_client_name
+                    server_config.oauth_client_name,
                 )
                 if oauth_auth:
                     client = FastMCPClient(remote_url, auth=oauth_auth)
-                    log.info(f"🔐 Created remote client with OAuth authentication for {server_name}")
+                    log.info(
+                        f"🔐 Created remote client with OAuth authentication for {server_name}"
+                    )
                 else:
                     client = FastMCPClient(remote_url)
-                    log.warning(f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}")
+                    log.warning(
+                        f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}"
+                    )
             else:
                 # Remote server without OAuth or needs auth
                 client = FastMCPClient(remote_url)
@@ -182,8 +186,10 @@ class SingleUserMCP(FastMCP[Any]):
 
             # Log OAuth status warnings
             if oauth_info.status == OAuthStatus.NEEDS_AUTH:
-                log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
-                          f"Server will be mounted without authentication and may fail.")
+                log.warning(
+                    f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
+                    f"Server will be mounted without authentication and may fail."
+                )
             elif oauth_info.status == OAuthStatus.ERROR:
                 log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
 
@@ -199,7 +205,9 @@ class SingleUserMCP(FastMCP[Any]):
         self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
-        log.info(f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})")
+        log.info(
+            f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})"
+        )
 
     async def _rebuild_composite_proxy_without(self, excluded_server: str) -> bool:
         """Rebuild the composite proxy without the specified server."""
@@ -269,7 +277,6 @@ class SingleUserMCP(FastMCP[Any]):
 
     async def reinitialize(self, test_config: Any | None = None) -> dict[str, Any]:
         """
-        UNUSED
         Reinitialize all MCP servers by cleaning up existing ones and reloading config.
 
         This method:
@@ -428,12 +435,13 @@ class SingleUserMCP(FastMCP[Any]):
             """
             Get a list of all available tools. Use this tool to get an updated list of available tools.
             """
-            tool_list = await self._tool_manager.list_tools()
+            tool_list = await self.get_tools()
+
             available_tools: list[str] = []
-            for tool in tool_list:
-                perms = classify_tool_permissions_cached(tool.name)
-                if perms.get("enabled"):
-                    available_tools.append(tool.name)
+            for tool_name in tool_list:
+                perms = classify_tool_permissions_cached(tool_name)
+                if perms.get("enabled") and not perms.get("server_disabled"):
+                    available_tools.append(tool_name)
             return available_tools
 
         @self.tool()

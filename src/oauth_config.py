@@ -108,41 +108,41 @@ OAUTH_SERVER_PRESETS: list[OAuthServerPreset] = [
         display_name="Google Drive",
         default_scopes=[
             "https://www.googleapis.com/auth/drive.readonly",
-            "https://www.googleapis.com/auth/drive.file"
+            "https://www.googleapis.com/auth/drive.file",
         ],
         description="Access Google Drive files and folders",
-        documentation_url="https://developers.google.com/drive/api/guides/api-specific-auth"
+        documentation_url="https://developers.google.com/drive/api/guides/api-specific-auth",
     ),
     OAuthServerPreset(
         server_pattern="github",
         display_name="GitHub",
         default_scopes=["repo", "user:email"],
         description="Access GitHub repositories and user information",
-        documentation_url="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps"
+        documentation_url="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps",
     ),
     OAuthServerPreset(
         server_pattern="microsoft",
         display_name="Microsoft Graph",
         default_scopes=[
             "https://graph.microsoft.com/Files.ReadWrite",
-            "https://graph.microsoft.com/User.Read"
+            "https://graph.microsoft.com/User.Read",
         ],
         description="Access Microsoft 365 files and user information",
-        documentation_url="https://docs.microsoft.com/en-us/graph/auth/"
+        documentation_url="https://docs.microsoft.com/en-us/graph/auth/",
     ),
     OAuthServerPreset(
         server_pattern="slack",
         display_name="Slack",
         default_scopes=["channels:read", "chat:write", "users:read"],
         description="Access Slack channels and send messages",
-        documentation_url="https://api.slack.com/authentication/oauth-v2"
+        documentation_url="https://api.slack.com/authentication/oauth-v2",
     ),
     OAuthServerPreset(
         server_pattern="notion",
         display_name="Notion",
         default_scopes=["read", "insert", "update"],
         description="Access and modify Notion pages and databases",
-        documentation_url="https://developers.notion.com/docs/authorization"
+        documentation_url="https://developers.notion.com/docs/authorization",
     ),
 ]
 
