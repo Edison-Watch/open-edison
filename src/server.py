@@ -380,7 +380,8 @@ class OpenEdisonProxy:
         )
         app.add_api_route(
             "/mcp/reinitialize",
-            self.reinitialize_mcp_servers,
+            # self.reinitialize_mcp_servers,
+            self.remount_mcp_servers,
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
@@ -566,6 +567,26 @@ class OpenEdisonProxy:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to reinitialize MCP servers: {str(e)}",
+            ) from e
+
+    async def remount_mcp_servers(self) -> dict[str, Any]:
+        """Remount all MCP servers by creating a fresh instance and reloading config."""
+        try:
+            log.info("🔄 Reinitializing MCP servers via API endpoint")
+            await self.single_user_mcp.reinitialize()
+            return {
+                "status": "success",
+                "message": "MCP servers reinitialized successfully",
+                "mounted_servers": [
+                    server["name"] for server in await self.single_user_mcp.get_mounted_servers()
+                ],
+                "total_mounted": len(await self.single_user_mcp.get_mounted_servers()),
+            }
+        except Exception as e:
+            log.error(f"❌ Failed to remount MCP servers: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to remount MCP servers: {str(e)}",
             ) from e
 
     async def get_sessions(self) -> dict[str, Any]:
