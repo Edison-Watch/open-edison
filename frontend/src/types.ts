@@ -26,4 +26,54 @@ export type PermissionFlags = {
   description?: string
 }
 
+export type OAuthStatus = 
+  | 'unknown'
+  | 'not_required'
+  | 'needs_auth'
+  | 'authenticated'
+  | 'error'
+  | 'expired'
+
+export type OAuthServerInfo = {
+  server_name: string
+  mcp_url?: string
+  status: OAuthStatus
+  error_message?: string | null
+  token_expires_at?: string | null
+  has_refresh_token: boolean
+  scopes?: string[] | null
+  client_name?: string
+}
+
+export type OAuthStatusResponse = {
+  oauth_status: Record<string, OAuthServerInfo>
+}
+
+export type OAuthAuthorizeRequest = {
+  scopes?: string[]
+  client_name?: string
+}
+
+export type OAuthAuthorizeResponse = {
+  status: 'authorization_started'
+  message: string
+  server_name: string
+}
+
+export type OAuthClearTokensResponse = {
+  status: 'success'
+  message: string
+  server_name: string
+}
+
+export type OAuthRefreshResponse = {
+  status: 'refreshed'
+  server_name: string
+  oauth_status: OAuthStatus
+  error_message?: string | null
+  token_expires_at?: string | null
+  has_refresh_token: boolean
+  scopes?: string[] | null
+}
+
 
