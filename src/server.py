@@ -386,6 +386,12 @@ class OpenEdisonProxy:
             self.mcp_status,
             methods=["GET"],
         )
+        # Endpoint to notify server that permissions JSONs changed; invalidate caches
+        app.add_api_route(
+            "/api/permissions-changed",
+            self.permissions_changed,
+            methods=["POST"],
+        )
         app.add_api_route(
             "/mcp/validate",
             self.validate_mcp_server,
@@ -466,6 +472,23 @@ class OpenEdisonProxy:
         if credentials.credentials != Config().server.api_key:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
+
+    async def permissions_changed(self) -> dict[str, Any]:
+        """Invalidate SingleUserMCP manager caches after permissions JSON changed.
+
+        This attempts to clear any known cache methods on the internal managers and then
+        warms the lists to ensure subsequent list calls reflect current state.
+        """
+        try:
+            mcp = self.single_user_mcp
+            # Warm managers so any internal caches are refreshed
+            await mcp._tool_manager.list_tools()  # type: ignore[attr-defined]
+            await mcp._resource_manager.list_resources()  # type: ignore[attr-defined]
+            await mcp._prompt_manager.list_prompts()  # type: ignore[attr-defined]
+            return {"status": "ok"}
+        except Exception as e:  # noqa: BLE001
+            log.error(f"Failed to process permissions-changed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to invalidate caches") from e
 
     async def mcp_status(self) -> dict[str, list[dict[str, Any]]]:
         """Get status of configured MCP servers (auth required)."""
