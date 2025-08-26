@@ -31,6 +31,7 @@ export function App(): React.JSX.Element {
     // Day range filter (calendar selectors)
     const [startDay, setStartDay] = useState<string>('')
     const [endDay, setEndDay] = useState<string>('')
+    const [showUnknown, setShowUnknown] = useState<boolean>(false)
 
     const compareDays = (a?: string, b?: string) => {
         if (!a && !b) return 0
@@ -41,14 +42,20 @@ export function App(): React.JSX.Element {
 
     const filtered = useMemo(() => {
         return uiSessions.filter((s) => {
-            if (!s.day) return true
+            if (!s.day) return false
             if (startDay && compareDays(s.day, startDay) < 0) return false
             if (endDay && compareDays(s.day, endDay) > 0) return false
             return true
         })
     }, [uiSessions, startDay, endDay])
 
-    const totalCalls = useMemo(() => filtered.reduce((acc, s) => acc + s.tool_calls.length, 0), [filtered])
+    const unknownSessions = useMemo(() => uiSessions.filter((s) => !s.day), [uiSessions])
+
+    const totalCalls = useMemo(() => {
+        const base = filtered.reduce((acc, s) => acc + s.tool_calls.length, 0)
+        if (!showUnknown) return base
+        return base + unknownSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)
+    }, [filtered, unknownSessions, showUnknown])
     const [theme, setTheme] = useState<'light' | 'dark'>(() => (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
 
     useEffect(() => {
@@ -314,11 +321,18 @@ export function App(): React.JSX.Element {
                             />
                         </div>
                         <button className="button" onClick={() => { setStartDay(''); setEndDay('') }}>Clear</button>
+                        <div className="flex items-center gap-2 ml-auto">
+                            <span className="text-xs text-app-muted">Show unknown date</span>
+                            <Toggle checked={showUnknown} onChange={setShowUnknown} />
+                            {unknownSessions.length > 0 && !showUnknown && (
+                                <span className="text-xs text-app-muted">({unknownSessions.length} hidden)</span>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Timeline with drag selection */}
+                    {/* Timeline with drag selection (exclude unknown-date to avoid crowding) */}
                     <Timeline
-                        sessions={uiSessions}
+                        sessions={filtered}
                         startDay={startDay}
                         endDay={endDay}
                         onRangeChange={(s, e) => { setStartDay(s); setEndDay(e) }}
@@ -336,6 +350,13 @@ export function App(): React.JSX.Element {
                     )}
 
                     <SessionTable sessions={filtered} />
+
+                    {showUnknown && unknownSessions.length > 0 && (
+                        <div className="space-y-2">
+                            <div className="text-xs text-app-muted">Unknown date</div>
+                            <SessionTable sessions={unknownSessions} />
+                        </div>
+                    )}
                 </div>
             ) : view === 'configs' ? (
                 <JsonEditors projectRoot={projectRoot} />
@@ -586,7 +607,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                         const configData = await configResponse.json()
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
-                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         })
@@ -993,7 +1014,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 // Get server config from the loaded config
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
@@ -1055,7 +1076,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             try {
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/parmissions-changed`, {
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })

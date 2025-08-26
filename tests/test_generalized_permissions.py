@@ -19,6 +19,12 @@ from src.permissions import (  # type: ignore
 )
 
 
+@pytest.fixture(autouse=True)
+def _force_repo_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests use repo-root config/permissions instead of user config."""
+    monkeypatch.setenv("OPEN_EDISON_CONFIG_DIR", str(Path(__file__).parent.parent))
+
+
 class TestResourcePermissions:
     """Test resource access permission framework."""
 

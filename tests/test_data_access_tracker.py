@@ -4,14 +4,23 @@ Tests for Data Access Tracker
 Tests the lethal trifecta monitoring functionality.
 """
 
+from pathlib import Path
+
 import pytest
 
 from src.middleware.data_access_tracker import (  # type: ignore[reportMissingTypeStubs]
     DataAccessTracker,
     SecurityError,
 )
-from src.permissions import PermissionsError  # type: ignore[reportMissingTypeStubs]
+from src.permissions import Permissions, PermissionsError  # type: ignore[reportMissingTypeStubs]
 from tests.test_template import TestTemplate  # type: ignore[reportMissingTypeStubs]
+
+
+@pytest.fixture(autouse=True)
+def _force_repo_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests use repo-root config/permissions instead of user config and servers are treated as enabled."""
+    monkeypatch.setenv("OPEN_EDISON_CONFIG_DIR", str(Path(__file__).parent.parent))
+    monkeypatch.setattr(Permissions, "is_server_enabled", lambda self, name: True, raising=True)
 
 
 class TestDataAccessTracker(TestTemplate):

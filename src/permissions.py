@@ -12,7 +12,7 @@ from typing import Any
 
 from loguru import logger as log
 
-from src.config import config, get_config_dir
+from src.config import Config, get_config_dir
 
 # Detect repository root (same logic as in src.config)
 _ROOT_DIR = Path(__file__).parent.parent
@@ -262,7 +262,7 @@ class Permissions:
         if parts[0] == "builtin":
             return "builtin"
 
-        server_names = {s.name for s in config.mcp_servers}
+        server_names = {s.name for s in Config().mcp_servers}
         for i in range(len(parts)):
             server_name = "_".join(parts[:i])
             if server_name in server_names:
@@ -274,7 +274,7 @@ class Permissions:
         """Check if a server is enabled"""
         if server_name == "builtin":
             return True
-        server_config = next((s for s in config.mcp_servers if s.name == server_name), None)
+        server_config = next((s for s in Config().mcp_servers if s.name == server_name), None)
         return server_config is not None and server_config.enabled
 
 

@@ -67,6 +67,7 @@ def prompt_source_choice() -> str:
 
 
 def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
+    # TODO check this works as we want it to
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
@@ -82,7 +83,7 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
     target_path = target_dir / "config.json"
 
     # Load existing config (auto-creates default if missing via Config.load)
-    config_obj: Any = Config.load(target_dir)
+    config_obj: Any = Config(target_dir)
 
     # Import
     try:

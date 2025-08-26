@@ -181,8 +181,7 @@ class Config:
             log.warning(f"Failed to read version from pyproject.toml: {e}")
             return "unknown"
 
-    @classmethod
-    def load(cls, config_path: Path | None = None) -> "Config":
+    def __init__(self, config_path: Path | None = None) -> None:
         """Load configuration from JSON file.
 
         If a directory path is provided, will look for `config.json` inside it.
@@ -199,9 +198,8 @@ class Config:
 
         if not config_path.exists():
             log.warning(f"Config file not found at {config_path}, creating default config")
-            default_config = cls.create_default()
-            default_config.save(config_path)
-            return default_config
+            self.create_default()
+            self.save(config_path)
 
         with open(config_path) as f:
             data: dict[str, Any] = json.load(f)
@@ -239,15 +237,13 @@ class Config:
             export_interval_ms=export_interval_ms,
         )
 
-        return cls(
-            server=ServerConfig(**server_data),  # type: ignore
-            logging=LoggingConfig(**logging_data),  # type: ignore
-            mcp_servers=[
-                MCPServerConfig(**server_item)  # type: ignore
-                for server_item in mcp_servers_data  # type: ignore
-            ],
-            telemetry=telemetry_cfg,
-        )
+        self.server = ServerConfig(**server_data)  # type: ignore
+        self.logging = LoggingConfig(**logging_data)  # type: ignore
+        self.mcp_servers = [
+            MCPServerConfig(**server_item)  # type: ignore
+            for server_item in mcp_servers_data  # type: ignore
+        ]
+        self.telemetry = telemetry_cfg
 
     def save(self, config_path: Path | None = None) -> None:
         """Save configuration to JSON file"""
@@ -274,39 +270,19 @@ class Config:
 
         log.info(f"Configuration saved to {config_path}")
 
-    @classmethod
-    def create_default(cls) -> "Config":
+    def create_default(self) -> None:
         """Create default configuration"""
-        return cls(
-            server=ServerConfig(),
-            logging=LoggingConfig(),
-            mcp_servers=[
-                MCPServerConfig(
-                    name="filesystem",
-                    command="uvx",
-                    args=["mcp-server-filesystem", "/tmp"],
-                    enabled=False,
-                )
-            ],
-            telemetry=TelemetryConfig(
-                enabled=True,
-                otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
-            ),
+        self.server = ServerConfig()
+        self.logging = LoggingConfig()
+        self.mcp_servers = [
+            MCPServerConfig(
+                name="filesystem",
+                command="uvx",
+                args=["mcp-server-filesystem", "/tmp"],
+                enabled=False,
+            )
+        ]
+        self.telemetry = TelemetryConfig(
+            enabled=True,
+            otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
         )
-
-    def reload(self) -> None:
-        """Reload configuration from file"""
-        new_config = Config.load()
-        del self.server
-        self.server = new_config.server
-        del self.logging
-        self.logging = new_config.logging
-        del self.mcp_servers
-        self.mcp_servers = new_config.mcp_servers
-        del self.telemetry
-        self.telemetry = new_config.telemetry
-        log.info("✅ Configuration reloaded from file")
-
-
-# Load global configuration
-config = Config.load()

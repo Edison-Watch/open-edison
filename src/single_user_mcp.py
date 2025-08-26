@@ -11,7 +11,7 @@ from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
 from loguru import logger as log
 
-from src.config import MCPServerConfig, config
+from src.config import Config, MCPServerConfig
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
@@ -23,7 +23,7 @@ from src.permissions import Permissions, PermissionsError
 class MountedServerInfo(TypedDict):
     """Type definition for mounted server information."""
 
-    config: MCPServerConfig
+    config: MCPServerConfig  # noqa
     proxy: FastMCP[Any] | None
 
 
@@ -31,7 +31,7 @@ class ServerStatusInfo(TypedDict):
     """Type definition for server status information."""
 
     name: str
-    config: dict[str, str | list[str] | bool | dict[str, str] | None]
+    config: dict[str, str | list[str] | bool | dict[str, str] | None]  # noqa
     mounted: bool
 
 
@@ -213,7 +213,7 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Find server configuration
         server_config: MCPServerConfig | None = next(
-            (s for s in config.mcp_servers if s.name == server_name), None
+            (s for s in Config().mcp_servers if s.name == server_name), None
         )
 
         if server_config is None:
@@ -277,14 +277,13 @@ class SingleUserMCP(FastMCP[Any]):
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
 
-    async def initialize(self, test_config: Any | None = None) -> None:
+    async def initialize(self) -> None:
         """Initialize the FastMCP server using unified composite proxy approach."""
         log.info("Initializing Single User MCP server with composite proxy")
-        config_to_use = test_config if test_config is not None else config
-        log.debug(f"Available MCP servers in config: {[s.name for s in config_to_use.mcp_servers]}")
+        log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
 
         # Get all enabled servers
-        enabled_servers = [s for s in config_to_use.mcp_servers if s.enabled]
+        enabled_servers = [s for s in Config().mcp_servers if s.enabled]
         log.info(
             f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
         )
@@ -350,7 +349,7 @@ class SingleUserMCP(FastMCP[Any]):
             log.info("ℹ️  Server info tool called")
             return {
                 "name": "Open Edison Single User",
-                "version": config.version,
+                "version": Config().version,
                 "mounted_servers": list(mounted_servers.keys()),
                 "total_mounted": len(mounted_servers),
             }
@@ -425,7 +424,7 @@ class SingleUserMCP(FastMCP[Any]):
         def builtin_get_app_config() -> dict[str, Any]:
             """Get application configuration."""
             return {
-                "version": config.version,
+                "version": Config().version,
                 "mounted_servers": list(mounted_servers.keys()),
                 "total_mounted": len(mounted_servers),
             }

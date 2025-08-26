@@ -23,9 +23,8 @@ from fastmcp import FastMCP
 from loguru import logger as log
 from pydantic import BaseModel, Field
 
-# get_session_from_db import removed; no longer needed for one-time approvals
 from src import events
-from src.config import MCPServerConfig, config
+from src.config import Config, MCPServerConfig
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.middleware.session_tracking import (
     MCPSessionModel,
@@ -34,14 +33,6 @@ from src.middleware.session_tracking import (
 from src.oauth_manager import OAuthStatus, get_oauth_manager
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
-
-
-def _get_current_config():
-    """Get current config, allowing for test mocking."""
-    from src.config import config as current_config
-
-    return current_config
-
 
 # Module-level dependency singletons
 _security = HTTPBearer()
@@ -106,6 +97,15 @@ class OpenEdisonProxy:
                         StaticFiles(directory=str(assets_dir), html=False),
                         name="dashboard-assets",
                     )
+                # Serve service worker at root path for registration at /sw.js
+                sw_path = static_dir / "sw.js"
+                if sw_path.exists():
+
+                    async def _sw() -> FileResponse:  # type: ignore[override]
+                        # Service workers must be served from the origin root scope
+                        return FileResponse(str(sw_path), media_type="application/javascript")
+
+                    app.add_api_route("/sw.js", _sw, methods=["GET"])  # type: ignore[arg-type]
                 favicon_path = static_dir / "favicon.ico"
                 if favicon_path.exists():
 
@@ -120,49 +120,29 @@ class OpenEdisonProxy:
             log.warning(f"Failed to mount dashboard static assets: {mount_err}")
 
         # Special-case: serve SQLite db and config JSONs for dashboard (prod replacement for Vite @fs)
-        def _resolve_db_path() -> Path | None:
-            try:
-                # Try configured database path first
-                db_cfg = getattr(config.logging, "database_path", None)
-                if isinstance(db_cfg, str) and db_cfg:
-                    db_path = Path(db_cfg)
-                    if db_path.is_absolute() and db_path.exists():
-                        return db_path
-                    # Check relative to config dir
-                    try:
-                        cfg_dir = _get_cfg_dir()
-                    except Exception:
-                        cfg_dir = Path.cwd()
-                    rel1 = cfg_dir / db_path
-                    if rel1.exists():
-                        return rel1
-                    # Also check relative to cwd as a fallback
-                    rel2 = Path.cwd() / db_path
-                    if rel2.exists():
-                        return rel2
-            except Exception:
-                pass
-
-            # Fallback common locations
+        def _resolve_db_path() -> Path:
+            # Try configured database path first
+            db_cfg = Config().logging.database_path
+            db_path = Path(db_cfg)
+            if db_path.is_absolute() and db_path.exists():
+                return db_path
+            # Check relative to config dir
             try:
                 cfg_dir = _get_cfg_dir()
             except Exception:
                 cfg_dir = Path.cwd()
-            candidates = [
-                cfg_dir / "sessions.db",
-                cfg_dir / "sessions.db",
-                Path.cwd() / "edison.db",
-                Path.cwd() / "sessions.db",
-            ]
-            for c in candidates:
-                if c.exists():
-                    return c
-            return None
+            rel1 = cfg_dir / db_path
+            if rel1.exists():
+                return rel1
+            # Also check relative to cwd as a fallback
+            rel2 = Path.cwd() / db_path
+            if rel2.exists():
+                return rel2
+
+            raise FileNotFoundError(f"Database file not found at {db_path}")
 
         async def _serve_db() -> FileResponse:  # type: ignore[override]
             db_file = _resolve_db_path()
-            if db_file is None:
-                raise HTTPException(status_code=404, detail="Database file not found")
             return FileResponse(str(db_file), media_type="application/octet-stream")
 
         # Provide multiple paths the SPA might attempt (both edison.db legacy and sessions.db canonical)
@@ -357,7 +337,7 @@ class OpenEdisonProxy:
         await self.single_user_mcp.initialize()
 
         # Emit snapshot of enabled servers
-        enabled_count = len([s for s in config.mcp_servers if s.enabled])
+        enabled_count = len([s for s in Config().mcp_servers if s.enabled])
         set_servers_installed(enabled_count)
 
         # Add CORS middleware to FastAPI
@@ -377,7 +357,7 @@ class OpenEdisonProxy:
             app=self.fastapi_app,
             host=self.host,
             port=self.port + 1,
-            log_level=config.logging.level.lower(),
+            log_level=Config().logging.level.lower(),
         )
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
@@ -388,7 +368,7 @@ class OpenEdisonProxy:
             app=mcp_app,
             host=self.host,
             port=self.port,
-            log_level=config.logging.level.lower(),
+            log_level=Config().logging.level.lower(),
         )
         fastmcp_server = uvicorn.Server(fastmcp_config)
         servers_to_run.append(fastmcp_server.serve())
@@ -442,12 +422,6 @@ class OpenEdisonProxy:
             self.get_sessions,
             methods=["GET"],
         )
-        # Cache invalidation endpoint (no auth required - allowed to fail)
-        app.add_api_route(
-            "/api/parmissions-changed",
-            self.permissions_changed,
-            methods=["POST"],
-        )
 
         # OAuth endpoints
         app.add_api_route(
@@ -489,8 +463,7 @@ class OpenEdisonProxy:
 
         Returns the API key string if valid, otherwise raises HTTPException.
         """
-        current_config = _get_current_config()
-        if credentials.credentials != current_config.server.api_key:
+        if credentials.credentials != Config().server.api_key:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
 
@@ -502,13 +475,13 @@ class OpenEdisonProxy:
                     "name": server.name,
                     "enabled": server.enabled,
                 }
-                for server in config.mcp_servers
+                for server in Config().mcp_servers
             ]
         }
 
     async def health_check(self) -> dict[str, Any]:
         """Health check endpoint"""
-        return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(config.mcp_servers)}
+        return {"status": "healthy", "version": "0.1.0", "mcp_servers": len(Config().mcp_servers)}
 
     async def get_mounted_servers(self) -> dict[str, Any]:
         """Get list of currently mounted MCP servers."""
@@ -529,11 +502,6 @@ class OpenEdisonProxy:
         """
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
-
-            # Reload config in-place to pick up latest saved settings
-            config.reload()
-            # Recreate permissions by constructing a new instance where needed
-            log.info("✅ Configuration reloaded from disk")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
             old_mcp = self.single_user_mcp
@@ -634,24 +602,6 @@ class OpenEdisonProxy:
         except Exception as e:
             log.error(f"Failed to fetch sessions: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch sessions") from e
-
-    async def permissions_changed(self) -> dict[str, str]:
-        """Reload permissions from configuration files."""
-        try:
-            log.info("🔄 Reloading permissions from configuration files via API endpoint")
-            # Reload config in-place to pick up latest saved settings
-            config.reload()
-            # No global reload; permissions are re-read per instantiation
-            log.info("✅ Permissions reloaded from configuration files successfully")
-
-            return {"status": "success", "message": "Permissions reloaded from configuration files"}
-        except Exception as e:
-            log.error(f"❌ Failed to reload permissions from configuration files: {e}")
-            # Don't raise HTTPException - allow to fail gracefully as requested
-            return {
-                "status": "error",
-                "message": f"Failed to reload permissions from configuration files: {str(e)}",
-            }
 
     # ---- MCP validation ----
     class _ValidateRequest(BaseModel):
@@ -800,11 +750,10 @@ class OpenEdisonProxy:
     async def get_oauth_status_all(self) -> dict[str, Any]:
         """Get OAuth status for all configured MCP servers."""
         try:
-            current_config = _get_current_config()
             oauth_manager = get_oauth_manager()
 
             servers_info = {}
-            for server_config in current_config.mcp_servers:
+            for server_config in Config().mcp_servers:
                 server_name = server_config.name
                 info = oauth_manager.get_server_info(server_name)
 
@@ -859,8 +808,7 @@ class OpenEdisonProxy:
 
     def _find_server_config(self, server_name: str) -> MCPServerConfig:
         """Find server configuration by name."""
-        current_config = _get_current_config()
-        for config_server in current_config.mcp_servers:
+        for config_server in Config().mcp_servers:
             if config_server.name == server_name:
                 return config_server
         raise HTTPException(

@@ -6,10 +6,18 @@ This test file focuses on tool permissions while the generalized permissions
 are tested in test_generalized_permissions.py.
 """
 
+from pathlib import Path
+
 import pytest
 
 from src.middleware.data_access_tracker import DataAccessTracker
 from src.permissions import PermissionsError
+
+
+@pytest.fixture(autouse=True)
+def _force_repo_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests use repo-root config/permissions instead of user config."""
+    monkeypatch.setenv("OPEN_EDISON_CONFIG_DIR", str(Path(__file__).parent.parent))
 
 
 def test_json_config_loading():

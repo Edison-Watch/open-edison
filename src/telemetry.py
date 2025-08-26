@@ -34,7 +34,7 @@ from opentelemetry.sdk import metrics as ot_sdk_metrics
 from opentelemetry.sdk.metrics import export as ot_metrics_export
 from opentelemetry.sdk.resources import Resource  # type: ignore[reportMissingTypeStubs]
 
-from src.config import TelemetryConfig, config, get_config_dir
+from src.config import Config, TelemetryConfig, get_config_dir
 
 _initialized: bool = False
 _install_id: str | None = None
@@ -91,7 +91,7 @@ def _ensure_install_id() -> str:
 
 
 def _telemetry_enabled() -> bool:
-    tel_cfg = config.telemetry or TelemetryConfig()
+    tel_cfg = Config().telemetry or TelemetryConfig()
     return bool(tel_cfg.enabled)
 
 
@@ -131,7 +131,7 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
     if _initialized:
         return
 
-    telemetry_cfg = override if override is not None else (config.telemetry or TelemetryConfig())
+    telemetry_cfg = override if override is not None else (Config().telemetry or TelemetryConfig())
     if not telemetry_cfg.enabled:
         log.debug("Telemetry disabled by config")
         _initialized = True
@@ -179,7 +179,7 @@ def initialize_telemetry(override: TelemetryConfig | None = None) -> None:  # no
         os_description = platform.platform()
         host_arch = platform.machine()
         runtime_version = platform.python_version()
-        service_version = getattr(config, "version", "unknown")
+        service_version = Config().version
 
         # Attach a resource so metrics include service identifiers
         resource = Resource.create(
