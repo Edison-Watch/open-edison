@@ -4,7 +4,7 @@
 
 Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing. No more "approve fatigue" with the MCP tool-call approvals.
 
-OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & dat exfiltration by malicious actors.
+OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
 
 
 <p align="center">
