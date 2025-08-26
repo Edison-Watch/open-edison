@@ -16,7 +16,13 @@ from typing import Any, Literal, cast
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP
@@ -303,6 +309,12 @@ class OpenEdisonProxy:
 
         app.add_api_route("/@fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
         app.add_api_route("/%40fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
+
+        # Redirect root to dashboard
+        async def _root_redirect() -> RedirectResponse:  # type: ignore[override]
+            return RedirectResponse(url="/dashboard")
+
+        app.add_api_route("/", _root_redirect, methods=["GET"])  # type: ignore[arg-type]
 
         return app
 
