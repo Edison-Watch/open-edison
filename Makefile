@@ -28,13 +28,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 .PHONY: run
 run: check_rye sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
-	rye run python main.py
-
-# Run the server in development mode
-.PHONY: dev
-dev: ## Run the server in development mode
-	@echo "🔧 Starting Open Edison in development mode..."
-	rye run python main.py
+	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir rye run python main.py
 
 ########################################################
 # Check dependencies

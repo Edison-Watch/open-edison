@@ -218,3 +218,5 @@ frontend/node_modules/
 frontend/package-lock.json
 .vscode
 install_id
+dev_config_dir/
+sessions.db

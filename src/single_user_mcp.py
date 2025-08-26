@@ -288,6 +288,10 @@ class SingleUserMCP(FastMCP[Any]):
             f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
         )
 
+        # Unmount all servers
+        for server_name in list(mounted_servers.keys()):
+            await self.unmount(server_name)
+
         # Create composite proxy for all real servers
         success = await self.create_composite_proxy(enabled_servers)
         if not success:
@@ -295,6 +299,11 @@ class SingleUserMCP(FastMCP[Any]):
             return
 
         log.info("✅ Single User MCP server initialized with composite proxy")
+
+        # Invalidate and warm lists to ensure reload
+        _ = await self._tool_manager.list_tools()
+        _ = await self._resource_manager.list_resources()
+        _ = await self._prompt_manager.list_prompts()
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """
@@ -386,7 +395,7 @@ class SingleUserMCP(FastMCP[Any]):
             """
             tool_list = await self._tool_manager.list_tools()
             available_tools: list[str] = []
-            log.debug(f"Raw tool list: {tool_list}")
+            log.trace(f"Raw tool list: {tool_list}")
             perms = Permissions()
             for tool in tool_list:
                 # Use the prefixed key (e.g., "filesystem_read_file") to match flattened permissions

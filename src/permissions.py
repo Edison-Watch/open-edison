@@ -14,22 +14,8 @@ from loguru import logger as log
 
 from src.config import Config, get_config_dir
 
-# Detect repository root (same logic as in src.config)
-_ROOT_DIR = Path(__file__).parent.parent
-
 
 def _default_permissions_dir() -> Path:
-    """Resolve default permissions directory.
-
-    In development (repo checkout with pyproject.toml), prefer repository root so
-    we use repo-local tool/resource/prompt permissions JSON files. Otherwise fall
-    back to the standard user config directory.
-    """
-    try:
-        if (_ROOT_DIR / "pyproject.toml").exists():
-            return _ROOT_DIR
-    except Exception:
-        pass
     return get_config_dir()
 
 

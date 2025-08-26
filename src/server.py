@@ -30,7 +30,7 @@ from loguru import logger as log
 from pydantic import BaseModel, Field
 
 from src import events
-from src.config import Config, MCPServerConfig
+from src.config import Config, MCPServerConfig, load_json_file
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.middleware.session_tracking import (
     MCPSessionModel,
@@ -250,6 +250,11 @@ class OpenEdisonProxy:
                 _ = json.loads(content or "{}")
                 target.write_text(content or "{}", encoding="utf-8")
                 log.debug(f"Saved JSON config to {target}")
+
+                # Clear cache for the config file, if it was config.json
+                if name == "config.json":
+                    load_json_file.cache_clear()
+
                 return {"status": "ok"}
             except Exception as e:  # noqa: BLE001
                 raise HTTPException(status_code=400, detail=f"Save failed: {e}") from e
@@ -539,9 +544,9 @@ class OpenEdisonProxy:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
-            old_mcp = self.single_user_mcp
-            self.single_user_mcp = SingleUserMCP()
-            del old_mcp
+            # old_mcp = self.single_user_mcp
+            # self.single_user_mcp = SingleUserMCP()
+            # del old_mcp
 
             # Initialize the new instance with fresh config
             await self.single_user_mcp.initialize()

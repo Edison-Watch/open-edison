@@ -10,6 +10,7 @@ import os
 import sys
 import tomllib
 from dataclasses import asdict, dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -37,8 +38,7 @@ def get_config_dir() -> Path:
         try:
             return Path(env_dir).expanduser().resolve()
         except Exception:
-            # Fall through to defaults
-            pass
+            log.warning(f"Failed to resolve OPEN_EDISON_CONFIG_DIR: {env_dir}")
 
     # Platform-specific defaults
     try:
@@ -58,26 +58,8 @@ def get_config_dir() -> Path:
         return (Path.home() / ".open-edison").resolve()
 
 
-def _default_config_path() -> Path:
-    """Determine default config.json path.
-
-    In development (editable or source checkout), prefer repository root
-    `config.json` when present. In an installed package (site-packages),
-    use the resolved user config dir.
-    """
-    repo_pyproject = root_dir / "pyproject.toml"
-    repo_config = root_dir / "config.json"
-
-    # If pyproject.toml exists next to src/, we are likely in a repo checkout
-    # Prefer the user config directory if a config already exists there (runtime source of truth),
-    # otherwise fall back to the repo copy.
-    if repo_pyproject.exists():
-        user_cfg = get_config_dir() / "config.json"
-        if user_cfg.exists():
-            return user_cfg
-        return repo_config
-
-    # Installed package: prefer user config directory
+def get_config_json_path() -> Path:
+    """Get the path to the config.json file"""
     return get_config_dir() / "config.json"
 
 
@@ -156,6 +138,15 @@ class TelemetryConfig:
     export_interval_ms: int = 60000
 
 
+@cache
+def load_json_file(path: Path) -> dict[str, Any]:
+    """Load a JSON file from the given path.
+    Kept as a separate function because we want to manually clear cache sometimes (update in config)"""
+    log.info(f"Loading configuration from {path}")
+    with open(path) as f:
+        return json.load(f)
+
+
 @dataclass
 class Config:
     """Main configuration class"""
@@ -188,21 +179,18 @@ class Config:
         If no path is provided, uses OPEN_EDISON_CONFIG_DIR or project root.
         """
         if config_path is None:
-            config_path = _default_config_path()
+            config_path = get_config_json_path()
         else:
             # If a directory was passed, use config.json inside it
             if config_path.is_dir():
                 config_path = config_path / "config.json"
-
-        log.info(f"Loading configuration from {config_path}")
 
         if not config_path.exists():
             log.warning(f"Config file not found at {config_path}, creating default config")
             self.create_default()
             self.save(config_path)
 
-        with open(config_path) as f:
-            data: dict[str, Any] = json.load(f)
+        data = load_json_file(config_path)
 
         mcp_servers_data = data.get("mcp_servers", [])  # type: ignore
         server_data = data.get("server", {})  # type: ignore
@@ -248,7 +236,7 @@ class Config:
     def save(self, config_path: Path | None = None) -> None:
         """Save configuration to JSON file"""
         if config_path is None:
-            config_path = _default_config_path()
+            config_path = get_config_json_path()
         else:
             # If a directory was passed, save to config.json inside it
             if config_path.is_dir():
