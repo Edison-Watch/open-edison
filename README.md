@@ -85,11 +85,11 @@ After installation, ensure that `npx` is available on PATH.
 
 ```bash
 # Using uvx
-uvx open-edison --help
+uvx open-edison
 
 # Using pipx
 pipx install open-edison
-open-edison --help
+open-edison
 ```
 
 Run with a custom config directory:
