@@ -14,8 +14,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from fastmcp import FastMCP
 
 from src.server import OpenEdisonProxy
+from src.single_user_mcp import SingleUserMCP
+from src.single_user_mcp import mounted_servers as mcp_mounted_servers
 
 
 @pytest.mark.asyncio
@@ -25,12 +28,10 @@ async def test_reinitialize_success_replaces_instance_and_initializes():
 
     with (
         patch("src.server.config") as mock_config,
-        patch("src.server.all_permissions") as mock_perms,
         patch("src.server.SingleUserMCP") as mock_sumcp,
     ):
         # Arrange
         mock_config.reload = MagicMock()
-        mock_perms.reload = MagicMock()
         new_instance = MagicMock()
         new_instance.initialize = AsyncMock()
         mock_sumcp.return_value = new_instance
@@ -40,7 +41,6 @@ async def test_reinitialize_success_replaces_instance_and_initializes():
 
         # Assert
         mock_config.reload.assert_called_once()
-        mock_perms.reload.assert_called_once()
         mock_sumcp.assert_called_once()
         new_instance.initialize.assert_awaited_once()
         assert proxy.single_user_mcp is new_instance
@@ -53,12 +53,10 @@ async def test_reinitialize_raises_http_exception_on_initialize_failure():
 
     with (
         patch("src.server.config") as mock_config,
-        patch("src.server.all_permissions") as mock_perms,
         patch("src.server.SingleUserMCP") as mock_sumcp,
     ):
         # Arrange
         mock_config.reload = MagicMock()
-        mock_perms.reload = MagicMock()
         new_instance = MagicMock()
         new_instance.initialize = AsyncMock(side_effect=Exception("boom"))
         mock_sumcp.return_value = new_instance
@@ -73,9 +71,6 @@ async def test_reinitialize_raises_http_exception_on_initialize_failure():
 
 @pytest.mark.asyncio
 async def test_mount_and_unmount_via_public_api_changes_mcp_tool_listing():
-    from fastmcp import FastMCP
-    from src.single_user_mcp import SingleUserMCP
-
     child = FastMCP(name="child")
 
     @child.tool()  # type: ignore[misc]
@@ -92,7 +87,7 @@ async def test_mount_and_unmount_via_public_api_changes_mcp_tool_listing():
 
     # Mount using public FastMCP mount API, then record in mounted_servers so unmount works
     mcp.mount(child, prefix="alpha")
-    mcp.mounted_servers["alpha"] = {"config": object(), "proxy": child}  # type: ignore[assignment]
+    mcp_mounted_servers["alpha"] = {"config": object(), "proxy": child}  # type: ignore[assignment]
 
     tools_after = await mcp.get_tools()
     after_names = set(tools_after.keys())
@@ -119,8 +114,6 @@ async def test_e2e_mount_then_unmount_updates_tools_list():
     # Touch the function to satisfy strict linters
     _ = ping
 
-    from src.single_user_mcp import SingleUserMCP
-
     mcp = SingleUserMCP()
 
     # Initially, child tool should not be listed
@@ -129,7 +122,7 @@ async def test_e2e_mount_then_unmount_updates_tools_list():
 
     # Mount using the public FastMCP API with a prefix
     mcp.mount(child, prefix="alpha")
-    mcp.mounted_servers["alpha"] = {"config": object(), "proxy": child}  # type: ignore[assignment]
+    mcp_mounted_servers["alpha"] = {"config": object(), "proxy": child}  # type: ignore[assignment]
 
     after_keys = {t.key for t in await mcp._tool_manager.list_tools()}  # type: ignore[attr-defined]
     assert "alpha_ping" in after_keys

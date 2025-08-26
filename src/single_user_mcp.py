@@ -17,7 +17,7 @@ from src.middleware.session_tracking import (
     get_current_session_data_tracker,
 )
 from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
-from src.permissions import Permissions, PermissionsError, permissions
+from src.permissions import Permissions, PermissionsError
 
 
 class MountedServerInfo(TypedDict):
@@ -388,7 +388,7 @@ class SingleUserMCP(FastMCP[Any]):
             tool_list = await self._tool_manager.list_tools()
             available_tools: list[str] = []
             log.debug(f"Raw tool list: {tool_list}")
-            perms = Permissions.load()
+            perms = Permissions()
             for tool in tool_list:
                 # Use the prefixed key (e.g., "filesystem_read_file") to match flattened permissions
                 perm_key = tool.key

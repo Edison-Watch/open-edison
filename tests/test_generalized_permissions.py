@@ -94,7 +94,7 @@ class TestPermissionConfigIntegration:
             (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
             (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
 
-            perms = Permissions.load(temp_path)
+            perms = Permissions(temp_path)
             assert isinstance(perms, Permissions)
             assert perms.tool_metadata is not None
             assert perms.resource_metadata is not None
@@ -122,7 +122,7 @@ class TestPermissionConfigIntegration:
             (temp_path / "resource_permissions.json").write_text(json.dumps({"_metadata": {}}))
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
-            perms = Permissions.load(temp_path)
+            perms = Permissions(temp_path)
             tp = perms.get_tool_permission("filesystem_read_file")
             assert isinstance(tp, ToolPermission)
             assert tp.enabled is True

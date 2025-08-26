@@ -33,7 +33,7 @@ from src.middleware.data_access_tracker import (
     DataAccessTracker,
     SecurityError,
 )
-from src.permissions import permissions as all_permissions
+from src.permissions import Permissions
 from src.telemetry import (
     record_prompt_used,
     record_resource_used,
@@ -255,6 +255,7 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_tools: list[FunctionTool | ProxyTool | Any] = []
+        perms = Permissions()
         for tool in response:
             # Due to proxy & server naming
             tool_name = tool.key
@@ -271,11 +272,11 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for tool {tool_name}")
-            if all_permissions.is_tool_enabled(tool_name):
+            if perms.is_tool_enabled(tool_name):
                 allowed_tools.append(tool)
             else:
                 log.warning(
-                    f"🔍 Tool {tool_name} is disabled on not configured and will not be allowed"
+                    f"🔍 Tool {tool_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 
@@ -379,6 +380,7 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_resources: list[FunctionResource | ProxyResource | Any] = []
+        perms = Permissions()
         for resource in response:
             resource_name = str(resource.uri)
             log.trace(f"🔍 Processing resource listing {resource_name}")
@@ -394,11 +396,11 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
-            if all_permissions.is_resource_enabled(resource_name):
+            if perms.is_resource_enabled(resource_name):
                 allowed_resources.append(resource)
             else:
                 log.warning(
-                    f"🔍 Resource {resource_name} is disabled on not configured and will not be allowed"
+                    f"🔍 Resource {resource_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 
@@ -478,6 +480,7 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_prompts: list[ProxyPrompt | Any] = []
+        perms = Permissions()
         for prompt in response:
             prompt_name = str(prompt.name)
             log.trace(f"🔍 Processing prompt listing {prompt_name}")
@@ -493,11 +496,11 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
-            if all_permissions.is_prompt_enabled(prompt_name):
+            if perms.is_prompt_enabled(prompt_name):
                 allowed_prompts.append(prompt)
             else:
                 log.warning(
-                    f"🔍 Prompt {prompt_name} is disabled on not configured and will not be allowed"
+                    f"🔍 Prompt {prompt_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 

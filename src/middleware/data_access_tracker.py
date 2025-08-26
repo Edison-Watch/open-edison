@@ -20,12 +20,12 @@ from loguru import logger as log
 from src import events
 from src.permissions import (
     ACL_RANK,
+    Permissions,
     PromptPermission,
     ResourcePermission,
     ToolPermission,
     normalize_acl,
 )
-from src.permissions import permissions as all_permissions
 from src.telemetry import (
     record_private_data_access,
     record_prompt_access_blocked,
@@ -135,12 +135,13 @@ class DataAccessTracker:
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         # Get tool permissions and update trifecta flags
-        permissions = all_permissions.get_tool_permission(tool_name)
+        perms = Permissions()
+        permissions = perms.get_tool_permission(tool_name)
 
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
         # Check if tool is enabled
-        if not all_permissions.is_tool_enabled(tool_name):
+        if not perms.is_tool_enabled(tool_name):
             log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
             record_tool_call_blocked(tool_name, "disabled")
             events.fire_and_forget(
@@ -218,10 +219,11 @@ class DataAccessTracker:
             raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         # Get resource permissions and update trifecta flags
-        permissions = all_permissions.get_resource_permission(resource_name)
+        perms = Permissions()
+        permissions = perms.get_resource_permission(resource_name)
 
         # Check if resource is enabled
-        if not all_permissions.is_resource_enabled(resource_name):
+        if not perms.is_resource_enabled(resource_name):
             log.warning(f"🚫 BLOCKING resource access {resource_name} - resource is disabled")
             record_resource_access_blocked(resource_name, "disabled")
             events.fire_and_forget(
@@ -279,10 +281,11 @@ class DataAccessTracker:
             raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         # Get prompt permissions and update trifecta flags
-        permissions = all_permissions.get_prompt_permission(prompt_name)
+        perms = Permissions()
+        permissions = perms.get_prompt_permission(prompt_name)
 
         # Check if prompt is enabled
-        if not all_permissions.is_prompt_enabled(prompt_name):
+        if not perms.is_prompt_enabled(prompt_name):
             log.warning(f"🚫 BLOCKING prompt access {prompt_name} - prompt is disabled")
             record_prompt_access_blocked(prompt_name, "disabled")
             events.fire_and_forget(
@@ -335,12 +338,13 @@ class DataAccessTracker:
 
     # Public helper: apply effects after a manual approval without re-checking
     def apply_effects_after_manual_approval(self, kind: str, name: str) -> None:
+        perms = Permissions()
         if kind == "tool":
-            permissions = all_permissions.get_tool_permission(name)
+            permissions = perms.get_tool_permission(name)
         elif kind == "resource":
-            permissions = all_permissions.get_resource_permission(name)
+            permissions = perms.get_resource_permission(name)
         elif kind == "prompt":
-            permissions = all_permissions.get_prompt_permission(name)
+            permissions = perms.get_prompt_permission(name)
         else:
             raise ValueError("Invalid kind")
         self._apply_permissions_effects(permissions, source_type=kind, name=name)

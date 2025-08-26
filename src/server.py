@@ -32,7 +32,6 @@ from src.middleware.session_tracking import (
     create_db_session,
 )
 from src.oauth_manager import OAuthStatus, get_oauth_manager
-from src.permissions import permissions as all_permissions
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -533,7 +532,7 @@ class OpenEdisonProxy:
 
             # Reload config in-place to pick up latest saved settings
             config.reload()
-            all_permissions.reload()
+            # Recreate permissions by constructing a new instance where needed
             log.info("✅ Configuration reloaded from disk")
 
             # Create a completely new SingleUserMCP instance to ensure clean state
@@ -642,7 +641,7 @@ class OpenEdisonProxy:
             log.info("🔄 Reloading permissions from configuration files via API endpoint")
             # Reload config in-place to pick up latest saved settings
             config.reload()
-            all_permissions.reload()
+            # No global reload; permissions are re-read per instantiation
             log.info("✅ Permissions reloaded from configuration files successfully")
 
             return {"status": "success", "message": "Permissions reloaded from configuration files"}

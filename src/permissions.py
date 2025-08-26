@@ -7,13 +7,12 @@ Reads tool, resource, and prompt permission files and provides a singleton inter
 
 import json
 from dataclasses import dataclass
-from src.config import config
 from pathlib import Path
 from typing import Any
 
 from loguru import logger as log
 
-from src.config import get_config_dir
+from src.config import config, get_config_dir
 
 # Detect repository root (same logic as in src.config)
 _ROOT_DIR = Path(__file__).parent.parent
@@ -98,7 +97,42 @@ class Permissions:
     resource_metadata: PermissionsMetadata | None = None
     prompt_metadata: PermissionsMetadata | None = None
 
-    _permissions_dir: Path | None = None
+    def __init__(
+        self,
+        permissions_dir: Path | None = None,
+        *,
+        tool_permissions: dict[str, ToolPermission] | None = None,
+        resource_permissions: dict[str, ResourcePermission] | None = None,
+        prompt_permissions: dict[str, PromptPermission] | None = None,
+    ) -> None:
+        """Load permissions from JSON files or provide them directly."""
+        if permissions_dir is None:
+            permissions_dir = _default_permissions_dir()
+
+        if tool_permissions is None:
+            tool_permissions_path = permissions_dir / "tool_permissions.json"
+            tool_permissions, tool_metadata = self._load_permission_file(
+                tool_permissions_path, ToolPermission
+            )
+            self.tool_metadata = tool_metadata
+
+        if resource_permissions is None:
+            resource_permissions_path = permissions_dir / "resource_permissions.json"
+            resource_permissions, resource_metadata = self._load_permission_file(
+                resource_permissions_path, ResourcePermission
+            )
+            self.resource_metadata = resource_metadata
+
+        if prompt_permissions is None:
+            prompt_permissions_path = permissions_dir / "prompt_permissions.json"
+            prompt_permissions, prompt_metadata = self._load_permission_file(
+                prompt_permissions_path, PromptPermission
+            )
+            self.prompt_metadata = prompt_metadata
+
+        self.tool_permissions = tool_permissions
+        self.resource_permissions = resource_permissions
+        self.prompt_permissions = prompt_permissions
 
     @classmethod
     def _extract_metadata(cls, data: dict[str, Any]) -> PermissionsMetadata | None:
@@ -177,40 +211,6 @@ class Permissions:
 
         return permissions, metadata
 
-    @classmethod
-    def load(cls, permissions_dir: Path | None = None) -> "Permissions":
-        """Load permissions from JSON files.
-
-        If no directory is provided, uses get_config_dir().
-        """
-        if permissions_dir is None:
-            permissions_dir = _default_permissions_dir()
-
-        tool_permissions_path = permissions_dir / "tool_permissions.json"
-        resource_permissions_path = permissions_dir / "resource_permissions.json"
-        prompt_permissions_path = permissions_dir / "prompt_permissions.json"
-
-        # Load all permission types using the helper method
-        tool_permissions, tool_metadata = cls._load_permission_file(
-            tool_permissions_path, ToolPermission
-        )
-        resource_permissions, resource_metadata = cls._load_permission_file(
-            resource_permissions_path, ResourcePermission
-        )
-        prompt_permissions, prompt_metadata = cls._load_permission_file(
-            prompt_permissions_path, PromptPermission
-        )
-
-        return cls(
-            tool_permissions=tool_permissions,
-            resource_permissions=resource_permissions,
-            prompt_permissions=prompt_permissions,
-            tool_metadata=tool_metadata,
-            resource_metadata=resource_metadata,
-            prompt_metadata=prompt_metadata,
-            _permissions_dir=permissions_dir,
-        )
-
     def get_tool_permission(self, tool_name: str) -> ToolPermission:
         """Get permission for a specific tool"""
         if tool_name not in self.tool_permissions:
@@ -259,7 +259,7 @@ class Permissions:
         parts = tool_name.split("_")
         if len(parts) == 0:
             raise PermissionsError(f"Tool name {tool_name} is invalid")
-        elif parts[0] == "builtin":
+        if parts[0] == "builtin":
             return "builtin"
 
         server_names = {s.name for s in config.mcp_servers}
@@ -277,19 +277,6 @@ class Permissions:
         server_config = next((s for s in config.mcp_servers if s.name == server_name), None)
         return server_config is not None and server_config.enabled
 
-    def reload(self) -> None:
-        """Reload permissions from files, preserving existing server_disabled values"""
-        # Load new permissions
-        new_permissions = self.load(self._permissions_dir)
-        self.tool_permissions = new_permissions.tool_permissions
-        self.resource_permissions = new_permissions.resource_permissions
-        self.prompt_permissions = new_permissions.prompt_permissions
-        self.tool_metadata = new_permissions.tool_metadata
-        self.resource_metadata = new_permissions.resource_metadata
-        self.prompt_metadata = new_permissions.prompt_metadata
-
-        log.info("✅ Permissions reloaded from files")
-
 
 def normalize_acl(value: str | None, *, default: str = "PUBLIC") -> str:
     """Normalize ACL string, defaulting and uppercasing; validate against known values."""
@@ -303,7 +290,3 @@ def normalize_acl(value: str | None, *, default: str = "PUBLIC") -> str:
         return acl
     except Exception:
         return default
-
-
-# Load global permissions singleton
-permissions = Permissions.load()

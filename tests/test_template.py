@@ -16,7 +16,6 @@ import uvicorn
 from fastapi.testclient import TestClient
 
 from src.config import Config, LoggingConfig, MCPServerConfig, ServerConfig
-from src.permissions import Permissions
 from src.server import OpenEdisonProxy
 
 # Test markers
@@ -40,8 +39,7 @@ class TestTemplate:
         # Provide a default test config available to tests
         self.test_config = create_test_config()
 
-        global all_permissions
-        all_permissions = Permissions.load(self.config_dir)
+        # No global singleton; permissions are instantiated where needed in code
 
     @pytest.fixture
     def test_server_config(self) -> dict[str, Any]:

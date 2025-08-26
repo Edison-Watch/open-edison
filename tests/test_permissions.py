@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+# Test-local helpers to align with runtime behavior without changing src code
+from src.config import MCPServerConfig  # type: ignore
 from src.permissions import (  # type: ignore
     Permissions,
     PermissionsError,
@@ -19,6 +21,30 @@ from src.permissions import (  # type: ignore
     ToolPermission,
     normalize_acl,
 )
+
+
+@pytest.fixture(autouse=True)
+def _configure_dummy_servers():  # pyright: ignore[reportUnusedFunction]
+    """Ensure server names used in tests exist in config and have expected enabled states.
+
+    This avoids server-name resolution failures when using short names like
+    "enabled_tool" (server "enabled"), etc.
+    """
+    from src.permissions import config as runtime_config  # type: ignore
+
+    original_servers = list(runtime_config.mcp_servers)
+    runtime_config.mcp_servers = [
+        MCPServerConfig(name="filesystem", command="test", args=[], enabled=True),
+        MCPServerConfig(name="database", command="test", args=[], enabled=True),
+        MCPServerConfig(name="system", command="test", args=[], enabled=True),
+        MCPServerConfig(name="enabled", command="test", args=[], enabled=True),
+        MCPServerConfig(name="disabled", command="test", args=[], enabled=False),
+        MCPServerConfig(name="no", command="test", args=[], enabled=False),
+    ]
+    try:
+        yield
+    finally:
+        runtime_config.mcp_servers = original_servers
 
 
 class TestNormalizeAcl:
@@ -106,7 +132,7 @@ class TestPermissionsLoad:
             (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
 
             # Load permissions
-            permissions = Permissions.load(temp_path)
+            permissions = Permissions(temp_path)
 
             # Verify structure
             assert isinstance(permissions, Permissions)
@@ -135,7 +161,7 @@ class TestPermissionsLoad:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load permissions (should not raise error)
-            permissions = Permissions.load(temp_path)
+            permissions = Permissions(temp_path)
 
             assert isinstance(permissions, Permissions)
             assert len(permissions.tool_permissions) == 1
@@ -154,7 +180,7 @@ class TestPermissionsLoad:
 
             # Should raise JSONDecodeError
             with pytest.raises(json.JSONDecodeError):
-                Permissions.load(temp_path)
+                Permissions(temp_path)
 
     def test_load_with_invalid_server_data(self):
         """Test loading with invalid server data structure."""
@@ -172,7 +198,7 @@ class TestPermissionsLoad:
 
             # Should error on invalid server data
             with pytest.raises(PermissionsError):
-                Permissions.load(temp_path)
+                Permissions(temp_path)
 
     def test_load_with_invalid_item_data(self):
         """Test loading with invalid item data structure."""
@@ -192,7 +218,7 @@ class TestPermissionsLoad:
 
             # Should error on invalid item data
             with pytest.raises(PermissionsError):
-                Permissions.load(temp_path)
+                Permissions(temp_path)
 
 
 class TestPermissionsLoadTwice:
@@ -214,12 +240,12 @@ class TestPermissionsLoadTwice:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load first time
-            permissions1 = Permissions.load(temp_path)
+            permissions1 = Permissions(temp_path)
             assert len(permissions1.tool_permissions) == 1
             assert "server1_tool1" in permissions1.tool_permissions
 
             # Load second time
-            permissions2 = Permissions.load(temp_path)
+            permissions2 = Permissions(temp_path)
             assert len(permissions2.tool_permissions) == 1
             assert "server1_tool1" in permissions2.tool_permissions
 
@@ -243,7 +269,7 @@ class TestPermissionsLoadTwice:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load first time
-            permissions1 = Permissions.load(temp_path)
+            permissions1 = Permissions(temp_path)
             assert len(permissions1.tool_permissions) == 1
 
             # Update the file
@@ -254,7 +280,7 @@ class TestPermissionsLoadTwice:
             (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms2))
 
             # Load second time
-            permissions2 = Permissions.load(temp_path)
+            permissions2 = Permissions(temp_path)
             assert len(permissions2.tool_permissions) == 2
             assert permissions2.tool_permissions["server1_tool1"].enabled is False
             assert permissions2.tool_permissions["server1_tool2"].enabled is True
@@ -282,7 +308,7 @@ class TestPermissionsReload:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load permissions
-            permissions = Permissions.load(temp_path)
+            permissions = Permissions(temp_path)
             assert len(permissions.tool_permissions) == 1
             assert permissions.tool_permissions["server1_tool1"].enabled is True
 
@@ -293,8 +319,9 @@ class TestPermissionsReload:
             }
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
-            # Reload permissions
-            permissions.reload()
+            # Re-load permissions by constructing a new instance
+            permissions = Permissions(temp_path)  # type: ignore[attr-defined]
+            assert isinstance(permissions, Permissions)
 
             # Verify changes
             assert len(permissions.tool_permissions) == 2
@@ -317,15 +344,15 @@ class TestPermissionsReload:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load permissions
-            permissions = Permissions.load(temp_path)
+            permissions = Permissions(temp_path)
             assert len(permissions.tool_permissions) == 1
 
             # Delete the tool permissions file
             (temp_path / "tool_permissions.json").unlink()
 
-            # Reload permissions
+            # Re-load should raise when files are missing
             with pytest.raises(PermissionsError):
-                permissions.reload()
+                permissions = Permissions(temp_path)  # type: ignore[attr-defined]
 
     def test_reload_preserves_instance(self):
         """Test that reload preserves the same instance."""
@@ -343,7 +370,7 @@ class TestPermissionsReload:
             (temp_path / "prompt_permissions.json").write_text(json.dumps({"_metadata": {}}))
 
             # Load permissions
-            permissions = Permissions.load(temp_path)
+            permissions = Permissions(temp_path)
             original_id = id(permissions)
 
             # Update and reload
@@ -353,10 +380,12 @@ class TestPermissionsReload:
             }
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
-            permissions.reload()
+            # Re-load returns a new instance; rebind the variable
+            permissions = Permissions(temp_path)  # type: ignore[attr-defined]
+            assert isinstance(permissions, Permissions)
 
-            # Should be the same instance
-            assert id(permissions) == original_id
+            # Instance id is different after load
+            assert id(permissions) != original_id
             assert len(permissions.tool_permissions) == 1
             assert "server1_tool2" in permissions.tool_permissions
 
@@ -631,8 +660,8 @@ class TestPermissionsIntegration:
             (temp_path / "resource_permissions.json").write_text(json.dumps(resource_perms))
             (temp_path / "prompt_permissions.json").write_text(json.dumps(prompt_perms))
 
-            # Load permissions
-            permissions = Permissions.load(temp_path)
+            # Load permissions and attach the source dir for reloads
+            permissions = Permissions(temp_path)
 
             # Test tool permissions
             assert permissions.is_tool_enabled("filesystem_read_file") is True
@@ -652,7 +681,7 @@ class TestPermissionsIntegration:
             assert permissions.is_prompt_enabled("system_system_prompt") is True
 
             # Test enabled collections
-            enabled_tools = {
+            enabled_tools: set[str] = {
                 name for name, perm in permissions.tool_permissions.items() if perm.enabled
             }
             assert len(enabled_tools) == 2
@@ -682,10 +711,11 @@ class TestPermissionsIntegration:
             }
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
-            permissions.reload()
+            permissions = Permissions(temp_path)  # type: ignore[attr-defined]
+            assert isinstance(permissions, Permissions)
 
             assert permissions.is_tool_enabled("filesystem_read_file") is False
-            enabled_tools_after_reload = {
+            enabled_tools_after_reload: set[str] = {
                 name for name, perm in permissions.tool_permissions.items() if perm.enabled
             }
             assert len(enabled_tools_after_reload) == 1
