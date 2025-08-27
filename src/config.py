@@ -252,7 +252,17 @@ class Config:
         }
 
         # Ensure directory exists
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        except FileExistsError as e:
+            # If the parent path exists as a file, not a directory, this will fail
+            if config_path.parent.is_file():
+                log.error(f"Config directory path {config_path.parent} exists as a file, not a directory")
+                log.error(f"Please remove the file or specify a different config directory")
+                raise FileExistsError(f"Config directory path {config_path.parent} exists as a file, not a directory") from e
+            else:
+                log.error(f"Failed to create config directory {config_path.parent}: {e}")
+                raise
         with open(config_path, "w") as f:
             json.dump(data, f, indent=2)
 
