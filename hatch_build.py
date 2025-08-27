@@ -23,20 +23,12 @@ class BuildHook(BuildHookInterface):  # type: ignore
         src_frontend_dist = project_root / "src" / "frontend_dist"
         repo_frontend_dist = project_root / "frontend" / "dist"
 
-        # Allow CI/dev to bypass this check for editable/dev installs
-        if os.environ.get("OPEN_EDISON_REQUIRE_FRONTEND", "1") == "0":
+        # Opt-in enforcement: only enforce when OPEN_EDISON_REQUIRE_FRONTEND=1/true/yes
+        enforce = os.environ.get("OPEN_EDISON_REQUIRE_FRONTEND", "").lower() in {"1", "true", "yes"}
+        if not enforce:
             self.app.display_info(
-                "Skipping frontend_dist requirement due to OPEN_EDISON_REQUIRE_FRONTEND=0"
+                "Skipping frontend_dist enforcement (set OPEN_EDISON_REQUIRE_FRONTEND=1 to enforce)"
             )
-            return
-
-        # Skip for editable builds (e.g., uv sync in CI)
-        try:
-            versions = build_data.get("versions")  # type: ignore[assignment]
-        except Exception:
-            versions = None
-        if versions and "editable" in versions:
-            self.app.display_info("Editable build detected; skipping frontend_dist requirement")
             return
 
         # Fast path: already present in src/
