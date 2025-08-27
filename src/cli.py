@@ -17,8 +17,8 @@ from typing import Any, NoReturn, cast
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
-from src.config import Config, get_config_dir, get_config_json_path
-from src.server import OpenEdisonProxy
+from .config import Config, get_config_dir, get_config_json_path
+from .server import OpenEdisonProxy
 
 log: Any = _log
 
