@@ -43,6 +43,12 @@ def find_cursor_project_file(project_dir: Path | None) -> list[Path]:
     return [candidate] if candidate.exists() else []
 
 
+def find_cursor_user_file() -> list[Path]:
+    """Find user-level Cursor MCP config (~/.cursor/mcp.json)."""
+    p = (Path.home() / ".cursor" / "mcp.json").resolve()
+    return [p] if p.exists() else []
+
+
 def find_windsurf_files() -> list[Path]:
     candidates: list[Path] = []
     if is_macos():

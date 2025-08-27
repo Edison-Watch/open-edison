@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.29"
+version = "0.1.33"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -21,6 +21,7 @@ dependencies = [
     "opentelemetry-api>=1.36.0",
     "opentelemetry-sdk>=1.36.0",
     "opentelemetry-exporter-otlp>=1.36.0",
+    "hatchling>=1.27.0",
 ]
 requires-python = ">= 3.12"
 
@@ -66,6 +67,9 @@ include = [
   "src/frontend_dist/**",
 ]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -76,10 +80,13 @@ include = [
   "resource_permissions.json",
   "prompt_permissions.json",
   "src/**",
-  "docs/**",
-  # Ensure packaged dashboard assets are present when building from sdist
   "src/frontend_dist/**",
+  "docs/**",
 ]
+force-include = { "src/frontend_dist" = "src/frontend_dist" }
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
 
 [tool.ruff]
 line-length = 100

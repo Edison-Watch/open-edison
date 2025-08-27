@@ -1,13 +1,15 @@
 """MCP importer package for Open Edison scripts.
 
-Submodules:
-- paths: OS and application-specific path discovery utilities
-- parsers: best-effort parsers to normalize foreign MCP configs
-- importers: high-level import functions per source tool
-- merge: merging strategies for adding servers into config.json
-- cli: command-line entrypoint
+Import submodules explicitly as needed, e.g. `from mcp_importer import cli`.
 """
 
-from . import cli, importers, merge, parsers, paths  # noqa: F401
+# pyright: reportUnsupportedDunderAll=false
 
-__all__ = ["paths", "parsers", "importers", "merge", "cli"]
+__all__ = [
+    "paths",
+    "parsers",
+    "importers",
+    "merge",
+    "cli",
+    "api",
+]

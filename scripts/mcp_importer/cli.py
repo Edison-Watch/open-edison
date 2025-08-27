@@ -29,11 +29,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--source", choices=list(IMPORTERS.keys()) + ["interactive"], default="interactive"
     )
     p.add_argument(
-        "--project-dir",
-        type=Path,
-        help="When --source=cursor, path to the project containing .cursor/mcp.json",
-    )
-    p.add_argument(
         "--config-dir",
         type=Path,
         help="Directory containing target config.json (default: OPEN_EDISON_CONFIG_DIR or repo root)",
@@ -88,10 +83,7 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
     # Import
     try:
         if source == "cursor":
-            if not args.project_dir:
-                print("--project-dir is required for --source=cursor", file=sys.stderr)
-                return 2
-            imported_servers = importer(args.project_dir)  # type: ignore[arg-type]
+            imported_servers = importer(getattr(args, "project_dir", None))  # type: ignore[arg-type]
         else:
             imported_servers = importer()  # type: ignore[misc]
     except Exception as e:
