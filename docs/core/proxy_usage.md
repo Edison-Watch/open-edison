@@ -13,7 +13,7 @@ Open Edison provides a simple MCP proxy that manages multiple MCP servers as sub
 make run
 
 # Or run directly
-rye run python main.py
+uv run python main.py
 ```
 
 The server starts on `localhost:3001` with:

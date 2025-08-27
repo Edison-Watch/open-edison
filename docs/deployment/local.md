@@ -30,14 +30,14 @@ cd open-edison
 
 ### 2. Install Dependencies
 
-#### Using Rye (Recommended)
+#### Using UV (Recommended)
 
 ```bash
-# Install Rye if not already installed
-curl -sSf https://rye.astral.sh/get | bash
+# Install UV if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install dependencies
-rye sync
+uv sync
 ```
 
 #### Using pip/venv

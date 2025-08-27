@@ -32,9 +32,8 @@ open_edison = "src.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.rye]
+[tool.uv]
 managed = true
-python = "3.12"
 dev-dependencies = [
     "basedpyright>=1.21.0",
     "ruff>=0.12.3",
