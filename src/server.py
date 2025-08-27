@@ -127,15 +127,22 @@ class OpenEdisonProxy:
                     app.add_api_route("/favicon.ico", _favicon, methods=["GET"])  # type: ignore[arg-type]
                 log.info(f"📊 Dashboard static assets mounted at /dashboard from {static_dir}")
             else:
-                # Emit a more detailed diagnostic and fail fast when assets are not found
+                # If running from an installed package (no repository indicators), fail fast.
+                # If running from repository source (pyproject present alongside src/), skip mount.
                 cwd = Path.cwd()
-                msg = (
-                    "Packaged dashboard assets not found. Expected at one of: "
-                    f"{primary_candidate} or {secondary_candidate}. "
-                    f"cwd={cwd}, __file__={Path(__file__).resolve()}"
+                repo_root_candidate = Path(__file__).parent.parent / "pyproject.toml"
+                if not repo_root_candidate.exists():
+                    msg = (
+                        "Packaged dashboard assets not found. Expected at one of: "
+                        f"{primary_candidate} or {secondary_candidate}. "
+                        f"cwd={cwd}, __file__={Path(__file__).resolve()}"
+                    )
+                    log.error(msg)
+                    raise RuntimeError(msg)
+                log.debug(
+                    "Repository source detected ({} present). Skipping dashboard mount.",
+                    repo_root_candidate,
                 )
-                log.error(msg)
-                raise RuntimeError(msg)
         except Exception as mount_err:  # noqa: BLE001
             log.error(f"Failed to mount dashboard static assets: {mount_err}")
             raise
