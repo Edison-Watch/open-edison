@@ -125,6 +125,12 @@ def _spawn_frontend_dev(  # noqa: C901 - pragmatic complexity for env probing
         )
         # No separate website process needed. Return sentinel port (-1) so caller knows not to warn.
         return (-1, None)
+
+    if static_dir is None:
+        raise RuntimeError(
+            "No packaged dashboard detected. The website will be served from the frontend directory."
+        )
+
     pkg_frontend_candidates = [
         Path(__file__).parent / "frontend",  # inside package dir
         Path(__file__).parent.parent / "frontend",  # site-packages root

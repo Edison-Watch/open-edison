@@ -86,10 +86,16 @@ class OpenEdisonProxy:
         # If packaged frontend assets exist, mount at /dashboard
         try:
             # Prefer packaged assets under src/frontend_dist
-            static_dir = Path(__file__).parent / "frontend_dist"
-            if not static_dir.exists():
-                # Fallback to repo root or site-packages root (older layout)
-                static_dir = Path(__file__).parent.parent / "frontend_dist"
+            primary_candidate = Path(__file__).parent / "frontend_dist"
+            secondary_candidate = Path(__file__).parent.parent / "frontend_dist"
+            log.trace(
+                "Checking dashboard assets candidates: primary={}, exists={}, secondary={}, exists={}",
+                primary_candidate,
+                primary_candidate.exists(),
+                secondary_candidate,
+                secondary_candidate.exists(),
+            )
+            static_dir = primary_candidate if primary_candidate.exists() else secondary_candidate
             if static_dir.exists():
                 app.mount(
                     "/dashboard",
@@ -121,9 +127,18 @@ class OpenEdisonProxy:
                     app.add_api_route("/favicon.ico", _favicon, methods=["GET"])  # type: ignore[arg-type]
                 log.info(f"📊 Dashboard static assets mounted at /dashboard from {static_dir}")
             else:
-                log.debug("No packaged frontend assets found; skipping static mount")
+                # Emit a more detailed diagnostic and fail fast when assets are not found
+                cwd = Path.cwd()
+                msg = (
+                    "Packaged dashboard assets not found. Expected at one of: "
+                    f"{primary_candidate} or {secondary_candidate}. "
+                    f"cwd={cwd}, __file__={Path(__file__).resolve()}"
+                )
+                log.error(msg)
+                raise RuntimeError(msg)
         except Exception as mount_err:  # noqa: BLE001
-            log.warning(f"Failed to mount dashboard static assets: {mount_err}")
+            log.error(f"Failed to mount dashboard static assets: {mount_err}")
+            raise
 
         # Special-case: serve SQLite db and config JSONs for dashboard (prod replacement for Vite @fs)
         def _resolve_db_path() -> Path:
@@ -542,11 +557,6 @@ class OpenEdisonProxy:
         """
         try:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
-
-            # Create a completely new SingleUserMCP instance to ensure clean state
-            # old_mcp = self.single_user_mcp
-            # self.single_user_mcp = SingleUserMCP()
-            # del old_mcp
 
             # Initialize the new instance with fresh config
             await self.single_user_mcp.initialize()
