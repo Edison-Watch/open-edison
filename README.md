@@ -32,10 +32,6 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
 - 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
 - 🐳 **Docker support** - Run in a container for easy deployment
 
-## About Edison.watch 🏢
-
-Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance.
-
 ## Quick Start 🚀
 
 The fastest way to get started:
