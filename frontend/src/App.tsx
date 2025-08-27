@@ -723,6 +723,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         read_private_data: boolean
         read_untrusted_public_data: boolean
         description?: string
+        acl?: 'PUBLIC' | 'PRIVATE' | 'SECRET'
     }
     type ToolPerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
     type ResourcePerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
@@ -781,6 +782,44 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [origToolPerms, setOrigToolPerms] = useState<ToolPerms | null>(null)
     const [origResourcePerms, setOrigResourcePerms] = useState<ResourcePerms | null>(null)
     const [origPromptPerms, setOrigPromptPerms] = useState<PromptPerms | null>(null)
+
+    // Auto-save when permission data changes
+    useEffect(() => {
+        // Only trigger autosave if we have loaded data and there are actual changes
+        console.log('🔄 Autosave useEffect triggered')
+        console.log('🔄 toolPerms:', toolPerms)
+        console.log('🔄 origToolPerms:', origToolPerms)
+        
+        if (toolPerms && origToolPerms) {
+            const currentStr = JSON.stringify(toolPerms)
+            const origStr = JSON.stringify(origToolPerms)
+            console.log('🔄 Current JSON:', currentStr)
+            console.log('🔄 Original JSON:', origStr)
+            console.log('🔄 Are they different?', currentStr !== origStr)
+            
+            if (currentStr !== origStr) {
+                console.log('🔄 Tool permissions changed, triggering autosave')
+                // Add a small delay to ensure state is fully updated
+                setTimeout(() => debouncedAutoSave(), 0)
+            } else {
+                console.log('🔄 No changes detected, skipping autosave')
+            }
+        } else {
+            console.log('🔄 Missing data, skipping autosave')
+        }
+    }, [toolPerms, origToolPerms])
+    
+    useEffect(() => {
+        if (resourcePerms && origResourcePerms && JSON.stringify(resourcePerms) !== JSON.stringify(origResourcePerms)) {
+            debouncedAutoSave()
+        }
+    }, [resourcePerms, origResourcePerms])
+    
+    useEffect(() => {
+        if (promptPerms && origPromptPerms && JSON.stringify(promptPerms) !== JSON.stringify(origPromptPerms)) {
+            debouncedAutoSave()
+        }
+    }, [promptPerms, origPromptPerms])
 
     const CONFIG_NAME = `config.json`
     const TOOL_NAME = `tool_permissions.json`
@@ -910,12 +949,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             if (entries) defaultsByServer[d.name] = entries
         }
 
-        // Persist only core permission flags; drop any UI metadata like description/acl
+        // Persist core permission flags and acl; drop any UI metadata like description
         const toCore = (f: any) => ({
             enabled: Boolean(f?.enabled),
             write_operation: Boolean(f?.write_operation),
             read_private_data: Boolean(f?.read_private_data),
             read_untrusted_public_data: Boolean(f?.read_untrusted_public_data),
+            ...(f?.acl && { acl: f.acl }),
         })
 
         for (const [group, items] of Object.entries(currentMerged as any)) {
@@ -931,6 +971,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         || Boolean((flags as any).write_operation)
                         || Boolean((flags as any).read_private_data)
                         || Boolean((flags as any).read_untrusted_public_data)
+                        || Boolean((flags as any).acl)
                     if (shouldAdd) {
                         if (!result[group]) result[group] = {}
                         result[group][item] = toCore(flags)
@@ -949,6 +990,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             && Boolean(a?.write_operation) === Boolean(b?.write_operation)
             && Boolean(a?.read_private_data) === Boolean(b?.read_private_data)
             && Boolean(a?.read_untrusted_public_data) === Boolean(b?.read_untrusted_public_data)
+            && a?.acl === b?.acl
     }
 
     function deepClone<T>(obj: T): T {
@@ -1035,6 +1077,38 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setSaving(false)
         }
     }
+
+    // Auto-save function that shows "Changes saved" message
+    const autoSave = async () => {
+        try {
+            console.log('🔄 Starting autosave...')
+            console.log('🔄 Before autosave - toolPerms:', toolPerms)
+            console.log('🔄 Before autosave - origToolPerms:', origToolPerms)
+            await saveAll(true)
+            // Update the original state to match current state after successful save
+            setOrigToolPerms(toolPerms)
+            setOrigResourcePerms(resourcePerms)
+            setOrigPromptPerms(promptPerms)
+            console.log('🔄 After autosave - Updated origToolPerms to match current state')
+            setToast({ message: 'Changes saved', type: 'success' })
+        } catch (e) {
+            // Don't show error toast for auto-save failures to avoid spam
+            console.error('Auto-save failed:', e)
+        }
+    }
+
+    // Debounced auto-save with 0.5 second delay
+    const debouncedAutoSave = (() => {
+        let timeoutId: NodeJS.Timeout | null = null
+        return () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId)
+            }
+            timeoutId = setTimeout(() => {
+                autoSave()
+            }, 500) // 0.5 second delay
+        }
+    })()
 
     const reinitializeServers = async () => {
         setSaving(true)
@@ -1567,7 +1641,25 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                 <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
                                                 <div className="text-xs flex items-center gap-2">
                                                     <Toggle checked={!!flags.enabled} onChange={(v) => {
-                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
+                                                        console.log(`🔄 Toggle raw values: flags.enabled=${flags.enabled}, !!flags.enabled=${!!flags.enabled}, new value=${v}`)
+                                                        console.log(`🔄 Toggle changed: ${groupName}.${itemName}.enabled = ${v}`)
+                                                        console.log(`🔄 Current flags:`, flags)
+                                                        setData((prev: any) => {
+                                                            // Ensure we preserve all existing flags and only update the enabled property
+                                                            const currentItem = prev[groupName]?.[itemName] || {}
+                                                            const newData = { 
+                                                                ...prev, 
+                                                                [groupName]: { 
+                                                                    ...prev[groupName], 
+                                                                    [itemName]: { 
+                                                                        ...currentItem,
+                                                                        enabled: v 
+                                                                    } 
+                                                                } 
+                                                            }
+                                                            console.log(`🔄 New data for ${groupName}.${itemName}:`, newData[groupName][itemName])
+                                                            return newData
+                                                        })
                                                     }} />
                                                     <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
                                                 </div>
@@ -1576,19 +1668,61 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                             <div className="mt-2 grid grid-cols-1 gap-2">
                                                 <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                     <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
-                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
+                                                        console.log(`🔄 Checkbox changed: ${groupName}.${itemName}.write_operation = ${e.target.checked}`)
+                                                        setData((prev: any) => {
+                                                            // Ensure we preserve all existing flags and only update the write_operation property
+                                                            const currentItem = prev[groupName]?.[itemName] || {}
+                                                            return { 
+                                                                ...prev, 
+                                                                [groupName]: { 
+                                                                    ...prev[groupName], 
+                                                                    [itemName]: { 
+                                                                        ...currentItem,
+                                                                        write_operation: e.target.checked 
+                                                                    } 
+                                                                } 
+                                                            }
+                                                        })
                                                     }} />
                                                     <span>write_operation</span>
                                                 </label>
                                                 <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                     <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
-                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
+                                                        console.log(`🔄 Checkbox changed: ${groupName}.${itemName}.read_private_data = ${e.target.checked}`)
+                                                        setData((prev: any) => {
+                                                            // Ensure we preserve all existing flags and only update the read_private_data property
+                                                            const currentItem = prev[groupName]?.[itemName] || {}
+                                                            return { 
+                                                                ...prev, 
+                                                                [groupName]: { 
+                                                                    ...prev[groupName], 
+                                                                    [itemName]: { 
+                                                                        ...currentItem,
+                                                                        read_private_data: e.target.checked 
+                                                                    } 
+                                                                } 
+                                                            }
+                                                        })
                                                     }} />
                                                     <span>read_private_data</span>
                                                 </label>
                                                 <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                     <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
-                                                        setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
+                                                        console.log(`🔄 Checkbox changed: ${groupName}.${itemName}.read_untrusted_public_data = ${e.target.checked}`)
+                                                        setData((prev: any) => {
+                                                            // Ensure we preserve all existing flags and only update the read_untrusted_public_data property
+                                                            const currentItem = prev[groupName]?.[itemName] || {}
+                                                            return { 
+                                                                ...prev, 
+                                                                [groupName]: { 
+                                                                    ...prev[groupName], 
+                                                                    [itemName]: { 
+                                                                        ...currentItem,
+                                                                        read_untrusted_public_data: e.target.checked 
+                                                                    } 
+                                                                } 
+                                                            }
+                                                        })
                                                     }} />
                                                     <span>read_untrusted_public_data</span>
                                                 </label>
@@ -1599,13 +1733,18 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         value={(flags as any).acl ?? 'PUBLIC'}
                                                         onChange={(e) => {
                                                             const val = (e.target.value || 'PUBLIC') as 'PUBLIC' | 'PRIVATE' | 'SECRET'
-                                                            setData((prev: any) => ({
-                                                                ...prev,
-                                                                [groupName]: {
-                                                                    ...prev[groupName],
-                                                                    [itemName]: { ...prev[groupName][itemName], acl: val }
+                                                            console.log(`🔄 Select changed: ${groupName}.${itemName}.acl = ${val}`)
+                                                            setData((prev: any) => {
+                                                                // Ensure we preserve all existing flags and only update the acl property
+                                                                const currentItem = prev[groupName]?.[itemName] || {}
+                                                                return {
+                                                                    ...prev,
+                                                                    [groupName]: {
+                                                                        ...prev[groupName],
+                                                                        [itemName]: { ...currentItem, acl: val }
+                                                                    }
                                                                 }
-                                                            }))
+                                                            })
                                                         }}
                                                     >
                                                         <option value="PUBLIC">PUBLIC</option>
@@ -1632,7 +1771,25 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                             <div className="font-medium text-sm truncate" title={`${groupName}.${itemName}`}>{itemName}</div>
                                             <div className="text-xs flex items-center gap-2">
                                                 <Toggle checked={!!flags.enabled} onChange={(v) => {
-                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], enabled: v } } }))
+                                                    console.log(`🔄 Toggle raw values (non-collapsible): flags.enabled=${flags.enabled}, !!flags.enabled=${!!flags.enabled}, new value=${v}`)
+                                                    console.log(`🔄 Toggle changed (non-collapsible): ${groupName}.${itemName}.enabled = ${v}`)
+                                                    console.log(`🔄 Current flags (non-collapsible):`, flags)
+                                                    setData((prev: any) => {
+                                                        // Ensure we preserve all existing flags and only update the enabled property
+                                                        const currentItem = prev[groupName]?.[itemName] || {}
+                                                        const newData = { 
+                                                            ...prev, 
+                                                            [groupName]: { 
+                                                                ...prev[groupName], 
+                                                                [itemName]: { 
+                                                                    ...currentItem,
+                                                                    enabled: v 
+                                                                } 
+                                                            } 
+                                                        }
+                                                        console.log(`🔄 New data for ${groupName}.${itemName} (non-collapsible):`, newData[groupName][itemName])
+                                                        return newData
+                                                    })
                                                 }} />
                                                 <span>{flags.enabled ? 'Enabled' : 'Disabled'}</span>
                                             </div>
@@ -1641,19 +1798,61 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                         <div className="mt-2 grid grid-cols-1 gap-2">
                                             <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                 <input type="checkbox" className="accent-blue-500" checked={!!flags.write_operation} onChange={(e) => {
-                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], write_operation: e.target.checked } } }))
+                                                    console.log(`🔄 Checkbox changed (non-collapsible): ${groupName}.${itemName}.write_operation = ${e.target.checked}`)
+                                                    setData((prev: any) => {
+                                                        // Ensure we preserve all existing flags and only update the write_operation property
+                                                        const currentItem = prev[groupName]?.[itemName] || {}
+                                                        return { 
+                                                            ...prev, 
+                                                            [groupName]: { 
+                                                                ...prev[groupName], 
+                                                                [itemName]: { 
+                                                                    ...currentItem,
+                                                                    write_operation: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        }
+                                                    })
                                                 }} />
                                                 <span>write_operation</span>
                                             </label>
                                             <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                 <input type="checkbox" className="accent-blue-500" checked={!!flags.read_private_data} onChange={(e) => {
-                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_private_data: e.target.checked } } }))
+                                                    console.log(`🔄 Checkbox changed (non-collapsible): ${groupName}.${itemName}.read_private_data = ${e.target.checked}`)
+                                                    setData((prev: any) => {
+                                                        // Ensure we preserve all existing flags and only update the read_private_data property
+                                                        const currentItem = prev[groupName]?.[itemName] || {}
+                                                        return { 
+                                                            ...prev, 
+                                                            [groupName]: { 
+                                                                ...prev[groupName], 
+                                                                [itemName]: { 
+                                                                    ...currentItem,
+                                                                    read_private_data: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        }
+                                                    })
                                                 }} />
                                                 <span>read_private_data</span>
                                             </label>
                                             <label className="text-xs flex items-center gap-2 border border-app-border rounded px-2 py-1 bg-app-bg/50">
                                                 <input type="checkbox" className="accent-blue-500" checked={!!flags.read_untrusted_public_data} onChange={(e) => {
-                                                    setData((prev: any) => ({ ...prev, [groupName]: { ...prev[groupName], [itemName]: { ...prev[groupName][itemName], read_untrusted_public_data: e.target.checked } } }))
+                                                    console.log(`🔄 Checkbox changed (non-collapsible): ${groupName}.${itemName}.read_untrusted_public_data = ${e.target.checked}`)
+                                                    setData((prev: any) => {
+                                                        // Ensure we preserve all existing flags and only update the read_untrusted_public_data property
+                                                        const currentItem = prev[groupName]?.[itemName] || {}
+                                                        return { 
+                                                            ...prev, 
+                                                            [groupName]: { 
+                                                                ...prev[groupName], 
+                                                                [itemName]: { 
+                                                                    ...currentItem,
+                                                                    read_untrusted_public_data: e.target.checked 
+                                                                } 
+                                                            } 
+                                                        }
+                                                    })
                                                 }} />
                                                 <span>read_untrusted_public_data</span>
                                             </label>
@@ -1664,13 +1863,18 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     value={(flags as any).acl ?? 'PUBLIC'}
                                                     onChange={(e) => {
                                                         const val = (e.target.value || 'PUBLIC') as 'PUBLIC' | 'PRIVATE' | 'SECRET'
-                                                        setData((prev: any) => ({
-                                                            ...prev,
-                                                            [groupName]: {
-                                                                ...prev[groupName],
-                                                                [itemName]: { ...prev[groupName][itemName], acl: val }
+                                                        console.log(`🔄 Select changed (non-collapsible): ${groupName}.${itemName}.acl = ${val}`)
+                                                        setData((prev: any) => {
+                                                            // Ensure we preserve all existing flags and only update the acl property
+                                                            const currentItem = prev[groupName]?.[itemName] || {}
+                                                            return {
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: { ...currentItem, acl: val }
+                                                                }
                                                             }
-                                                        }))
+                                                        })
                                                     }}
                                                 >
                                                     <option value="PUBLIC">PUBLIC</option>

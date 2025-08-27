@@ -63,7 +63,7 @@ setup: check_uv sync ## Setup the project for development
 	@echo "$(YELLOW)🔧 Setting up Open Edison for development...$(RESET)"
 	@if [ ! -f config.json ]; then \
 		echo "$(YELLOW)📝 Creating default config.json...$(RESET)"; \
-		$(PYTHON) -c "from src.config import Config; Config.create_default().save()"; \
+		$(PYTHON) -c "from src.config import Config; cfg = Config(); cfg.create_default(); cfg.save()"; \
 	fi
 	@echo "$(GREEN)✅ Setup complete! Edit config.json to configure your MCP servers.$(RESET)"
 
@@ -134,7 +134,7 @@ ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint
 
 config_create: check_uv ## Create a new default config.json
 	@echo "$(YELLOW)📝Creating default config.json...$(RESET)"
-	@$(PYTHON) -c "from src.config import Config; Config.create_default().save()"
+	@$(PYTHON) -c "from src.config import Config; cfg = Config(); cfg.create_default(); cfg.save()"
 	@echo "$(GREEN)✅Default config.json created. Edit it to configure your MCP servers.$(RESET)"
 
 config_validate: check_uv ## Validate the current config.json
@@ -151,7 +151,7 @@ DOCKER_IMAGE_TAG = $(shell git rev-parse --short HEAD)
 
 docker_build: ## Build the Docker image
 	@echo "$(YELLOW)🔍Building Docker image...$(RESET)"
-	@docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) -t $(DOCKER_IMAGE_NAME):latest .
+	@docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) -t $(DOCKER_IMAGE_NAME):latest . 
 	@echo "$(GREEN)✅Docker image built and tagged as :$(DOCKER_IMAGE_TAG) and :latest.$(RESET)"
 
 docker_run: docker_build ## Run the Docker image

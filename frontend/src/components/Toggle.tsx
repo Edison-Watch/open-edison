@@ -6,7 +6,10 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (nex
       role="switch"
       aria-checked={checked}
       className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${checked ? 'bg-blue-500' : 'bg-app-border'}`}
-      onClick={() => onChange(!checked)}
+      onClick={() => {
+        console.log(`🔄 Toggle clicked: current=${checked}, new=${!checked}`)
+        onChange(!checked)
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
