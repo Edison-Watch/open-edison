@@ -233,7 +233,11 @@ class SessionTrackingMiddleware(Middleware):
         # Get or create session stats
         _, _session_id = self._get_or_create_session_stats(context)
 
-        return await call_next(context)  # type: ignore
+        try:
+            return await call_next(context)  # type: ignore
+        except Exception:
+            log.exception("MCP request handling failed")
+            raise
 
     # Hooks for Tools
     async def on_list_tools(  # noqa
@@ -243,7 +247,11 @@ class SessionTrackingMiddleware(Middleware):
     ) -> Any:
         log.debug("🔍 on_list_tools")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_tools failed")
+            raise
         log.trace(f"🔍 on_list_tools response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -368,7 +376,11 @@ class SessionTrackingMiddleware(Middleware):
         """Process resource access and track security implications."""
         log.trace("🔍 on_list_resources")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_resources failed")
+            raise
         log.trace(f"🔍 on_list_resources response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -415,7 +427,11 @@ class SessionTrackingMiddleware(Middleware):
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
             log.warning("No session ID found for resource access tracking")
-            return await call_next(context)
+            try:
+                return await call_next(context)
+            except Exception:
+                log.exception("MCP read_resource failed")
+                raise
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding resource access to session {session_id}")
@@ -457,7 +473,11 @@ class SessionTrackingMiddleware(Middleware):
             db_session.commit()
 
         log.trace(f"Resource access {resource_name} added to session {session_id}")
-        return await call_next(context)
+        try:
+            return await call_next(context)
+        except Exception:
+            log.exception("MCP read_resource failed")
+            raise
 
     # Hooks for Prompts
     async def on_list_prompts(  # noqa
@@ -468,7 +488,11 @@ class SessionTrackingMiddleware(Middleware):
         """Process resource access and track security implications."""
         log.debug("🔍 on_list_prompts")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_prompts failed")
+            raise
         log.debug(f"🔍 on_list_prompts response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -515,7 +539,11 @@ class SessionTrackingMiddleware(Middleware):
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
             log.warning("No session ID found for prompt access tracking")
-            return await call_next(context)
+            try:
+                return await call_next(context)
+            except Exception:
+                log.exception("MCP get_prompt failed")
+                raise
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding prompt access to session {session_id}")
@@ -554,4 +582,8 @@ class SessionTrackingMiddleware(Middleware):
             db_session.commit()
 
         log.trace(f"Prompt access {prompt_name} added to session {session_id}")
-        return await call_next(context)
+        try:
+            return await call_next(context)
+        except Exception:
+            log.exception("MCP get_prompt failed")
+            raise

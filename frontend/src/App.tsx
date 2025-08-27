@@ -1156,7 +1156,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setToolPerms(prev => {
                 const next = { ...(prev || {}) } as any
                 const server = next[serverName] || {}
-                for (const t of data.tools || []) { if (!server[t.name]) server[t.name] = toPerm(t.description) }
+                for (const t of data.tools || []) {
+                    const key = unprefixByServer(String(t.name || ''), serverName)
+                    if (!server[key]) server[key] = toPerm(t.description)
+                }
                 next[serverName] = server
                 return next
             })
@@ -1170,7 +1173,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setPromptPerms(prev => {
                 const next = { ...(prev || {}) } as any
                 const server = next[serverName] || {}
-                for (const p of data.prompts || []) { if (!server[p.name]) server[p.name] = toPerm(p.description) }
+                for (const p of data.prompts || []) {
+                    const key = unprefixByServer(String(p.name || ''), serverName)
+                    if (!server[key]) server[key] = toPerm(p.description)
+                }
                 next[serverName] = server
                 return next
             })
@@ -1249,9 +1255,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     const next = { ...(prev || {}) } as any
                     const server = { ...(next[serverName] || {}) }
                     for (const [name, flags] of Object.entries(toolsResp)) {
-                        const prefixed = `${serverName}_${name}`
-                        const targetKey = Object.prototype.hasOwnProperty.call(server, prefixed) ? prefixed : name
-                        server[targetKey] = flags
+                        const key = unprefixByServer(String(name), serverName)
+                        server[key] = flags
                     }
                     next[serverName] = server
                     return next
@@ -1273,9 +1278,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     const next = { ...(prev || {}) } as any
                     const server = { ...(next[serverName] || {}) }
                     for (const [name, flags] of Object.entries(promptsResp)) {
-                        const prefixed = `${serverName}_${name}`
-                        const targetKey = Object.prototype.hasOwnProperty.call(server, prefixed) ? prefixed : name
-                        server[targetKey] = flags
+                        const key = unprefixByServer(String(name), serverName)
+                        server[key] = flags
                     }
                     next[serverName] = server
                     return next
