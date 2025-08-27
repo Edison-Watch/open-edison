@@ -40,7 +40,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install UV package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # Add uv to PATH
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Copy project files
 COPY pyproject.toml ./
