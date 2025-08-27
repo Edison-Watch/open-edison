@@ -5,6 +5,7 @@ These tests run against a real server instance in the background.
 """
 
 import os
+
 import pytest
 
 from tests.test_template import BackgroundServerTemplate, integration_test, slow_test

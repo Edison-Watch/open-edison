@@ -173,7 +173,6 @@ opentelemetry-semantic-conventions==0.57b0
     # via opentelemetry-sdk
 packaging==25.0
     # via pytest
-    # via pytest-rerunfailures
     # via twine
 parse==1.20.2
     # via openapi-core
@@ -207,9 +206,7 @@ pyperclip==1.9.0
     # via fastmcp
 pytest==8.4.1
     # via pytest-asyncio
-    # via pytest-rerunfailures
 pytest-asyncio==1.1.0
-pytest-rerunfailures==15.1
 python-dotenv==1.1.1
     # via fastmcp
     # via open-edison
