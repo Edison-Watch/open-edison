@@ -17,8 +17,8 @@ from typing import Any, NoReturn, cast
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
-from .config import Config, get_config_dir
-from .server import OpenEdisonProxy
+from src.config import Config, get_config_dir, get_config_json_path
+from src.server import OpenEdisonProxy
 
 log: Any = _log
 
@@ -185,7 +185,7 @@ async def _run_server(args: Any) -> None:
     config_dir = get_config_dir()
 
     # Load config after setting env override
-    cfg = Config(config_dir)
+    cfg = Config(get_config_json_path())
 
     host = getattr(args, "host", None) or cfg.server.host
     port = getattr(args, "port", None) or cfg.server.port
