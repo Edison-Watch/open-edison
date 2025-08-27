@@ -177,6 +177,7 @@ def _spawn_frontend_dev(  # noqa: C901 - pragmatic complexity for env probing
 
 
 async def _run_server(args: Any) -> None:
+    # TODO check this works as we want it to
     # Resolve config dir and expose via env for the rest of the app
     config_dir_arg = getattr(args, "config_dir", None)
     if config_dir_arg is not None:
@@ -184,7 +185,7 @@ async def _run_server(args: Any) -> None:
     config_dir = get_config_dir()
 
     # Load config after setting env override
-    cfg = Config.load()
+    cfg = Config(config_dir)
 
     host = getattr(args, "host", None) or cfg.server.host
     port = getattr(args, "port", None) or cfg.server.port

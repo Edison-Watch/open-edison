@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import mcp.types as mt
 from fastmcp.prompts.prompt import FunctionPrompt
@@ -27,8 +27,13 @@ from sqlalchemy import JSON, Column, Integer, String, create_engine, event
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
+from src import events
 from src.config import get_config_dir  # type: ignore[reportMissingImports]
-from src.middleware.data_access_tracker import DataAccessTracker
+from src.middleware.data_access_tracker import (
+    DataAccessTracker,
+    SecurityError,
+)
+from src.permissions import Permissions
 from src.telemetry import (
     record_prompt_used,
     record_resource_used,
@@ -67,7 +72,10 @@ class MCPSessionModel(Base):  # type: ignore
     data_access_summary = Column(JSON)  # type: ignore
 
 
-current_session_id_ctxvar: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+current_session_id_ctxvar: ContextVar[str | None] = ContextVar(
+    "current_session_id",
+    default=cast(str | None, None),  # noqa: B039
+)
 
 
 def get_current_session_data_tracker() -> DataAccessTracker | None:
@@ -101,7 +109,7 @@ def create_db_session() -> Generator[Session, None, None]:
     engine = create_engine(f"sqlite:///{db_path}")
 
     # Ensure changes are flushed to the main database file (avoid WAL for sql.js compatibility)
-    @event.listens_for(engine, "connect")
+    @event.listens_for(engine, "connect")  # noqa
     def _set_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def] # noqa
         cur = dbapi_connection.cursor()  # type: ignore[attr-defined]
         try:
@@ -171,7 +179,7 @@ def get_session_from_db(session_id: str) -> MCPSession:
                     "has_external_communication", False
                 )
             # Restore ACL highest level if present
-            if isinstance(summary_data, dict) and "acl" in summary_data:
+            if isinstance(summary_data, dict) and "acl" in summary_data:  # type: ignore
                 acl_summary: Any = summary_data.get("acl")  # type: ignore
                 if isinstance(acl_summary, dict):
                     highest = acl_summary.get("highest_acl_level")  # type: ignore
@@ -214,7 +222,7 @@ class SessionTrackingMiddleware(Middleware):
         return session, session_id
 
     # General hooks for on_request, on_message, etc.
-    async def on_request(
+    async def on_request(  # noqa
         self,
         context: MiddlewareContext[mt.Request[Any, Any]],  # type: ignore
         call_next: CallNext[mt.Request[Any, Any], Any],  # type: ignore
@@ -225,17 +233,25 @@ class SessionTrackingMiddleware(Middleware):
         # Get or create session stats
         _, _session_id = self._get_or_create_session_stats(context)
 
-        return await call_next(context)  # type: ignore
+        try:
+            return await call_next(context)  # type: ignore
+        except Exception:
+            log.exception("MCP request handling failed")
+            raise
 
     # Hooks for Tools
-    async def on_list_tools(
+    async def on_list_tools(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
     ) -> Any:
         log.debug("🔍 on_list_tools")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_tools failed")
+            raise
         log.trace(f"🔍 on_list_tools response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -247,8 +263,11 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_tools: list[FunctionTool | ProxyTool | Any] = []
+        perms = Permissions()
         for tool in response:
-            log.trace(f"🔍 Processing tool listing {tool.name}")
+            # Due to proxy & server naming
+            tool_name = tool.key
+            log.trace(f"🔍 Processing tool listing {tool_name}")
             if isinstance(tool, FunctionTool):
                 log.trace("🔍 Tool is built-in")
                 log.trace(f"🔍 Tool is a FunctionTool: {tool}")
@@ -260,20 +279,18 @@ class SessionTrackingMiddleware(Middleware):
                 log.trace(f"🔍 Tool is a unknown type: {tool}")
                 continue
 
-            log.trace(f"🔍 Getting permissions for tool {tool.name}")
-            permissions = session.data_access_tracker.get_tool_permissions(tool.name)
-            log.trace(f"🔍 Tool permissions: {permissions}")
-            if permissions["enabled"]:
+            log.trace(f"🔍 Getting permissions for tool {tool_name}")
+            if perms.is_tool_enabled(tool_name):
                 allowed_tools.append(tool)
             else:
                 log.warning(
-                    f"🔍 Tool {tool.name} is disabled on not configured and will not be allowed"
+                    f"🔍 Tool {tool_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 
         return allowed_tools  # type: ignore
 
-    async def on_call_tool(
+    async def on_call_tool(  # noqa
         self,
         context: MiddlewareContext[mt.CallToolRequestParams],  # type: ignore
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],  # type: ignore
@@ -296,7 +313,28 @@ class SessionTrackingMiddleware(Middleware):
 
         assert session.data_access_tracker is not None
         log.debug(f"🔍 Analyzing tool {context.message.name} for security implications")
-        session.data_access_tracker.add_tool_call(context.message.name)
+        try:
+            session.data_access_tracker.add_tool_call(context.message.name)
+        except SecurityError as e:
+            # Publish pre-block event enriched with session_id then wait up to 30s for approval
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "tool",
+                    "name": context.message.name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "tool", context.message.name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            # Approved: apply effects and proceed
+            session.data_access_tracker.apply_effects_after_manual_approval(
+                "tool", context.message.name
+            )
         # Telemetry: record tool call
         record_tool_call(context.message.name)
 
@@ -330,7 +368,7 @@ class SessionTrackingMiddleware(Middleware):
         return await call_next(context)  # type: ignore
 
     # Hooks for Resources
-    async def on_list_resources(
+    async def on_list_resources(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -338,7 +376,11 @@ class SessionTrackingMiddleware(Middleware):
         """Process resource access and track security implications."""
         log.trace("🔍 on_list_resources")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_resources failed")
+            raise
         log.trace(f"🔍 on_list_resources response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -350,6 +392,7 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_resources: list[FunctionResource | ProxyResource | Any] = []
+        perms = Permissions()
         for resource in response:
             resource_name = str(resource.uri)
             log.trace(f"🔍 Processing resource listing {resource_name}")
@@ -365,19 +408,17 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for resource {resource_name}")
-            permissions = session.data_access_tracker.get_resource_permissions(resource_name)
-            log.trace(f"🔍 Resource permissions: {permissions}")
-            if permissions["enabled"]:
+            if perms.is_resource_enabled(resource_name):
                 allowed_resources.append(resource)
             else:
                 log.warning(
-                    f"🔍 Resource {resource_name} is disabled on not configured and will not be allowed"
+                    f"🔍 Resource {resource_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 
         return allowed_resources  # type: ignore
 
-    async def on_read_resource(
+    async def on_read_resource(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -386,7 +427,11 @@ class SessionTrackingMiddleware(Middleware):
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
             log.warning("No session ID found for resource access tracking")
-            return await call_next(context)
+            try:
+                return await call_next(context)
+            except Exception:
+                log.exception("MCP read_resource failed")
+                raise
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding resource access to session {session_id}")
@@ -396,7 +441,26 @@ class SessionTrackingMiddleware(Middleware):
         resource_name = str(context.message.uri)
 
         log.debug(f"🔍 Analyzing resource {resource_name} for security implications")
-        _ = session.data_access_tracker.add_resource_access(resource_name)
+        try:
+            _ = session.data_access_tracker.add_resource_access(resource_name)
+        except SecurityError as e:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "resource",
+                    "name": resource_name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "resource", resource_name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            session.data_access_tracker.apply_effects_after_manual_approval(
+                "resource", resource_name
+            )
         record_resource_used(resource_name)
 
         # Update database session
@@ -409,10 +473,14 @@ class SessionTrackingMiddleware(Middleware):
             db_session.commit()
 
         log.trace(f"Resource access {resource_name} added to session {session_id}")
-        return await call_next(context)
+        try:
+            return await call_next(context)
+        except Exception:
+            log.exception("MCP read_resource failed")
+            raise
 
     # Hooks for Prompts
-    async def on_list_prompts(
+    async def on_list_prompts(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -420,7 +488,11 @@ class SessionTrackingMiddleware(Middleware):
         """Process resource access and track security implications."""
         log.debug("🔍 on_list_prompts")
         # Get the original response
-        response = await call_next(context)
+        try:
+            response = await call_next(context)
+        except Exception:
+            log.exception("MCP list_prompts failed")
+            raise
         log.debug(f"🔍 on_list_prompts response: {response}")
 
         session_id = current_session_id_ctxvar.get()
@@ -432,6 +504,7 @@ class SessionTrackingMiddleware(Middleware):
 
         # Filter out specific tools or return empty list
         allowed_prompts: list[ProxyPrompt | Any] = []
+        perms = Permissions()
         for prompt in response:
             prompt_name = str(prompt.name)
             log.trace(f"🔍 Processing prompt listing {prompt_name}")
@@ -447,19 +520,17 @@ class SessionTrackingMiddleware(Middleware):
                 continue
 
             log.trace(f"🔍 Getting permissions for prompt {prompt_name}")
-            permissions = session.data_access_tracker.get_prompt_permissions(prompt_name)
-            log.trace(f"🔍 Prompt permissions: {permissions}")
-            if permissions["enabled"]:
+            if perms.is_prompt_enabled(prompt_name):
                 allowed_prompts.append(prompt)
             else:
                 log.warning(
-                    f"🔍 Prompt {prompt_name} is disabled on not configured and will not be allowed"
+                    f"🔍 Prompt {prompt_name} is disabled or not configured and will not be allowed"
                 )
                 continue
 
         return allowed_prompts  # type: ignore
 
-    async def on_get_prompt(
+    async def on_get_prompt(  # noqa
         self,
         context: MiddlewareContext[Any],  # type: ignore
         call_next: CallNext[Any, Any],  # type: ignore
@@ -468,7 +539,11 @@ class SessionTrackingMiddleware(Middleware):
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
             log.warning("No session ID found for prompt access tracking")
-            return await call_next(context)
+            try:
+                return await call_next(context)
+            except Exception:
+                log.exception("MCP get_prompt failed")
+                raise
 
         session = get_session_from_db(session_id)
         log.trace(f"Adding prompt access to session {session_id}")
@@ -477,7 +552,24 @@ class SessionTrackingMiddleware(Middleware):
         prompt_name = context.message.name
 
         log.debug(f"🔍 Analyzing prompt {prompt_name} for security implications")
-        _ = session.data_access_tracker.add_prompt_access(prompt_name)
+        try:
+            _ = session.data_access_tracker.add_prompt_access(prompt_name)
+        except SecurityError as e:
+            events.fire_and_forget(
+                {
+                    "type": "mcp_pre_block",
+                    "kind": "prompt",
+                    "name": prompt_name,
+                    "session_id": session_id,
+                    "error": str(e),
+                }
+            )
+            approved = await events.wait_for_approval(
+                session_id, "prompt", prompt_name, timeout_s=30.0
+            )
+            if not approved:
+                raise
+            session.data_access_tracker.apply_effects_after_manual_approval("prompt", prompt_name)
         record_prompt_used(prompt_name)
 
         # Update database session
@@ -490,4 +582,8 @@ class SessionTrackingMiddleware(Middleware):
             db_session.commit()
 
         log.trace(f"Prompt access {prompt_name} added to session {session_id}")
-        return await call_next(context)
+        try:
+            return await call_next(context)
+        except Exception:
+            log.exception("MCP get_prompt failed")
+            raise

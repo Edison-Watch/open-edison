@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from types import SimpleNamespace
 from typing import Any
@@ -16,7 +14,6 @@ def _reset_telemetry_state() -> None:
     tel._tool_calls_counter = None  # type: ignore[attr-defined]
     tel._tool_calls_blocked_counter = None  # type: ignore[attr-defined]
     tel._servers_installed_gauge = None  # type: ignore[attr-defined]
-    tel._tool_calls_metadata_counter = None  # type: ignore[attr-defined]
     tel._resource_used_counter = None  # type: ignore[attr-defined]
     tel._prompt_used_counter = None  # type: ignore[attr-defined]
     tel._private_data_access_counter = None  # type: ignore[attr-defined]
@@ -108,7 +105,6 @@ def test_recorders_are_safe_noops_when_disabled() -> None:
 
     tel.record_tool_call("x")
     tel.record_tool_call_blocked("x", "y")
-    tel.record_tool_call_metadata("x", {"a": 1})
     tel.set_servers_installed(1)
     tel.record_resource_used("res")
     tel.record_prompt_used("p")

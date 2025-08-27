@@ -9,7 +9,7 @@ import traceback
 
 from loguru import logger as log
 
-from src.config import config
+from src.config import Config
 from src.server import OpenEdisonProxy
 
 
@@ -21,16 +21,13 @@ async def main():
     log.debug("Repository access verified - ready for MCP proxying development")
 
     # Create the proxy server
-    proxy = OpenEdisonProxy(host=config.server.host, port=config.server.port)
+    proxy = OpenEdisonProxy(host=Config().server.host, port=Config().server.port)
 
     # Start the server
     try:
         await proxy.start()
-        log.info("🚀 Open Edison is ready to proxy MCP traffic")
-        # Keep the server running
-        _ = await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        log.info("👋 Received shutdown signal")
+    finally:
+        log.info("👋 Open Edison shutting down...")
 
 
 if __name__ == "__main__":

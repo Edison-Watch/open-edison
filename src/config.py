@@ -10,6 +10,7 @@ import os
 import sys
 import tomllib
 from dataclasses import asdict, dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -37,8 +38,7 @@ def get_config_dir() -> Path:
         try:
             return Path(env_dir).expanduser().resolve()
         except Exception:
-            # Fall through to defaults
-            pass
+            log.warning(f"Failed to resolve OPEN_EDISON_CONFIG_DIR: {env_dir}")
 
     # Platform-specific defaults
     try:
@@ -58,37 +58,9 @@ def get_config_dir() -> Path:
         return (Path.home() / ".open-edison").resolve()
 
 
-# Back-compat private alias (internal modules may import this)
-def _get_config_dir() -> Path:  # noqa: D401
-    """Alias to public get_config_dir (maintained for internal imports)."""
-    return get_config_dir()
-
-
-def _default_config_path() -> Path:
-    """Determine default config.json path.
-
-    In development (editable or source checkout), prefer repository root
-    `config.json` when present. In an installed package (site-packages),
-    use the resolved user config dir.
-    """
-    repo_pyproject = root_dir / "pyproject.toml"
-    repo_config = root_dir / "config.json"
-
-    # If pyproject.toml exists next to src/, we are likely in a repo checkout
-    if repo_pyproject.exists():
-        return repo_config
-
-    # Otherwise, prefer user config directory
+def get_config_json_path() -> Path:
+    """Get the path to the config.json file"""
     return get_config_dir() / "config.json"
-
-
-class ConfigError(Exception):
-    """Exception raised for configuration-related errors"""
-
-    def __init__(self, message: str, config_path: Path | None = None):
-        self.message = message
-        self.config_path = config_path
-        super().__init__(self.message)
 
 
 @dataclass
@@ -119,10 +91,6 @@ class MCPServerConfig:
     enabled: bool = True
     roots: list[str] | None = None
 
-    # OAuth-specific fields
-    oauth_required: bool | None = None
-    """Whether this server requires OAuth authentication. None = auto-detect."""
-
     oauth_scopes: list[str] | None = None
     """OAuth scopes to request for this server."""
 
@@ -141,10 +109,10 @@ class MCPServerConfig:
         Local servers run as child processes and don't need OAuth.
         """
         return (
-            self.command == "npx" and
-            len(self.args) >= 3 and
-            self.args[1] == "mcp-remote" and
-            self.args[2].startswith("https://")
+            self.command == "npx"
+            and len(self.args) >= 3
+            and self.args[1] == "mcp-remote"
+            and self.args[2].startswith("https://")
         )
 
     def get_remote_url(self) -> str | None:
@@ -158,14 +126,6 @@ class MCPServerConfig:
             return self.args[2]
         return None
 
-    def is_local_server(self) -> bool:
-        """
-        Check if this is a local MCP server (runs as child process).
-
-        Local servers typically use @modelcontextprotocol packages.
-        """
-        return not self.is_remote_server()
-
 
 @dataclass
 class TelemetryConfig:
@@ -176,6 +136,15 @@ class TelemetryConfig:
     otlp_endpoint: str | None = None
     headers: dict[str, str] | None = None
     export_interval_ms: int = 60000
+
+
+@cache
+def load_json_file(path: Path) -> dict[str, Any]:
+    """Load a JSON file from the given path.
+    Kept as a separate function because we want to manually clear cache sometimes (update in config)"""
+    log.info(f"Loading configuration from {path}")
+    with open(path) as f:
+        return json.load(f)
 
 
 @dataclass
@@ -203,15 +172,14 @@ class Config:
             log.warning(f"Failed to read version from pyproject.toml: {e}")
             return "unknown"
 
-    @classmethod
-    def load(cls, config_path: Path | None = None) -> "Config":
+    def __init__(self, config_path: Path | None = None) -> None:
         """Load configuration from JSON file.
 
         If a directory path is provided, will look for `config.json` inside it.
         If no path is provided, uses OPEN_EDISON_CONFIG_DIR or project root.
         """
         if config_path is None:
-            config_path = _default_config_path()
+            config_path = get_config_json_path()
         else:
             # If a directory was passed, use config.json inside it
             if config_path.is_dir():
@@ -219,12 +187,10 @@ class Config:
 
         if not config_path.exists():
             log.warning(f"Config file not found at {config_path}, creating default config")
-            default_config = cls.create_default()
-            default_config.save(config_path)
-            return default_config
+            self.create_default()
+            self.save(config_path)
 
-        with open(config_path) as f:
-            data: dict[str, Any] = json.load(f)
+        data = load_json_file(config_path)
 
         mcp_servers_data = data.get("mcp_servers", [])  # type: ignore
         server_data = data.get("server", {})  # type: ignore
@@ -259,20 +225,18 @@ class Config:
             export_interval_ms=export_interval_ms,
         )
 
-        return cls(
-            server=ServerConfig(**server_data),  # type: ignore
-            logging=LoggingConfig(**logging_data),  # type: ignore
-            mcp_servers=[
-                MCPServerConfig(**server_item)  # type: ignore
-                for server_item in mcp_servers_data  # type: ignore
-            ],
-            telemetry=telemetry_cfg,
-        )
+        self.server = ServerConfig(**server_data)  # type: ignore
+        self.logging = LoggingConfig(**logging_data)  # type: ignore
+        self.mcp_servers = [
+            MCPServerConfig(**server_item)  # type: ignore
+            for server_item in mcp_servers_data  # type: ignore
+        ]
+        self.telemetry = telemetry_cfg
 
     def save(self, config_path: Path | None = None) -> None:
         """Save configuration to JSON file"""
         if config_path is None:
-            config_path = _default_config_path()
+            config_path = get_config_json_path()
         else:
             # If a directory was passed, save to config.json inside it
             if config_path.is_dir():
@@ -294,26 +258,19 @@ class Config:
 
         log.info(f"Configuration saved to {config_path}")
 
-    @classmethod
-    def create_default(cls) -> "Config":
+    def create_default(self) -> None:
         """Create default configuration"""
-        return cls(
-            server=ServerConfig(),
-            logging=LoggingConfig(),
-            mcp_servers=[
-                MCPServerConfig(
-                    name="filesystem",
-                    command="uvx",
-                    args=["mcp-server-filesystem", "/tmp"],
-                    enabled=False,
-                )
-            ],
-            telemetry=TelemetryConfig(
-                enabled=True,
-                otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
-            ),
+        self.server = ServerConfig()
+        self.logging = LoggingConfig()
+        self.mcp_servers = [
+            MCPServerConfig(
+                name="filesystem",
+                command="uvx",
+                args=["mcp-server-filesystem", "/tmp"],
+                enabled=False,
+            )
+        ]
+        self.telemetry = TelemetryConfig(
+            enabled=True,
+            otlp_endpoint=DEFAULT_OTLP_METRICS_ENDPOINT,
         )
-
-
-# Load global configuration
-config = Config.load()

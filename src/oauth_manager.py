@@ -22,12 +22,12 @@ from loguru import logger as log
 class OAuthStatus(Enum):
     """OAuth authentication status for MCP servers."""
 
-    UNKNOWN = "unknown"
+    UNKNOWN = "unknown"  # noqa
     NOT_REQUIRED = "not_required"
     NEEDS_AUTH = "needs_auth"
     AUTHENTICATED = "authenticated"
     ERROR = "error"
-    EXPIRED = "expired"
+    EXPIRED = "expired"  # noqa
 
 
 @dataclass
@@ -68,10 +68,7 @@ class OAuthManager:
         log.info(f"🔐 OAuth Manager initialized with cache dir: {self.cache_dir}")
 
     async def check_oauth_requirement(
-        self,
-        server_name: str,
-        mcp_url: str | None,
-        timeout_seconds: float = 10.0
+        self, server_name: str, mcp_url: str | None, timeout_seconds: float = 10.0
     ) -> OAuthServerInfo:
         """
         Check if an MCP server requires OAuth authentication.
@@ -89,9 +86,7 @@ class OAuthManager:
         # If no mcp_url provided, this is a local server - no OAuth needed
         if not mcp_url:
             info = OAuthServerInfo(
-                server_name=server_name,
-                mcp_url="",
-                status=OAuthStatus.NOT_REQUIRED
+                server_name=server_name, mcp_url="", status=OAuthStatus.NOT_REQUIRED
             )
             log.info(f"✅ {server_name} is a local server - no OAuth required")
             self._oauth_info[server_name] = info
@@ -102,15 +97,12 @@ class OAuthManager:
         try:
             # Check if auth is required (with timeout)
             auth_required = await asyncio.wait_for(
-                check_if_auth_required(mcp_url),
-                timeout=timeout_seconds
+                check_if_auth_required(mcp_url), timeout=timeout_seconds
             )
 
             if not auth_required:
                 info = OAuthServerInfo(
-                    server_name=server_name,
-                    mcp_url=mcp_url,
-                    status=OAuthStatus.NOT_REQUIRED
+                    server_name=server_name, mcp_url=mcp_url, status=OAuthStatus.NOT_REQUIRED
                 )
                 log.info(f"✅ {server_name} does not require OAuth")
                 self._oauth_info[server_name] = info
@@ -138,14 +130,15 @@ class OAuthManager:
                     status = OAuthStatus.AUTHENTICATED
                     # Try to get expiration time if available
                     try:
-                        expires_at = getattr(existing_tokens, 'expires_at', None)
+                        expires_at = getattr(existing_tokens, "expires_at", None)
                         if expires_at:
                             token_expires_at = str(expires_at)
                         else:
-                            expires_in = getattr(existing_tokens, 'expires_in', None)
+                            expires_in = getattr(existing_tokens, "expires_in", None)
                             if expires_in:
                                 # If expires_in is available, we can calculate expiration
                                 from datetime import datetime, timedelta
+
                                 expiry = datetime.now() + timedelta(seconds=expires_in)
                                 token_expires_at = expiry.isoformat()
                     except Exception:
@@ -158,7 +151,7 @@ class OAuthManager:
                 status=status,
                 scopes=None,  # We don't have metadata discovery, so no scopes info
                 token_expires_at=token_expires_at,
-                has_refresh_token=has_refresh_token
+                has_refresh_token=has_refresh_token,
             )
 
             log.info(f"🔐 {server_name} OAuth status: {status.value}")
@@ -170,7 +163,7 @@ class OAuthManager:
                 server_name=server_name,
                 mcp_url=mcp_url,
                 status=OAuthStatus.ERROR,
-                error_message=f"OAuth check timed out after {timeout_seconds}s"
+                error_message=f"OAuth check timed out after {timeout_seconds}s",
             )
             log.warning(f"⏰ OAuth check for {server_name} timed out")
             self._oauth_info[server_name] = info
@@ -181,7 +174,7 @@ class OAuthManager:
                 server_name=server_name,
                 mcp_url=mcp_url,
                 status=OAuthStatus.ERROR,
-                error_message=str(e)
+                error_message=str(e),
             )
             log.error(f"❌ OAuth check for {server_name} failed: {e}")
             self._oauth_info[server_name] = info
@@ -192,7 +185,7 @@ class OAuthManager:
         server_name: str,
         mcp_url: str,
         scopes: list[str] | None = None,
-        client_name: str | None = None
+        client_name: str | None = None,
     ) -> OAuth | None:
         """
         Get OAuth authentication object for FastMCP client.
@@ -221,7 +214,7 @@ class OAuthManager:
                 scopes=scopes or info.scopes,
                 client_name=client_name or info.client_name,
                 token_storage_cache_dir=self.cache_dir,
-                callback_port=50001
+                callback_port=50001,
             )
             log.info(f"🔐 Created OAuth auth for {server_name}")
             return oauth
@@ -262,10 +255,6 @@ class OAuthManager:
         """Get OAuth info for a server."""
         return self._oauth_info.get(server_name)
 
-    def get_all_server_info(self) -> dict[str, OAuthServerInfo]:
-        """Get OAuth info for all servers."""
-        return self._oauth_info.copy()
-
     async def refresh_server_status(self, server_name: str, mcp_url: str) -> OAuthServerInfo:
         """
         Refresh OAuth status for a server.
@@ -279,46 +268,6 @@ class OAuthManager:
         """
         return await self.check_oauth_requirement(server_name, mcp_url)
 
-    async def bulk_check_servers(
-        self,
-        servers: list[tuple[str, str]],
-        timeout_seconds: float = 10.0
-    ) -> dict[str, OAuthServerInfo]:
-        """
-        Check OAuth requirements for multiple servers concurrently.
-
-        Args:
-            servers: List of (server_name, mcp_url) tuples
-            timeout_seconds: Timeout for each individual check
-
-        Returns:
-            Dictionary mapping server names to OAuth info
-        """
-        log.info(f"🔍 Bulk checking OAuth for {len(servers)} servers")
-
-        tasks = [
-            self.check_oauth_requirement(name, url, timeout_seconds)
-            for name, url in servers
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        oauth_info: dict[str, OAuthServerInfo] = {}
-        for (server_name, _), result in zip(servers, results, strict=False):
-            if isinstance(result, Exception):
-                oauth_info[server_name] = OAuthServerInfo(
-                    server_name=server_name,
-                    mcp_url="",
-                    status=OAuthStatus.ERROR,
-                    error_message=str(result),
-                    has_refresh_token=False
-                )
-            elif isinstance(result, OAuthServerInfo):
-                oauth_info[server_name] = result
-
-        log.info(f"✅ Completed bulk OAuth check for {len(servers)} servers")
-        return oauth_info
-
 
 # Global OAuth manager instance
 _oauth_manager: OAuthManager | None = None
@@ -330,9 +279,3 @@ def get_oauth_manager() -> OAuthManager:
     if _oauth_manager is None:
         _oauth_manager = OAuthManager()
     return _oauth_manager
-
-
-def set_oauth_manager(manager: OAuthManager) -> None:
-    """Set the global OAuth manager instance (mainly for testing)."""
-    global _oauth_manager
-    _oauth_manager = manager

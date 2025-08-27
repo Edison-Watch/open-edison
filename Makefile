@@ -28,13 +28,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 .PHONY: run
 run: check_rye sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
-	rye run python main.py
-
-# Run the server in development mode
-.PHONY: dev
-dev: ## Run the server in development mode
-	@echo "🔧 Starting Open Edison in development mode..."
-	rye run python main.py
+	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir rye run python main.py
 
 ########################################################
 # Check dependencies
@@ -128,8 +122,8 @@ basedpyright_check: check_rye ## Run type checking with Basedpyright
 
 deadcode: check_rye ## Find unused code with Vulture (fails on findings)
 	@echo "$(YELLOW)🪦 Scanning for dead code with Vulture...$(RESET)"
-	@rye run vulture src tests --min-confidence 70
-	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 70).$(RESET)"
+	@rye run vulture src tests --min-confidence 60
+	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 60).$(RESET)"
 
 ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"

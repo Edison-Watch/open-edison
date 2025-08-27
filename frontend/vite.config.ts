@@ -61,7 +61,7 @@ const localSavePlugin = () => ({
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
 
-                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/clear-caches`, {
+                        const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' }
                         })

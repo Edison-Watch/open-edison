@@ -8,21 +8,22 @@ Handles MCP protocol communication with running servers using a unified composit
 from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from loguru import logger as log
 
-from src.config import MCPServerConfig, config
+from src.config import Config, MCPServerConfig
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
 )
 from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
+from src.permissions import Permissions, PermissionsError
 
 
 class MountedServerInfo(TypedDict):
     """Type definition for mounted server information."""
 
-    config: MCPServerConfig
+    config: MCPServerConfig  # noqa
     proxy: FastMCP[Any] | None
 
 
@@ -30,8 +31,12 @@ class ServerStatusInfo(TypedDict):
     """Type definition for server status information."""
 
     name: str
-    config: dict[str, str | list[str] | bool | dict[str, str] | None]
+    config: dict[str, str | list[str] | bool | dict[str, str] | None]  # noqa
     mounted: bool
+
+
+# Module level because needs to be read by permissions etc
+mounted_servers: dict[str, MountedServerInfo] = {}
 
 
 class SingleUserMCP(FastMCP[Any]):
@@ -44,9 +49,8 @@ class SingleUserMCP(FastMCP[Any]):
     """
 
     def __init__(self):
-        super().__init__(name="open-edison-single-user")
-        self.mounted_servers: dict[str, MountedServerInfo] = {}
-        self.composite_proxy: FastMCP[Any] | None = None
+        # Disable error masking so upstream error details are preserved in responses
+        super().__init__(name="open-edison-single-user", mask_error_details=False)
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
@@ -69,10 +73,6 @@ class SingleUserMCP(FastMCP[Any]):
         mcp_servers: dict[str, dict[str, Any]] = {}
 
         for server_config in enabled_servers:
-            # Skip test servers for composite proxy
-            if server_config.command == "echo":
-                continue
-
             server_entry: dict[str, Any] = {
                 "command": server_config.command,
                 "args": server_config.args,
@@ -86,15 +86,6 @@ class SingleUserMCP(FastMCP[Any]):
             mcp_servers[server_config.name] = server_entry
 
         return {"mcpServers": mcp_servers}
-
-    async def _mount_test_server(self, server_config: MCPServerConfig) -> bool:
-        """Mount a test server with mock configuration."""
-        log.info(f"Mock mounting test server: {server_config.name}")
-        self.mounted_servers[server_config.name] = MountedServerInfo(
-            config=server_config, proxy=None
-        )
-        log.info(f"✅ Mounted test server: {server_config.name}")
-        return True
 
     async def create_composite_proxy(self, enabled_servers: list[MCPServerConfig]) -> bool:
         """
@@ -132,7 +123,7 @@ class SingleUserMCP(FastMCP[Any]):
                 continue
 
         log.info(
-            f"✅ Created composite proxy with {len(enabled_servers)} servers ({self.mounted_servers.keys()})"
+            f"✅ Created composite proxy with {len(enabled_servers)} servers ({mounted_servers.keys()})"
         )
         return True
 
@@ -140,7 +131,7 @@ class SingleUserMCP(FastMCP[Any]):
         self,
         server_config: MCPServerConfig,
         fastmcp_config: dict[str, Any],
-        oauth_manager: OAuthManager
+        oauth_manager: OAuthManager,
     ) -> None:
         """Mount a single MCP server with appropriate OAuth handling."""
         server_name = server_config.name
@@ -162,14 +153,18 @@ class SingleUserMCP(FastMCP[Any]):
                     server_name,
                     remote_url,
                     server_config.oauth_scopes,
-                    server_config.oauth_client_name
+                    server_config.oauth_client_name,
                 )
                 if oauth_auth:
                     client = FastMCPClient(remote_url, auth=oauth_auth)
-                    log.info(f"🔐 Created remote client with OAuth authentication for {server_name}")
+                    log.info(
+                        f"🔐 Created remote client with OAuth authentication for {server_name}"
+                    )
                 else:
                     client = FastMCPClient(remote_url)
-                    log.warning(f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}")
+                    log.warning(
+                        f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}"
+                    )
             else:
                 # Remote server without OAuth or needs auth
                 client = FastMCPClient(remote_url)
@@ -177,8 +172,10 @@ class SingleUserMCP(FastMCP[Any]):
 
             # Log OAuth status warnings
             if oauth_info.status == OAuthStatus.NEEDS_AUTH:
-                log.warning(f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
-                          f"Server will be mounted without authentication and may fail.")
+                log.warning(
+                    f"⚠️ Server {server_name} requires OAuth but no valid tokens found. "
+                    f"Server will be mounted without authentication and may fail."
+                )
             elif oauth_info.status == OAuthStatus.ERROR:
                 log.warning(f"⚠️ OAuth check failed for {server_name}: {oauth_info.error_message}")
 
@@ -190,69 +187,111 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
-        self.mount(proxy, prefix=server_name)
-        self.mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
+        super().mount(proxy, prefix=server_name)
+        mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
-        log.info(f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})")
-
-    async def _rebuild_composite_proxy_without(self, excluded_server: str) -> bool:
-        """Rebuild the composite proxy without the specified server."""
-        try:
-            # Remove from mounted servers
-            await self._cleanup_mounted_server(excluded_server)
-
-            # Get remaining servers that should be in composite proxy
-            remaining_configs = [
-                mounted["config"]
-                for name, mounted in self.mounted_servers.items()
-                if mounted["config"].command != "echo" and name != excluded_server
-            ]
-
-            if not remaining_configs:
-                log.info("No servers remaining for composite proxy")
-                self.composite_proxy = None
-                return True
-
-            # Rebuild composite proxy with remaining servers
-            log.info(f"Rebuilding composite proxy without {excluded_server}")
-            return await self.create_composite_proxy(remaining_configs)
-
-        except Exception as e:
-            log.error(f"Failed to rebuild composite proxy: {e}")
-            return False
-
-    async def _cleanup_mounted_server(self, server_name: str) -> None:
-        """Clean up mounted server resources."""
-        # TODO not sure this is possible for the self object? i.e. there is no self.unmount
-        if server_name in self.mounted_servers:
-            del self.mounted_servers[server_name]
-            log.info(f"✅ Unmounted MCP server: {server_name}")
+        log.info(
+            f"✅ Mounted {server_type} server {server_name} (OAuth: {oauth_info.status.value})"
+        )
 
     async def get_mounted_servers(self) -> list[ServerStatusInfo]:
         """Get list of currently mounted servers."""
         return [
             ServerStatusInfo(name=name, config=mounted["config"].__dict__, mounted=True)
-            for name, mounted in self.mounted_servers.items()
+            for name, mounted in mounted_servers.items()
         ]
 
-    async def initialize(self, test_config: Any | None = None) -> None:
+    async def mount_server(self, server_name: str) -> bool:
+        """
+        Mount a server by name if not already mounted.
+
+        Returns True if newly mounted, False if it was already mounted or failed.
+        """
+        if server_name in mounted_servers:
+            log.info(f"🔁 Server {server_name} already mounted")
+            return False
+
+        # Find server configuration
+        server_config: MCPServerConfig | None = next(
+            (s for s in Config().mcp_servers if s.name == server_name), None
+        )
+
+        if server_config is None:
+            log.error(f"❌ Server configuration not found: {server_name}")
+            return False
+
+        # Build minimal FastMCP backend config for just this server
+        fastmcp_config = self._convert_to_fastmcp_config([server_config])
+        if not fastmcp_config.get("mcpServers"):
+            log.error(f"❌ Invalid/empty MCP config for server: {server_name}")
+            return False
+
+        try:
+            oauth_manager = get_oauth_manager()
+            await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
+            # Warm lists after mount
+            _ = await self._tool_manager.list_tools()
+            _ = await self._resource_manager.list_resources()
+            _ = await self._prompt_manager.list_prompts()
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.error(f"❌ Failed to mount server {server_name}: {e}")
+            return False
+
+    async def unmount(self, server_name: str) -> bool:
+        """
+        Unmount a previously mounted server by name.
+
+        Returns True if it was unmounted, False if it wasn't mounted.
+        """
+        info = mounted_servers.pop(server_name, None)
+        if info is None:
+            log.info(f"ℹ️  Server {server_name} was not mounted")
+            return False
+
+        proxy = info.get("proxy")
+
+        # Manually remove from FastMCP managers' mounted lists
+        for manager_name in ("_tool_manager", "_resource_manager", "_prompt_manager"):
+            manager = getattr(self, manager_name, None)
+            mounted_list = getattr(manager, "_mounted_servers", None)
+            if mounted_list is None:
+                continue
+
+            # Prefer removing by both prefix and object identity; fallback to prefix-only
+            new_list = [
+                m
+                for m in mounted_list
+                if not (m.prefix == server_name and (proxy is None or m.server is proxy))
+            ]
+            if len(new_list) == len(mounted_list):
+                new_list = [m for m in mounted_list if m.prefix != server_name]
+
+            mounted_list[:] = new_list
+
+        # Invalidate and warm lists to ensure reload
+        _ = await self._tool_manager.list_tools()
+        _ = await self._resource_manager.list_resources()
+        _ = await self._prompt_manager.list_prompts()
+
+        log.info(f"🧹 Unmounted server {server_name} and cleared references")
+        return True
+
+    async def initialize(self) -> None:
         """Initialize the FastMCP server using unified composite proxy approach."""
         log.info("Initializing Single User MCP server with composite proxy")
-        config_to_use = test_config if test_config is not None else config
-        log.debug(f"Available MCP servers in config: {[s.name for s in config_to_use.mcp_servers]}")
+        log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
 
         # Get all enabled servers
-        enabled_servers = [s for s in config_to_use.mcp_servers if s.enabled]
+        enabled_servers = [s for s in Config().mcp_servers if s.enabled]
         log.info(
             f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
         )
 
-        # Mount test servers individually (they don't go in composite proxy)
-        test_servers = [s for s in enabled_servers if s.command == "echo"]
-        for server_config in test_servers:
-            log.info(f"Mounting test server individually: {server_config.name}")
-            _ = await self._mount_test_server(server_config)
+        # Unmount all servers
+        for server_name in list(mounted_servers.keys()):
+            await self.unmount(server_name)
 
         # Create composite proxy for all real servers
         success = await self.create_composite_proxy(enabled_servers)
@@ -262,79 +301,10 @@ class SingleUserMCP(FastMCP[Any]):
 
         log.info("✅ Single User MCP server initialized with composite proxy")
 
-    async def reinitialize(self, test_config: Any | None = None) -> dict[str, Any]:
-        """
-        Reinitialize all MCP servers by cleaning up existing ones and reloading config.
-
-        This method:
-        1. Cleans up all mounted servers and MCP proxies
-        2. Reloads the configuration
-        3. Reinitializes all enabled servers
-
-        Args:
-            test_config: Optional test configuration to use instead of reloading from disk
-
-        Returns:
-            Dictionary with reinitialization status and details
-        """
-        log.info("🔄 Reinitializing all MCP servers")
-
-        try:
-            # Step 1: Clean up existing mounted servers and proxies
-            log.info("Cleaning up existing mounted servers and proxies")
-
-            # Clean up composite proxy if it exists
-            if self.composite_proxy is not None:
-                log.info("Cleaning up composite proxy")
-                self.composite_proxy = None
-
-            # Clean up all mounted servers
-            mounted_server_names = list(self.mounted_servers.keys())
-            for server_name in mounted_server_names:
-                await self._cleanup_mounted_server(server_name)
-
-            # Clear the mounted servers dictionary completely
-            self.mounted_servers.clear()
-
-            log.info(f"✅ Cleaned up {len(mounted_server_names)} mounted servers")
-
-            # Step 2: Reload configuration if not using test config
-            config_to_use = test_config
-            if test_config is None:
-                log.info("Reloading configuration from disk")
-                # Import here to avoid circular imports
-                from src.config import Config
-
-                config_to_use = Config.load()
-                log.info("✅ Configuration reloaded from disk")
-
-            # Step 3: Reinitialize all servers
-            log.info("Reinitializing servers with fresh configuration")
-            await self.initialize(config_to_use)
-
-            # Step 4: Get final status
-            final_mounted = await self.get_mounted_servers()
-
-            result = {
-                "status": "success",
-                "message": "MCP servers reinitialized successfully",
-                "cleaned_up_servers": mounted_server_names,
-                "final_mounted_servers": [server["name"] for server in final_mounted],
-                "total_final_mounted": len(final_mounted),
-            }
-
-            log.info(
-                f"✅ Reinitialization complete. Final mounted servers: {result['final_mounted_servers']}"
-            )
-            return result
-
-        except Exception as e:
-            log.error(f"❌ Failed to reinitialize MCP servers: {e}")
-            return {
-                "status": "error",
-                "message": f"Failed to reinitialize MCP servers: {str(e)}",
-                "error": str(e),
-            }
+        # Invalidate and warm lists to ensure reload
+        _ = await self._tool_manager.list_tools()
+        _ = await self._resource_manager.list_resources()
+        _ = await self._prompt_manager.list_prompts()
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """
@@ -364,8 +334,8 @@ class SingleUserMCP(FastMCP[Any]):
     def _setup_demo_tools(self) -> None:
         """Set up built-in demo tools for testing."""
 
-        @self.tool()
-        def echo(text: str) -> str:  # noqa: ARG001
+        @self.tool()  # noqa
+        def builtin_echo(text: str) -> str:
             """
             Echo back the provided text.
 
@@ -378,8 +348,8 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"🔊 Echo tool called with: {text}")
             return f"Echo: {text}"
 
-        @self.tool()
-        def get_server_info() -> dict[str, str | list[str] | int]:  # noqa: ARG001
+        @self.tool()  # noqa
+        def builtin_get_server_info() -> dict[str, str | list[str] | int]:
             """
             Get information about the Open Edison server.
 
@@ -389,13 +359,13 @@ class SingleUserMCP(FastMCP[Any]):
             log.info("ℹ️  Server info tool called")
             return {
                 "name": "Open Edison Single User",
-                "version": config.version,
-                "mounted_servers": list(self.mounted_servers.keys()),
-                "total_mounted": len(self.mounted_servers),
+                "version": Config().version,
+                "mounted_servers": list(mounted_servers.keys()),
+                "total_mounted": len(mounted_servers),
             }
 
-        @self.tool()
-        def get_security_status() -> dict[str, Any]:  # noqa: ARG001
+        @self.tool()  # noqa
+        def builtin_get_security_status() -> dict[str, Any]:
             """
             Get the current session's security status and data access summary.
 
@@ -419,18 +389,54 @@ class SingleUserMCP(FastMCP[Any]):
 
             return security_data
 
-        log.info("✅ Added built-in demo tools: echo, get_server_info, get_security_status")
+        @self.tool()  # noqa
+        async def builtin_get_available_tools() -> list[str]:
+            """
+            Get a list of all available tools. Use this tool to get an updated list of available tools.
+            """
+            tool_list = await self._tool_manager.list_tools()
+            available_tools: list[str] = []
+            log.trace(f"Raw tool list: {tool_list}")
+            perms = Permissions()
+            for tool in tool_list:
+                # Use the prefixed key (e.g., "filesystem_read_file") to match flattened permissions
+                perm_key = tool.key
+                try:
+                    is_enabled: bool = perms.is_tool_enabled(perm_key)
+                except PermissionsError:
+                    # Unknown in permissions → treat as disabled
+                    is_enabled = False
+                if is_enabled:
+                    # Return the invocable name (key), which matches the MCP-exposed name
+                    available_tools.append(tool.key)
+            return available_tools
+
+        @self.tool()  # noqa
+        async def builtin_tools_changed(ctx: Context) -> str:
+            """
+            Notify the MCP client that the tool list has changed. You should call this tool periodically
+            to ensure the client has the latest list of available tools.
+            """
+            await ctx.send_tool_list_changed()
+            await ctx.send_resource_list_changed()
+            await ctx.send_prompt_list_changed()
+
+            return "Notifications sent"
+
+        log.info(
+            "✅ Added built-in demo tools: echo, get_server_info, get_security_status, builtin_get_available_tools, builtin_tools_changed"
+        )
 
     def _setup_demo_resources(self) -> None:
         """Set up built-in demo resources for testing."""
 
-        @self.resource("config://app")
-        def get_app_config() -> dict[str, Any]:  # noqa: ARG001
+        @self.resource("config://app")  # noqa
+        def builtin_get_app_config() -> dict[str, Any]:
             """Get application configuration."""
             return {
-                "version": config.version,
-                "mounted_servers": list(self.mounted_servers.keys()),
-                "total_mounted": len(self.mounted_servers),
+                "version": Config().version,
+                "mounted_servers": list(mounted_servers.keys()),
+                "total_mounted": len(mounted_servers),
             }
 
         log.info("✅ Added built-in demo resources: config://app")
@@ -438,8 +444,8 @@ class SingleUserMCP(FastMCP[Any]):
     def _setup_demo_prompts(self) -> None:
         """Set up built-in demo prompts for testing."""
 
-        @self.prompt()
-        def summarize_text(text: str) -> str:
+        @self.prompt()  # noqa
+        def builtin_summarize_text(text: str) -> str:
             """Create a prompt to summarize the given text."""
             return f"""
         Please provide a concise, one-paragraph summary of the following text:
