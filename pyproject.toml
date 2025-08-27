@@ -67,7 +67,7 @@ include = [
   "src/frontend_dist/**",
 ]
 
-[tool.hatch.build.hooks.custom]
+[tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
 
 
@@ -84,6 +84,9 @@ include = [
   "docs/**",
 ]
 force-include = { "src/frontend_dist" = "src/frontend_dist" }
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
 
 [tool.ruff]
 line-length = 100
