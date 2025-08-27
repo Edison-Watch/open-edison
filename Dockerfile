@@ -42,15 +42,18 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # Add uv to PATH
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Copy project files
-COPY pyproject.toml ./
+# Copy dependency metadata first for better layer caching
+COPY pyproject.toml uv.lock hatch_build.py ./
 COPY README.md LICENSE Makefile ./
 COPY main.py ./
+
+# Install dependencies without enforcing frontend during editable build
+RUN uv sync
+
+# Now copy application code and built dashboard
 COPY src/ ./src/
 COPY --from=frontend /app/frontend/dist ./frontend_dist
 
-# Setup project via Makefile (installs dependencies via UV and creates default config if missing)
-RUN make setup
 
 # Copy all configuration files (can be overridden with volume mount)
 COPY config.json ./config.json
