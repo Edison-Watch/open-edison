@@ -723,6 +723,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         read_private_data: boolean
         read_untrusted_public_data: boolean
         description?: string
+        acl?: 'PUBLIC' | 'PRIVATE' | 'SECRET'
     }
     type ToolPerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
     type ResourcePerms = Record<string, Record<string, PermissionFlags>> & { _metadata?: unknown }
@@ -948,12 +949,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             if (entries) defaultsByServer[d.name] = entries
         }
 
-        // Persist only core permission flags; drop any UI metadata like description/acl
+        // Persist core permission flags and acl; drop any UI metadata like description
         const toCore = (f: any) => ({
             enabled: Boolean(f?.enabled),
             write_operation: Boolean(f?.write_operation),
             read_private_data: Boolean(f?.read_private_data),
             read_untrusted_public_data: Boolean(f?.read_untrusted_public_data),
+            ...(f?.acl && { acl: f.acl }),
         })
 
         for (const [group, items] of Object.entries(currentMerged as any)) {
@@ -969,6 +971,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         || Boolean((flags as any).write_operation)
                         || Boolean((flags as any).read_private_data)
                         || Boolean((flags as any).read_untrusted_public_data)
+                        || Boolean((flags as any).acl)
                     if (shouldAdd) {
                         if (!result[group]) result[group] = {}
                         result[group][item] = toCore(flags)
@@ -987,6 +990,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             && Boolean(a?.write_operation) === Boolean(b?.write_operation)
             && Boolean(a?.read_private_data) === Boolean(b?.read_private_data)
             && Boolean(a?.read_untrusted_public_data) === Boolean(b?.read_untrusted_public_data)
+            && a?.acl === b?.acl
     }
 
     function deepClone<T>(obj: T): T {
