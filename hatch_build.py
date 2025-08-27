@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+import os
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
@@ -21,6 +22,22 @@ class BuildHook(BuildHookInterface):  # type: ignore
         project_root = Path(self.root)
         src_frontend_dist = project_root / "src" / "frontend_dist"
         repo_frontend_dist = project_root / "frontend" / "dist"
+
+        # Allow CI/dev to bypass this check for editable/dev installs
+        if os.environ.get("OPEN_EDISON_REQUIRE_FRONTEND", "1") == "0":
+            self.app.display_info(
+                "Skipping frontend_dist requirement due to OPEN_EDISON_REQUIRE_FRONTEND=0"
+            )
+            return
+
+        # Skip for editable builds (e.g., uv sync in CI)
+        try:
+            versions = build_data.get("versions")  # type: ignore[assignment]
+        except Exception:
+            versions = None
+        if versions and "editable" in versions:
+            self.app.display_info("Editable build detected; skipping frontend_dist requirement")
+            return
 
         # Fast path: already present in src/
         if (src_frontend_dist / "index.html").exists():
