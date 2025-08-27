@@ -81,13 +81,13 @@ class BackgroundServerTemplate(TestTemplate):
             def get_free_port():
                 """Get a free port to use for testing"""
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(("localhost", 0))
+                    s.bind(("127.0.0.1", 0))
                     return s.getsockname()[1]
 
             test_api_port = get_free_port()
             test_mcp_port = get_free_port()
 
-            self.base_url = f"http://localhost:{test_api_port}"
+            self.base_url = f"http://127.0.0.1:{test_api_port}"
 
             # Start server in background thread - only start FastAPI management server for tests
             def run_server() -> None:
@@ -95,7 +95,7 @@ class BackgroundServerTemplate(TestTemplate):
                 loop = asyncio.get_event_loop()
 
                 # Create a new OpenEdisonProxy with dynamic ports
-                self.server_proxy = OpenEdisonProxy(host="localhost", port=test_mcp_port)
+                self.server_proxy = OpenEdisonProxy(host="127.0.0.1", port=test_mcp_port)
 
                 # Initialize SingleUserMCP with current config
                 loop.run_until_complete(self.server_proxy.single_user_mcp.initialize())
@@ -106,7 +106,7 @@ class BackgroundServerTemplate(TestTemplate):
 
                 uvicorn_config = uvicorn.Config(
                     app=app,
-                    host="localhost",
+                    host="127.0.0.1",
                     port=test_api_port,  # Use dynamic port
                     log_level="critical",  # Suppress uvicorn logs in tests
                 )
@@ -133,7 +133,7 @@ class BackgroundServerTemplate(TestTemplate):
         finally:
             session.close()
 
-    def _wait_for_server(self, timeout: int = 5) -> None:
+    def _wait_for_server(self, timeout: int = 15) -> None:
         """Wait for server to start accepting connections"""
         start_time = time.time()
 
