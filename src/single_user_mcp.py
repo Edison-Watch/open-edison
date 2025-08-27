@@ -49,7 +49,8 @@ class SingleUserMCP(FastMCP[Any]):
     """
 
     def __init__(self):
-        super().__init__(name="open-edison-single-user")
+        # Disable error masking so upstream error details are preserved in responses
+        super().__init__(name="open-edison-single-user", mask_error_details=False)
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())

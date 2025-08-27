@@ -6,7 +6,6 @@ Connect AI to your data/software securely without risk of data exfiltration. Gai
 
 OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & dat exfiltration by malicious actors.
 
-
 <p align="center">
   <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
 </p>
@@ -20,11 +19,9 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
   <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue?logo=python">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
 
-
 </p>
 
---- 
-
+---
 
 ## Features ✨
 
@@ -37,9 +34,7 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
 
 ## About Edison.watch 🏢
 
-Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance. 
-
-
+Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance.
 
 ## Quick Start 🚀
 
@@ -51,7 +46,7 @@ The fastest way to get started:
 curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_pipe_bash.sh | bash
 ```
 
-Run locally with uvx: `uvx open-edison --config-dir ~/edison-config`
+Run locally with uvx: `uvx open-edison`
 
 <details>
 <summary>⬇️ Install Node.js/npm (optional for MCP tools)</summary>
@@ -85,11 +80,11 @@ After installation, ensure that `npx` is available on PATH.
 
 ```bash
 # Using uvx
-uvx open-edison --help
+uvx open-edison
 
 # Using pipx
 pipx install open-edison
-open-edison --help
+open-edison
 ```
 
 Run with a custom config directory:
@@ -332,8 +327,6 @@ Use the `get_security_status` tool to monitor your session's current risk level 
 
 </details>
 
-
-
 ## Documentation 📚
 
 📚 **Complete documentation available in [`docs/`](docs/)**
@@ -342,7 +335,6 @@ Use the `get_security_status` tool to monitor your session's current risk level 
 - ⚙️ **[Configuration](docs/core/configuration.md)** - Complete configuration reference
 - 📡 **[API Reference](docs/quick-reference/api_reference.md)** - REST API documentation
 - 🧑‍💻 **[Development Guide](docs/development/development_guide.md)** - Contributing and development
-
 
 <details>
 <summary>📄 License</summary>

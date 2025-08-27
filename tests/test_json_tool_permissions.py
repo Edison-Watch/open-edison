@@ -14,7 +14,7 @@ from src.middleware.data_access_tracker import DataAccessTracker
 from src.permissions import PermissionsError
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # noqa
 def _force_repo_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure tests use repo-root config/permissions instead of user config."""
     monkeypatch.setenv("OPEN_EDISON_CONFIG_DIR", str(Path(__file__).parent.parent))

@@ -62,6 +62,9 @@ class PromptPermission:
     write_operation: bool = False
     read_private_data: bool = False
     read_untrusted_public_data: bool = False
+    # Optional metadata fields (ignored by enforcement but accepted from JSON)
+    description: str | None = None
+    acl: str = "PUBLIC"
 
 
 @dataclass
