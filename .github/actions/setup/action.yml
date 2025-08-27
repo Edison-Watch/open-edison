@@ -1,21 +1,21 @@
 name: Open Edison CI Setup
-description: Checkout, install Rye, and sync dependencies (Python version from pyproject.toml)
+description: Checkout, install UV, and sync dependencies (Python version from pyproject.toml)
 
 inputs:
-  rye-version:
-    description: Rye version to install
+  uv-version:
+    description: UV version to install
     required: false
     default: 'latest'
 
 runs:
   using: composite
   steps:
-    - name: Install Rye
-      uses: eifinger/setup-rye@v4
+    - name: Install UV
+      uses: astral-sh/setup-uv@v4
       with:
-        version: ${{ inputs.rye-version }}
+        version: ${{ inputs.uv-version }}
 
     - name: Sync dependencies
       shell: bash
-      run: rye sync
+      run: uv sync
 

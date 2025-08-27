@@ -618,18 +618,18 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     
-    - name: Install Rye
+    - name: Install UV
       run: |
-        curl -sSf https://rye.astral.sh/get | bash
-        echo "$HOME/.rye/shims" >> $GITHUB_PATH
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
     - name: Install dependencies
-      run: rye sync
+      run: uv sync
     
     - name: Run tests
       run: |
-        rye run pytest --cov=src tests/
-        rye run pytest --cov-report=xml
+        uv run pytest --cov=src tests/
+        uv run pytest --cov-report=xml
     
     - name: Upload coverage
       uses: codecov/codecov-action@v3

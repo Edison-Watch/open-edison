@@ -10,8 +10,8 @@ RED=\033[0;31m
 BLUE=\033[0;34m
 RESET=\033[0m
 
-PYTHON=rye run python
-TEST=rye run pytest
+PYTHON=uv run python
+TEST=uv run pytest
 PYTEST_ARGS ?=
 PROJECT_ROOT=.
 
@@ -26,40 +26,40 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 
 # Run the Open Edison MCP proxy server
 .PHONY: run
-run: check_rye sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
+run: check_uv sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
-	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir rye run python main.py
+	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run python main.py
 
 ########################################################
 # Check dependencies
 ########################################################
 
-check_rye: ## Check if rye is installed and show version
-	@echo "$(YELLOW)🔍Checking rye version...$(RESET)"
-	@if ! command -v rye > /dev/null 2>&1; then \
-		echo "$(RED)rye is not installed. Please install rye before proceeding.$(RESET)"; \
+check_uv: ## Check if uv is installed and show version
+	@echo "$(YELLOW)🔍Checking uv version...$(RESET)"
+	@if ! command -v uv > /dev/null 2>&1; then \
+		echo "$(RED)uv is not installed. Please install uv before proceeding.$(RESET)"; \
 		exit 1; \
 	else \
-		rye --version; \
+		uv --version; \
 	fi
 
 ########################################################
 # Python dependency-related
 ########################################################
 
-update_python_dep: check_rye ## Update and sync Python dependencies
+update_python_dep: check_uv ## Update and sync Python dependencies
 	@echo "$(YELLOW)🔄Updating python dependencies...$(RESET)"
-	@rye sync
+	@uv sync
 
-sync: check_rye ## Sync Python dependencies
+sync: check_uv ## Sync Python dependencies
 	@echo "$(YELLOW)🔄Syncing python dependencies...$(RESET)"
-	@rye sync
+	@uv sync
 
 ########################################################
 # Setup and initialization
 ########################################################
 
-setup: check_rye sync ## Setup the project for development
+setup: check_uv sync ## Setup the project for development
 	@echo "$(YELLOW)🔧 Setting up Open Edison for development...$(RESET)"
 	@if [ ! -f config.json ]; then \
 		echo "$(YELLOW)📝 Creating default config.json...$(RESET)"; \
@@ -75,7 +75,7 @@ TEST_TARGETS = tests/
 
 # Tests
 .PHONY: test
-test: check_rye ## Run project tests (use PYTEST_ARGS to pass extra flags, e.g. PYTEST_ARGS='-k pattern')
+test: check_uv ## Run project tests (use PYTEST_ARGS to pass extra flags, e.g. PYTEST_ARGS='-k pattern')
 	@echo "$(GREEN)🧪Running tests...$(RESET)"
 	$(TEST) $(PYTEST_ARGS) $(TEST_TARGETS)
 	@echo "$(GREEN)✅Tests passed.$(RESET)"
@@ -83,7 +83,7 @@ test: check_rye ## Run project tests (use PYTEST_ARGS to pass extra flags, e.g. 
 # Run a specific test/file by passing node id via T, e.g.:
 # make test_one T="tests/test_telemetry_e2e.py::test_real_otlp_export"
 .PHONY: test_one
-test_one: check_rye ## Run a single test: make test_one T="path::node::id"
+test_one: check_uv ## Run a single test: make test_one T="path::node::id"
 	@if [ -z "$(T)" ]; then \
 		echo "$(RED)Provide T=path_or_node_id (e.g. tests/test_foo.py::test_bar)$(RESET)"; \
 		exit 2; \
@@ -92,7 +92,7 @@ test_one: check_rye ## Run a single test: make test_one T="path::node::id"
 	$(TEST) $(T)
 
 .PHONY: test_e2e
-test_e2e: check_rye ## Run the real telemetry e2e test (exports metrics)
+test_e2e: check_uv ## Run the real telemetry e2e test (exports metrics)
 	@echo "$(GREEN)🧪Running telemetry e2e test...$(RESET)"
 	EDISON_OTEL_E2E=1 $(TEST) tests/test_telemetry_e2e.py::test_real_otlp_export
 
@@ -100,29 +100,29 @@ test_e2e: check_rye ## Run the real telemetry e2e test (exports metrics)
 # Linting and Code Quality
 ########################################################
 
-lint: check_rye ## Lint code with Ruff (src only)
+lint: check_uv ## Lint code with Ruff (src only)
 	@echo "$(YELLOW)🔍Linting project with Ruff...$(RESET)"
-	@rye run ruff check .
+	@uv run ruff check .
 	@echo "$(GREEN)✅Ruff linting completed.$(RESET)"
 
-format: check_rye ## Format code with Ruff
+format: check_uv ## Format code with Ruff
 	@echo "$(YELLOW)🎨Formatting code with Ruff...$(RESET)"
-	@rye run ruff format .
+	@uv run ruff format .
 	@echo "$(GREEN)✅Code formatting completed.$(RESET)"
 
-fix: check_rye ## Auto-fix linting issues with Ruff
+fix: check_uv ## Auto-fix linting issues with Ruff
 	@echo "$(YELLOW)🔧Fixing linting issues with Ruff...$(RESET)"
-	@rye run ruff check . --fix
+	@uv run ruff check . --fix
 	@echo "$(GREEN)✅Linting fixes applied.$(RESET)"
 
-basedpyright_check: check_rye ## Run type checking with Basedpyright
+basedpyright_check: check_uv ## Run type checking with Basedpyright
 	@echo "$(YELLOW)🔍Running Basedpyright...$(RESET)"
-	@rye run basedpyright .
+	@uv run basedpyright .
 	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
 
-deadcode: check_rye ## Find unused code with Vulture (fails on findings)
+deadcode: check_uv ## Find unused code with Vulture (fails on findings)
 	@echo "$(YELLOW)🪦 Scanning for dead code with Vulture...$(RESET)"
-	@rye run vulture src tests --min-confidence 60
+	@uv run vulture src tests --min-confidence 60
 	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 60).$(RESET)"
 
 ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
@@ -132,12 +132,12 @@ ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint
 # Configuration Management
 ########################################################
 
-config_create: check_rye ## Create a new default config.json
+config_create: check_uv ## Create a new default config.json
 	@echo "$(YELLOW)📝Creating default config.json...$(RESET)"
 	@$(PYTHON) -c "from src.config import Config; Config.create_default().save()"
 	@echo "$(GREEN)✅Default config.json created. Edit it to configure your MCP servers.$(RESET)"
 
-config_validate: check_rye ## Validate the current config.json
+config_validate: check_uv ## Validate the current config.json
 	@echo "$(YELLOW)🔍Validating config.json...$(RESET)"
 	@$(PYTHON) -c "from src.config import config; print('✅ Configuration is valid')"
 	@echo "$(GREEN)✅Configuration validation completed.$(RESET)"
@@ -163,9 +163,9 @@ docker_run: docker_build ## Run the Docker image
 # Package for distribution
 ########################################################
 
-build: check_rye ## Build the package
+build: check_uv ## Build the package
 	@echo "$(YELLOW)📦Building package...$(RESET)"
-	@rye build
+	@uv build
 	@echo "$(GREEN)✅Package built successfully.$(RESET)"
 
 ########################################################
@@ -179,20 +179,20 @@ clean_dist: ## Remove dist/ directory
 	@rm -rf dist
 	@echo "$(GREEN)✅dist cleaned.$(RESET)"
 
-build_dist: check_rye clean_dist ## Build source and wheel distributions
+build_dist: check_uv clean_dist ## Build source and wheel distributions
 	@echo "$(YELLOW)📦Building sdist and wheel...$(RESET)"
-	@rye build
+	@uv build
 	@echo "$(GREEN)✅Distributions built in dist/. $(RESET)"
 
-check_twine: check_rye ## Ensure twine is available
+check_twine: check_uv ## Ensure twine is available
 	@echo "$(YELLOW)🔍Checking for twine...$(RESET)"
-	@rye run python -c "import twine, sys; print('twine', twine.__version__)" || (echo "$(RED)twine not found. Run 'rye sync' to install dev deps.$(RESET)"; exit 1)
+	@uv run python -c "import twine, sys; print('twine', twine.__version__)" || (echo "$(RED)twine not found. Run 'uv sync' to install dev deps.$(RESET)"; exit 1)
 
 publish_testpypi: build_package check_twine ## Upload distributions to TestPyPI
 	@echo "$(YELLOW)🚀Uploading to TestPyPI...$(RESET)"
 	@echo "$(YELLOW)🔎 Validating metadata with twine check...$(RESET)"
-	@rye run python -m twine check dist/*
-	@rye run python -m twine upload --skip-existing --repository testpypi dist/* --verbose
+	@uv run python -m twine check dist/*
+	@uv run python -m twine upload --skip-existing --repository testpypi dist/* --verbose
 	@echo "$(GREEN)✅Upload to TestPyPI complete.$(RESET)"
 
 test_publish: publish_testpypi ## Alias: publish to TestPyPI
@@ -200,8 +200,8 @@ test_publish: publish_testpypi ## Alias: publish to TestPyPI
 publish_pypi: build_package check_twine ## Upload distributions to PyPI (production)
 	@echo "$(YELLOW)🚀Uploading to PyPI...$(RESET)"
 	@echo "$(YELLOW)🔎 Validating metadata with twine check...$(RESET)"
-	@rye run python -m twine check dist/*
-	@rye run python -m twine upload --repository pypi dist/* --verbose
+	@uv run python -m twine check dist/*
+	@uv run python -m twine upload --repository pypi dist/* --verbose
 	@echo "$(GREEN)✅Upload to PyPI complete.$(RESET)"
 
 # Aliases for publishing to real PyPI
@@ -333,12 +333,12 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 ########################################################
 
 .PHONY: build_package
-build_package: check_rye clean_dist ## Build frontend, package into src/frontend_dist, then build Python wheel
+build_package: check_uv clean_dist ## Build frontend, package into src/frontend_dist, then build Python wheel
 	@echo "$(YELLOW)🏗️  Building frontend (vite) and packaging Python wheel...$(RESET)"
 	@cd frontend && npm install && npm run build
 	@echo "$(YELLOW)📦 Syncing built dashboard to src/frontend_dist...$(RESET)"
 	@rm -rf src/frontend_dist && mkdir -p src/frontend_dist
 	@cp -R frontend/dist/* src/frontend_dist/
 	@echo "$(YELLOW)📦 Building Python wheel...$(RESET)"
-	@rye build
+	@uv build
 	@echo "$(GREEN)✅ build_package complete. Wheel contains packaged dashboard (frontend_dist).$(RESET)"
