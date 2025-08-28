@@ -64,5 +64,5 @@ COPY prompt_permissions.json ./prompt_permissions.json
 # Expose ports
 EXPOSE 3000 3001 50001
 
-# Start the API server via UV
+# Start the server
 CMD ["uv", "run", "python", "main.py"]
