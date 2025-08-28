@@ -7,7 +7,12 @@ from typing import Any
 from loguru import logger as log
 
 from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
-from .paths import find_cursor_user_file, find_vscode_user_mcp_file
+from .paths import (
+    find_claude_code_user_all_candidates,
+    find_claude_code_user_settings_file,
+    find_cursor_user_file,
+    find_vscode_user_mcp_file,
+)
 
 MCPServerConfigT = Any
 
@@ -34,8 +39,24 @@ def import_from_vscode() -> list[MCPServerConfigT]:
 
 
 def import_from_claude_code() -> list[MCPServerConfigT]:
-    # No stable published path; try VSCode heuristic
-    return import_from_vscode()
+    # Prefer Claude Code's documented user-level locations if present
+    files = find_claude_code_user_all_candidates()
+    if not files:
+        # Back-compat: also check specific settings.json location
+        files = find_claude_code_user_settings_file()
+    for f in files:
+        try:
+            log.info("Claude Code config detected at: {}", f)
+            data = safe_read_json(f)
+            parsed = parse_mcp_like_json(data, default_enabled=True)
+            if parsed:
+                return parsed
+        except Exception as e:
+            log.warning("Failed reading Claude Code config {}: {}", f, e)
+
+    # No user-level Claude Code config found; return empty per user preference
+    log.info("Claude Code config not found; returning empty result (no user-level config found)")
+    return []
 
 
 IMPORTERS: dict[str, Callable[..., list[MCPServerConfigT]]] = {

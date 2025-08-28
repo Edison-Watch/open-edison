@@ -124,9 +124,15 @@ def _collect_top_level(data: dict[str, Any], default_enabled: bool) -> list[Any]
 
 def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
     results: list[Any] = []
-    for k, v in data.items():
-        if "mcp" in str(k).lower() and isinstance(v, dict):
+    for _k, v in data.items():
+        # If nested dict, recurse regardless of key to catch structures like 'projects'
+        if isinstance(v, dict):
             results.extend(parse_mcp_like_json(v, default_enabled=default_enabled))
+        # If nested list, recurse into dict items
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    results.extend(parse_mcp_like_json(item, default_enabled=default_enabled))
     return results
 
 

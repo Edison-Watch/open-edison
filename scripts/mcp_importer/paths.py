@@ -31,3 +31,33 @@ def find_vscode_user_mcp_file() -> list[Path]:
         p = Path.home() / ".config" / "Code" / "User" / "mcp.json"
     p = p.resolve()
     return [p] if p.exists() else []
+
+
+def find_claude_code_user_settings_file() -> list[Path]:
+    """Find Claude Code user-level settings (~/.claude/settings.json)."""
+    p = (Path.home() / ".claude" / "settings.json").resolve()
+    return [p] if p.exists() else []
+
+
+def find_claude_code_user_all_candidates() -> list[Path]:
+    """Return ordered list of Claude Code user-level MCP config candidates.
+
+    Based on docs, check in priority order:
+      - ~/.claude.json (primary user-level)
+      - ~/.claude/settings.json
+      - ~/.claude/settings.local.json
+      - ~/.claude/mcp_servers.json
+    """
+    home = Path.home()
+    candidates: list[Path] = [
+        home / ".claude.json",
+        home / ".claude" / "settings.json",
+        home / ".claude" / "settings.local.json",
+        home / ".claude" / "mcp_servers.json",
+    ]
+    existing: list[Path] = []
+    for p in candidates:
+        rp = p.resolve()
+        if rp.exists():
+            existing.append(rp)
+    return existing
