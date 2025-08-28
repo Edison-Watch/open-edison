@@ -142,7 +142,7 @@ class TelemetryConfig:
 def load_json_file(path: Path) -> dict[str, Any]:
     """Load a JSON file from the given path.
     Kept as a separate function because we want to manually clear cache sometimes (update in config)"""
-    log.info(f"Loading configuration from {path}")
+    log.trace(f"Loading configuration from {path}")
     with open(path) as f:
         return json.load(f)
 
