@@ -62,8 +62,8 @@
         "server_url": {
             "type": "string",
             "title": "Open Edison Server URL",
-            "description": "The URL of your Open Edison server's MCP API endpoint (e.g., http://localhost:3001/mcp/call or https://your-server.com:3001/mcp/call)",
-            "default": "http://localhost:3001/mcp/call",
+            "description": "The URL of your Open Edison server's MCP API endpoint (e.g., http://localhost:3000/mcp/call)",
+            "default": "http://localhost:3000/mcp/call",
             "required": true
         },
         "api_key": {
