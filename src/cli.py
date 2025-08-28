@@ -252,8 +252,6 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
             ]
         if args.merge:
             importer_argv += ["--merge", str(args.merge)]
-        if bool(getattr(args, "enable_imported", False)):
-            importer_argv += ["--enable-imported"]
         if bool(getattr(args, "dry_run", False)):
             importer_argv += ["--dry-run"]
 

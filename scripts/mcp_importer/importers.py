@@ -7,13 +7,7 @@ from typing import Any
 from loguru import logger as log
 
 from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
-from .paths import (
-    find_claude_desktop_file,
-    find_cline_files,
-    find_cursor_user_file,
-    find_vscode_settings,
-    find_windsurf_files,
-)
+from .paths import find_cursor_user_file, find_vscode_settings
 
 MCPServerConfigT = Any
 
@@ -26,30 +20,6 @@ def import_from_cursor() -> list[MCPServerConfigT]:
             "Cursor MCP config not found (~/.cursor/mcp.json).",
             Path.home() / ".cursor" / "mcp.json",
         )
-    data = safe_read_json(files[0])
-    return parse_mcp_like_json(data, default_enabled=True)
-
-
-def import_from_windsurf() -> list[MCPServerConfigT]:
-    files = find_windsurf_files()
-    if not files:
-        raise ImportErrorDetails("Windsurf mcp_config.json not found in default locations.")
-    data = safe_read_json(files[0])
-    return parse_mcp_like_json(data, default_enabled=True)
-
-
-def import_from_cline() -> list[MCPServerConfigT]:
-    files = find_cline_files()
-    if not files:
-        raise ImportErrorDetails("Cline settings file not found under host editor globalStorage.")
-    data = safe_read_json(files[0])
-    return parse_mcp_like_json(data, default_enabled=True)
-
-
-def import_from_claude_desktop() -> list[MCPServerConfigT]:
-    files = find_claude_desktop_file()
-    if not files:
-        raise ImportErrorDetails("Claude Desktop config not found in OS app data.")
     data = safe_read_json(files[0])
     return parse_mcp_like_json(data, default_enabled=True)
 
@@ -70,23 +40,8 @@ def import_from_claude_code() -> list[MCPServerConfigT]:
     return import_from_vscode()
 
 
-def import_from_gemini_cli() -> list[MCPServerConfigT]:
-    log.warning("Gemini CLI MCP config location not standardized; nothing to import.")
-    return []
-
-
-def import_from_codex() -> list[MCPServerConfigT]:
-    log.warning("OpenAI Codex does not provide MCP configs; nothing to import.")
-    return []
-
-
 IMPORTERS: dict[str, Callable[..., list[MCPServerConfigT]]] = {
     "cursor": import_from_cursor,
-    "windsurf": import_from_windsurf,
-    "cline": import_from_cline,
-    "claude-desktop": import_from_claude_desktop,
     "vscode": import_from_vscode,
     "claude-code": import_from_claude_code,
-    "gemini-cli": import_from_gemini_cli,
-    "codex": import_from_codex,
 }

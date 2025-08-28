@@ -30,7 +30,7 @@ from loguru import logger as log
 from pydantic import BaseModel, Field
 
 from src import events
-from src.config import Config, MCPServerConfig, load_json_file
+from src.config import Config, MCPServerConfig, clear_json_file_cache
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.middleware.session_tracking import (
     MCPSessionModel,
@@ -275,7 +275,7 @@ class OpenEdisonProxy:
 
                 # Clear cache for the config file, if it was config.json
                 if name == "config.json":
-                    load_json_file.cache_clear()
+                    clear_json_file_cache()
 
                 return {"status": "ok"}
             except Exception as e:  # noqa: BLE001

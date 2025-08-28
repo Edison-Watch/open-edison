@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from config import Config, get_config_dir, get_config_json_path  # type: ignore
+from src.config import Config, get_config_dir, get_config_json_path
 
 from .importers import IMPORTERS
 from .merge import MergePolicy, merge_servers
@@ -18,7 +18,6 @@ class ImportPreview:
     target_dir: Path
     source: str
     merge_policy: str
-    enable_imported: bool
     existing_names: list[str]
     imported_names: list[str]
     added: list[str]
@@ -53,7 +52,6 @@ def preview_import(
     source: str,
     config_dir: Path | None = None,
     merge_policy: str = MergePolicy.SKIP,
-    enable_imported: bool = False,
 ) -> ImportPreview:
     """Preview importing MCP servers without writing changes.
 
@@ -75,7 +73,6 @@ def preview_import(
         existing=cfg.mcp_servers,
         imported=imported_servers,
         policy=merge_policy,
-        enable_imported=bool(enable_imported),
     )
 
     existing_names = [str(getattr(s, "name", "")) for s in cast(Iterable[Any], cfg.mcp_servers)]
@@ -91,7 +88,6 @@ def preview_import(
         target_dir=target_dir,
         source=source,
         merge_policy=merge_policy,
-        enable_imported=bool(enable_imported),
         existing_names=sorted(existing_names),
         imported_names=sorted(imported_names),
         added=added,
@@ -106,7 +102,6 @@ def apply_import(
     source: str,
     config_dir: Path | None = None,
     merge_policy: str = MergePolicy.SKIP,
-    enable_imported: bool = False,
 ) -> Path:
     """Apply an import by writing the merged config back to disk.
 
@@ -124,7 +119,6 @@ def apply_import(
         existing=cfg.mcp_servers,
         imported=imported_servers,
         policy=merge_policy,
-        enable_imported=bool(enable_imported),
     )
 
     cfg.mcp_servers = merged

@@ -147,6 +147,11 @@ def load_json_file(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
+def clear_json_file_cache() -> None:
+    """Clear the cache for the given JSON file path"""
+    load_json_file.cache_clear()
+
+
 @dataclass
 class Config:
     """Main configuration class"""

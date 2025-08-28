@@ -7,6 +7,8 @@ from typing import Any, cast
 
 from loguru import logger as log
 
+from src.config import MCPServerConfig
+
 
 # Import Open Edison types
 def _new_mcp_server_config(
@@ -19,7 +21,6 @@ def _new_mcp_server_config(
     roots: list[str] | None,
 ) -> Any:
     """Runtime-constructed MCPServerConfig without static import coupling."""
-    from config import MCPServerConfig  # type: ignore
 
     return MCPServerConfig(
         name=name,
