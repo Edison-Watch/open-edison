@@ -42,12 +42,13 @@ def safe_read_json(path: Path) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             loaded = json.load(f)
-            if not isinstance(loaded, dict):
-                raise ImportErrorDetails(f"Expected JSON object at {path}", path)
-            data: dict[str, Any] = cast(dict[str, Any], loaded)
-            return data
     except Exception as e:
         raise ImportErrorDetails(f"Failed to read JSON from {path}: {e}", path) from e
+
+    if not isinstance(loaded, dict):
+        raise ImportErrorDetails(f"Expected JSON object at {path}", path)
+    data: dict[str, Any] = cast(dict[str, Any], loaded)
+    return data
 
 
 def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:

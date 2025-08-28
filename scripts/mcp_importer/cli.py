@@ -100,6 +100,12 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
         replaced = existing_names & {s.name for s in imported_servers}
 
     log.info("Imported {} server(s) from '{}'", len(imported_servers), source)
+    try:
+        names_preview = ", ".join(sorted(getattr(s, "name", "") for s in imported_servers))
+        if names_preview:
+            log.info("Detected servers: {}", names_preview)
+    except Exception:
+        pass
     if added:
         log.info("Added: {}", ", ".join(sorted(added)))
     if replaced:

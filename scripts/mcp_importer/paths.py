@@ -23,10 +23,11 @@ def find_cursor_user_file() -> list[Path]:
     return [p] if p.exists() else []
 
 
-def find_vscode_settings() -> list[Path]:
+def find_vscode_user_mcp_file() -> list[Path]:
+    """Find VSCode user-level MCP config (User/mcp.json) on macOS or Linux."""
     if is_macos():
-        p = Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json"
+        p = Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
     else:
-        # Treat other platforms as Unix-like; ignore Windows for now.
-        p = Path.home() / ".config" / "Code" / "User" / "settings.json"
+        p = Path.home() / ".config" / "Code" / "User" / "mcp.json"
+    p = p.resolve()
     return [p] if p.exists() else []
