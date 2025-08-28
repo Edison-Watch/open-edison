@@ -1,4 +1,4 @@
-name: Type Check (Basedpyright)
+name: Type Check (Ty)
 
 on:
   pull_request:
@@ -22,6 +22,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Run Basedpyright
-        run: make basedpyright_check
+      - name: Run Ty
+        run: uv run ty check .
 
