@@ -7,7 +7,7 @@
     "long_description": "Open Edison Connector makes it easy to connect to Open Edison MCP proxy servers from Claude Desktop. Simply provide your server URL and API key, and get instant access to all your configured MCP servers and monitoring tools. Features secure credential storage and automatic connection management for single-user MCP proxying.",
     "author": {
         "name": "Open Edison Team",
-        "email": "team@openedison.dev",
+        "email": "hello@edison.watch",
         "url": "https://github.com/Edison-Watch/open-edison"
     },
     "repository": {
@@ -38,16 +38,24 @@
     },
     "tools": [
         {
-            "name": "mcp_status",
-            "description": "Get status of configured MCP servers in Open Edison"
+            "name": "builtin_echo",
+            "description": "Echo back provided text"
         },
         {
-            "name": "start_mcp_server",
-            "description": "Start a specific MCP server by name"
+            "name": "builtin_get_server_info",
+            "description": "Get Open Edison server info and mounted servers"
         },
         {
-            "name": "stop_mcp_server",
-            "description": "Stop a specific MCP server by name"
+            "name": "builtin_get_security_status",
+            "description": "Get session security status and data access summary"
+        },
+        {
+            "name": "builtin_get_available_tools",
+            "description": "List enabled tools available to the client"
+        },
+        {
+            "name": "builtin_tools_changed",
+            "description": "Notify client that tools/resources/prompts list changed"
         }
     ],
     "prompts": [
@@ -62,8 +70,8 @@
         "server_url": {
             "type": "string",
             "title": "Open Edison Server URL",
-            "description": "The URL of your Open Edison server's MCP API endpoint (e.g., http://localhost:3000/mcp/call)",
-            "default": "http://localhost:3000/mcp/call",
+            "description": "The URL of your Open Edison server's MCP endpoint (e.g., http://localhost:3000/mcp/)",
+            "default": "http://localhost:3000/mcp/",
             "required": true
         },
         "api_key": {

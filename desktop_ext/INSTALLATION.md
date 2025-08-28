@@ -16,12 +16,12 @@
 
 ### Server URL
 
-Enter the full URL to your Open Edison MCP API endpoint:
+Enter the full URL to your Open Edison MCP endpoint:
 
 **Local Development:**
 
 ```
-http://localhost:3000/mcp/call
+http://localhost:3000/mcp/
 ```
 
 <!-- Remote/Docker scenarios intentionally omitted: localhost-only setup -->
@@ -99,7 +99,7 @@ Drag the generated `.dxt` file into Claude Desktop Settings → Extensions.
 
 **"Cannot connect to server"**
 
-1. Verify server URL format includes `/mcp/call` endpoint
+1. Verify server URL format includes `/mcp/` endpoint
 2. Test server accessibility: `curl http://localhost:3000/health`
 3. Check firewall/network restrictions
 4. Ensure Open Edison server is running: `make run`
@@ -121,8 +121,8 @@ Drag the generated `.dxt` file into Claude Desktop Settings → Extensions.
 **Typical Local Setup:**
 
 ```
-Server URL: http://localhost:3000/mcp/call
-API Key: your-secure-api-key
+Server URL: http://localhost:3000/mcp/
+API Key: dev-api-key-change-me
 ```
 
 **Production Setup:**
@@ -158,18 +158,18 @@ After installation, you should see:
 Test your Open Edison server manually:
 
 ```bash
-# Health check
-curl http://localhost:3000/health
+# Health check (management API)
+curl http://localhost:3001/health
 
-# MCP status (requires API key)
-curl -H "Authorization: Bearer your-api-key" http://localhost:3000/mcp/status
+# MCP status (requires API key; management API)
+curl -H "Authorization: Bearer dev-api-key-change-me" http://localhost:3001/mcp/status
 
-# Test MCP call (requires API key)
+# Test MCP call (requires API key; MCP endpoint)
 curl -X POST \
-  -H "Authorization: Bearer your-api-key" \
+  -H "Authorization: Bearer dev-api-key-change-me" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' \
-  http://localhost:3000/mcp/call
+  http://localhost:3000/mcp/
 ```
 
 ## Support

@@ -45,21 +45,21 @@ Access to all tools from MCP servers you've configured in Open Edison, such as:
 3. **Go to Settings** → Extensions
 4. **Click "Install Extension"** or drag the `.dxt` file into the window
 5. **Configure your connection**:
-   - **Server URL**: Your Open Edison server MCP API endpoint (e.g., `http://localhost:3000/mcp/call`)
-   - **API Key**: Your Open Edison API key
+   - **Server URL**: Your Open Edison server MCP endpoint (e.g., `http://localhost:3000/mcp/`)
+   - **API Key**: Your Open Edison API key (default for local dev: `dev-api-key-change-me`)
 6. **Click "Install"** when prompted
 7. **Done!** All your Open Edison tools are now available in Claude Desktop
 
 ### Server URL
 
-- `http://localhost:3000/mcp/call`
+- `http://localhost:3000/mcp/`
 
 ## Configuration
 
 ### Required Settings
 
-- **Server URL**: The full URL to your Open Edison MCP API endpoint (port 3001 by default)
-- **API Key**: Your authentication key for the Open Edison server (configured in `config.json`)
+- **Server URL**: The full URL to your Open Edison MCP endpoint (`http://localhost:3000/mcp/`)
+- **API Key**: Your authentication key for the Open Edison server (configured in `config.json`; local default `dev-api-key-change-me`)
 
 ### Open Edison Server Setup
 
@@ -127,10 +127,10 @@ This extension operates securely:
 
 ### Debug Steps
 
-1. **Check server accessibility**: Try accessing `http://localhost:3000/health` in a browser
+1. **Check server accessibility**: Try accessing `http://localhost:3001/health` (management API) in a browser
 2. **Verify API key**: Check the `server.api_key` value in your Open Edison `config.json`
 3. **Check logs**: Look at Claude Desktop logs for connection errors
-4. **Test MCP endpoint**: Use curl to test the `/mcp/call` endpoint
+4. **Test MCP endpoint**: Use curl to test the `/mcp/` endpoint
 
 ### Log Locations
 

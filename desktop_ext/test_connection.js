@@ -14,7 +14,7 @@ const http = require('http');
 const TEST_CONFIGS = [
     {
         name: "Local Development",
-        server_url: "http://localhost:3000/mcp/call",
+        server_url: "http://localhost:3000/mcp/",
         api_key: "your-secure-api-key"
     },
     // Localhost-only setup; remote examples removed by design
@@ -90,7 +90,7 @@ function testConnection(config) {
                 if (res.statusCode === 401) {
                     console.log('🔒 Authentication failed (401). Check your API key in Open Edison `config.json` and extension settings.');
                 } else if (res.statusCode === 404) {
-                    console.log('🔎 Endpoint not found (404). Ensure the path is `/mcp/call`.');
+                    console.log('🔎 Endpoint not found (404). Ensure the path is `/mcp/`.');
                 } else {
                     console.log(`⚠️  HTTP ${res.statusCode}. Partial response: ${data.substring(0, 200)}...`);
                 }
