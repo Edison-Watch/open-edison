@@ -51,7 +51,6 @@ def _serialize_servers(servers: Iterable[Any]) -> list[dict[str, Any]]:
 def preview_import(
     *,
     source: str,
-    project_dir: Path | None = None,
     config_dir: Path | None = None,
     merge_policy: str = MergePolicy.SKIP,
     enable_imported: bool = False,
@@ -70,9 +69,7 @@ def preview_import(
     cfg: Any = Config(target_dir)
 
     # Load imported servers
-    imported_servers = (
-        importer(project_dir) if (source == "cursor") else importer()  # type: ignore[misc]
-    )
+    imported_servers = importer()  # type: ignore[misc]
 
     merged = merge_servers(
         existing=cfg.mcp_servers,
@@ -107,7 +104,6 @@ def preview_import(
 def apply_import(
     *,
     source: str,
-    project_dir: Path | None = None,
     config_dir: Path | None = None,
     merge_policy: str = MergePolicy.SKIP,
     enable_imported: bool = False,
@@ -122,9 +118,7 @@ def apply_import(
     if importer is None:
         raise ValueError(f"Unsupported source: {source}")
 
-    imported_servers = (
-        importer(project_dir) if (source == "cursor") else importer()  # type: ignore[misc]
-    )
+    imported_servers = importer()  # type: ignore[misc]
 
     merged = merge_servers(
         existing=cfg.mcp_servers,

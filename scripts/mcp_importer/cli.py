@@ -82,10 +82,7 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
 
     # Import
     try:
-        if source == "cursor":
-            imported_servers = importer(getattr(args, "project_dir", None))  # type: ignore[arg-type]
-        else:
-            imported_servers = importer()  # type: ignore[misc]
+        imported_servers = importer()  # type: ignore[misc]
     except Exception as e:
         log.error("{}", e)
         return 1

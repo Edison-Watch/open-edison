@@ -10,7 +10,6 @@ from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
 from .paths import (
     find_claude_desktop_file,
     find_cline_files,
-    find_cursor_project_file,
     find_cursor_user_file,
     find_vscode_settings,
     find_windsurf_files,
@@ -19,16 +18,13 @@ from .paths import (
 MCPServerConfigT = Any
 
 
-def import_from_cursor(project_dir: Path | None = None) -> list[MCPServerConfigT]:
-    # Prefer project-level config if provided
-    files = find_cursor_project_file(project_dir) if project_dir else []
-    if not files:
-        # Fallback to user-level config
-        files = find_cursor_user_file()
+def import_from_cursor() -> list[MCPServerConfigT]:
+    # Only support user-level Cursor config
+    files = find_cursor_user_file()
     if not files:
         raise ImportErrorDetails(
-            "Cursor MCP config not found (checked project .cursor/mcp.json and ~/.cursor/mcp.json).",
-            project_dir if project_dir else Path.home() / ".cursor" / "mcp.json",
+            "Cursor MCP config not found (~/.cursor/mcp.json).",
+            Path.home() / ".cursor" / "mcp.json",
         )
     data = safe_read_json(files[0])
     return parse_mcp_like_json(data, default_enabled=True)
