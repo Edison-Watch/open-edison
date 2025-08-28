@@ -42,6 +42,7 @@ dev-dependencies = [
     "pytest-asyncio>=1.0.0",
     "vulture>=2.11",
     "twine>=5.1.1",
+    "ty>=0.0.1a19",
 ]
 
 [project.optional-dependencies]
@@ -118,6 +119,13 @@ reportMissingTypeStubs = true
 reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
 venvPath = ".venv"
 extraPaths = ["src"]
+
+[tool.ty.rules]
+possibly-unresolved-reference = "error"
+index-out-of-bounds = "error"
+
+[tool.ty.src]
+exclude = ["tests/**"]
 
 [tool.vulture]
 exclude = ["tests", "src/frontend_dist"]

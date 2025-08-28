@@ -105,9 +105,10 @@ lint: check_uv ## Lint code with Ruff (src only)
 	@uv run ruff check .
 	@echo "$(GREEN)✅Ruff linting completed.$(RESET)"
 
-format: check_uv ## Format code with Ruff
-	@echo "$(YELLOW)🎨Formatting code with Ruff...$(RESET)"
-	@uv run ruff format .
+
+format: check_uv ## Format code with uv
+	@echo "$(YELLOW)🎨Formatting code with uv...$(RESET)"
+	@uv format .
 	@echo "$(GREEN)✅Code formatting completed.$(RESET)"
 
 fix: check_uv ## Auto-fix linting issues with Ruff
@@ -115,17 +116,17 @@ fix: check_uv ## Auto-fix linting issues with Ruff
 	@uv run ruff check . --fix
 	@echo "$(GREEN)✅Linting fixes applied.$(RESET)"
 
-basedpyright_check: check_uv ## Run type checking with Basedpyright
-	@echo "$(YELLOW)🔍Running Basedpyright...$(RESET)"
-	@uv run basedpyright .
-	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
+ty_checker_check: check_uv ## Run type checking with Ty
+	@echo "$(YELLOW)🔍Running Ty...$(RESET)"
+	@uv run ty check
+	@echo "$(GREEN)✅Ty completed.$(RESET)"
 
 deadcode: check_uv ## Find unused code with Vulture (fails on findings)
 	@echo "$(YELLOW)🪦 Scanning for dead code with Vulture...$(RESET)"
 	@uv run vulture src tests --min-confidence 60
 	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 60).$(RESET)"
 
-ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
+ci: sync lint ty_checker_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################

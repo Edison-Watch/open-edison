@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 # Module constants
 DEFAULT_OTLP_METRICS_ENDPOINT: str
@@ -49,18 +49,34 @@ class TelemetryConfig:
     otlp_endpoint: str | None
     headers: dict[str, str] | None
     export_interval_ms: int
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        otlp_endpoint: str | None = None,
+        headers: dict[str, str] | None = None,
+        export_interval_ms: int = 60000,
+    ) -> None: ...
 
 def load_json_file(path: Path) -> dict[str, Any]: ...
 def clear_json_file_cache() -> None: ...
 
 class Config:
+    @property
+    def version(self) -> str: ...
     server: ServerConfig
     logging: LoggingConfig
     mcp_servers: list[MCPServerConfig]
     telemetry: TelemetryConfig | None
-
-    @property
-    def version(self) -> str: ...
+    @overload
     def __init__(self, config_path: Path | None = None) -> None: ...
+    @overload
+    def __init__(
+        self,
+        server: ServerConfig,
+        logging: LoggingConfig,
+        mcp_servers: list[MCPServerConfig],
+        telemetry: TelemetryConfig | None = None,
+    ) -> None: ...
     def save(self, config_path: Path | None = None) -> None: ...
     def create_default(self) -> None: ...
