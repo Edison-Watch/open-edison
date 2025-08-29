@@ -1,24 +1,21 @@
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 from loguru import logger as log
 
-# Ensure import of src config (place src on sys.path before import)
-THIS_FILE = Path(__file__).resolve()
-REPO_ROOT = THIS_FILE.parents[2]
-SRC_DIR = REPO_ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+from src.config import Config, get_config_dir
 
-from config import Config, get_config_dir  # type: ignore  # noqa: E402
+from .importers import IMPORTERS
+from .merge import MergePolicy, merge_servers
 
-from .importers import IMPORTERS  # noqa: E402
-from .merge import MergePolicy, merge_servers  # noqa: E402
+## Ensure import of src config (place src on sys.path before import)
+# THIS_FILE = Path(__file__).resolve()
+# REPO_ROOT = THIS_FILE.parents[2]
+# SRC_DIR = REPO_ROOT / "src"
+# if str(SRC_DIR) not in sys.path:
+#    sys.path.insert(0, str(SRC_DIR))
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -26,7 +23,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Import MCP servers from other tools into Open Edison config.json"
     )
     p.add_argument(
-        "--source", choices=list(IMPORTERS.keys()) + ["interactive"], default="interactive"
+        "--source",
+        choices=["cursor", "vscode", "claude-code"],
+        required=True,
     )
     p.add_argument(
         "--config-dir",
@@ -39,34 +38,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=MergePolicy.SKIP,
     )
     p.add_argument(
-        "--enable-imported", action="store_true", help="Enable imported servers (default: disabled)"
-    )
-    p.add_argument(
         "--dry-run", action="store_true", help="Show changes without writing to config.json"
     )
     return p
 
 
-def prompt_source_choice() -> str:
-    print("Select source to import from:")
-    options = list(IMPORTERS.keys())
-    for idx, name in enumerate(options, start=1):
-        print(f"  {idx}. {name}")
-    while True:
-        choice = input("Enter number: ").strip()
-        if choice.isdigit():
-            num = int(choice)
-            if 1 <= num <= len(options):
-                return options[num - 1]
-        print("Invalid selection. Try again.")
-
-
 def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
-    # TODO check this works as we want it to
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    source: str = prompt_source_choice() if args.source == "interactive" else args.source
+    source: str = args.source
 
     importer = IMPORTERS.get(source)
     if not importer:
@@ -78,17 +59,10 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
     target_path = target_dir / "config.json"
 
     # Load existing config (auto-creates default if missing via Config.load)
-    config_obj: Any = Config(target_dir)
+    config_obj: Config = Config(target_dir)
 
     # Import
-    try:
-        if source == "cursor":
-            imported_servers = importer(getattr(args, "project_dir", None))  # type: ignore[arg-type]
-        else:
-            imported_servers = importer()  # type: ignore[misc]
-    except Exception as e:
-        log.error("{}", e)
-        return 1
+    imported_servers = importer()
 
     if not imported_servers:
         log.warning("No servers found to import from source '{}'", source)
@@ -99,7 +73,6 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
         existing=config_obj.mcp_servers,
         imported=imported_servers,
         policy=args.merge,
-        enable_imported=bool(args.enable_imported),
     )
 
     existing_names: set[str] = {str(getattr(s, "name", "")) for s in config_obj.mcp_servers}
@@ -110,6 +83,12 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
         replaced = existing_names & {s.name for s in imported_servers}
 
     log.info("Imported {} server(s) from '{}'", len(imported_servers), source)
+    try:
+        names_preview = ", ".join(sorted(getattr(s, "name", "") for s in imported_servers))
+        if names_preview:
+            log.info("Detected servers: {}", names_preview)
+    except Exception:
+        pass
     if added:
         log.info("Added: {}", ", ".join(sorted(added)))
     if replaced:
@@ -117,10 +96,11 @@ def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
 
     if args.dry_run:
         log.info("Dry-run enabled; not writing changes to {}", target_path)
+        log.debug("Merged servers: {}", merged)
         return 0
 
     config_obj.mcp_servers = merged
-    config_obj.save(target_dir)
+    config_obj.save(target_path)
     log.info("Configuration updated: {}", target_path)
     return 0
 

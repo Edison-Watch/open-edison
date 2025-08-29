@@ -111,7 +111,8 @@ make test
 
 **Standards**:
 
-- **Ruff** for formatting and linting
+- **uv** for formatting (`make format`)
+- **Ruff** for linting (`make lint`)
 - **Type hints** for all function signatures
 - **Docstrings** for public functions and classes
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from loguru import logger as log
@@ -17,13 +15,12 @@ def merge_servers(
     existing: list[MCPServerConfigT],
     imported: list[MCPServerConfigT],
     policy: str,
-    enable_imported: bool,
 ) -> list[MCPServerConfigT]:
     name_to_index: dict[str, int] = {s.name: i for i, s in enumerate(existing)}
     result: list[MCPServerConfigT] = list(existing)
 
     for server in imported:
-        server.enabled = bool(enable_imported)
+        server.enabled = True
         if server.name in name_to_index:
             if policy == MergePolicy.SKIP:
                 log.info("Skipping duplicate server '{}' (policy=skip)", server.name)

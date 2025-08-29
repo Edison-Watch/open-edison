@@ -1,11 +1,8 @@
 """
-Open Edison Source Package
+Open Edison Source Package.
 
-Main source code package for the Open Edison single-user MCP proxy server.
-
-This package exposes a CLI via `open-edison` / `open_edison` entrypoints.
+Note: Avoid importing heavy submodules at package import time to keep
+packaging/import of light utilities (e.g., mcp_importer) side‑effect free.
 """
 
-from .server import OpenEdisonProxy
-
-__all__ = ["OpenEdisonProxy"]
+__all__: list[str] = []

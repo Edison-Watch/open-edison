@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.33"
+version = "0.1.38"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -28,6 +28,8 @@ requires-python = ">= 3.12"
 [project.scripts]
 open-edison = "src.cli:main"
 open_edison = "src.cli:main"
+mcp-importer = "mcp_importer.__main__:main"
+mcp-importer-quick = "mcp_importer.quick_cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -42,20 +44,20 @@ dev-dependencies = [
     "pytest-asyncio>=1.0.0",
     "vulture>=2.11",
     "twine>=5.1.1",
+    "ty>=0.0.1a19",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "ruff>=0.12.3",
-  "pytest>=8.3.3",
-  "pytest-asyncio>=1.0.0",
-]
+ 
+
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "src/mcp_importer"]
+exclude = [
+  "src/mcp_importer/**",
+]
 include = [
   "README.md",
   "LICENSE",
@@ -118,6 +120,13 @@ reportMissingTypeStubs = true
 reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
 venvPath = ".venv"
 extraPaths = ["src"]
+
+[tool.ty.rules]
+possibly-unresolved-reference = "error"
+index-out-of-bounds = "error"
+
+[tool.ty.src]
+exclude = ["tests/**"]
 
 [tool.vulture]
 exclude = ["tests", "src/frontend_dist"]

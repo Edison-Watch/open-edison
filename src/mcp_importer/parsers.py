@@ -1,11 +1,12 @@
 # pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingImports=false, reportUnknownMemberType=false
-from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any, cast
 
 from loguru import logger as log
+
+from src.config import MCPServerConfig
 
 
 # Import Open Edison types
@@ -19,7 +20,6 @@ def _new_mcp_server_config(
     roots: list[str] | None,
 ) -> Any:
     """Runtime-constructed MCPServerConfig without static import coupling."""
-    from config import MCPServerConfig  # type: ignore
 
     return MCPServerConfig(
         name=name,
@@ -41,12 +41,13 @@ def safe_read_json(path: Path) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             loaded = json.load(f)
-            if not isinstance(loaded, dict):
-                raise ImportErrorDetails(f"Expected JSON object at {path}", path)
-            data: dict[str, Any] = cast(dict[str, Any], loaded)
-            return data
     except Exception as e:
         raise ImportErrorDetails(f"Failed to read JSON from {path}: {e}", path) from e
+
+    if not isinstance(loaded, dict):
+        raise ImportErrorDetails(f"Expected JSON object at {path}", path)
+    data: dict[str, Any] = cast(dict[str, Any], loaded)
+    return data
 
 
 def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:
@@ -122,9 +123,15 @@ def _collect_top_level(data: dict[str, Any], default_enabled: bool) -> list[Any]
 
 def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
     results: list[Any] = []
-    for k, v in data.items():
-        if "mcp" in str(k).lower() and isinstance(v, dict):
+    for _k, v in data.items():
+        # If nested dict, recurse regardless of key to catch structures like 'projects'
+        if isinstance(v, dict):
             results.extend(parse_mcp_like_json(v, default_enabled=default_enabled))
+        # If nested list, recurse into dict items
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    results.extend(parse_mcp_like_json(item, default_enabled=default_enabled))
     return results
 
 

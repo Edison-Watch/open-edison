@@ -2,7 +2,7 @@
 
 > The Secure MCP Control Panel
 
-Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing. 
+Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing.
 
 OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
 
@@ -47,6 +47,13 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 ```
 
 Run locally with uvx: `uvx open-edison`
+
+Optionally, import your existing MCP configs from Cursor, VS Code, or Claude Code with:
+
+```bash
+# From source (no install) — quick one-liner (add --dry-run to preview)
+uv run python -m mcp_importer.quick_cli --yes
+```
 
 <details>
 <summary>⬇️ Install Node.js/npm (optional for MCP tools)</summary>
@@ -94,6 +101,44 @@ open-edison run --config-dir ~/edison-config
 # or via environment variable
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
+
+</details>
+
+<details>
+<summary>🔄 Import from Cursor/VS Code/Claude Code</summary>
+
+### Import from Cursor/VS Code/Claude Code
+
+- **CLI**
+
+  - Import & configure to use edison as your MCP server:
+
+    ```bash
+    # From source (no install)
+    uv run python -m mcp_importer.quick_cli --yes
+    ```
+
+  - Preview what will be imported (no writes):
+
+    ```bash
+    uv run python -m mcp_importer --source cursor --dry-run
+    ```
+
+  - Import servers into Open Edison `config.json` (merge policy defaults to `skip`):
+
+    ```bash
+    uv run python -m mcp_importer --source cursor
+    uv run python -m mcp_importer --source vscode
+    uv run python -m mcp_importer --source claude-code
+    ```
+
+  - Point your editor to Open Edison (backup original config and replace with a single Open Edison server):
+
+    ```bash
+    uv run python -m mcp_importer export --target cursor --yes
+    uv run python -m mcp_importer export --target vscode --yes
+    uv run python -m mcp_importer export --target claude-code --yes
+    ```
 
 </details>
 
