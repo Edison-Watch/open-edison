@@ -1,5 +1,4 @@
 # pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingImports=false, reportUnknownMemberType=false
-from __future__ import annotations
 
 import json
 from pathlib import Path

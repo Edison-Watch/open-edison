@@ -5,8 +5,6 @@ Provides a simple publisher/subscriber model to stream JSON events to
 connected dashboard clients over Server-Sent Events (SSE).
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable

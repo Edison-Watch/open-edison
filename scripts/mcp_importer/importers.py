@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from loguru import logger as log
+
+from src.config import MCPServerConfig
 
 from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
 from .paths import (
@@ -14,10 +13,8 @@ from .paths import (
     find_vscode_user_mcp_file,
 )
 
-MCPServerConfigT = Any
 
-
-def import_from_cursor() -> list[MCPServerConfigT]:
+def import_from_cursor() -> list[MCPServerConfig]:
     # Only support user-level Cursor config
     files = find_cursor_user_file()
     if not files:
@@ -29,7 +26,7 @@ def import_from_cursor() -> list[MCPServerConfigT]:
     return parse_mcp_like_json(data, default_enabled=True)
 
 
-def import_from_vscode() -> list[MCPServerConfigT]:
+def import_from_vscode() -> list[MCPServerConfig]:
     files = find_vscode_user_mcp_file()
     if not files:
         raise ImportErrorDetails("VSCode mcp.json not found at User/mcp.json on macOS/Linux.")
@@ -38,7 +35,7 @@ def import_from_vscode() -> list[MCPServerConfigT]:
     return parse_mcp_like_json(data, default_enabled=True)
 
 
-def import_from_claude_code() -> list[MCPServerConfigT]:
+def import_from_claude_code() -> list[MCPServerConfig]:
     # Prefer Claude Code's documented user-level locations if present
     files = find_claude_code_user_all_candidates()
     if not files:
@@ -59,7 +56,7 @@ def import_from_claude_code() -> list[MCPServerConfigT]:
     return []
 
 
-IMPORTERS: dict[str, Callable[..., list[MCPServerConfigT]]] = {
+IMPORTERS: dict[str, Callable[..., list[MCPServerConfig]]] = {
     "cursor": import_from_cursor,
     "vscode": import_from_vscode,
     "claude-code": import_from_claude_code,
