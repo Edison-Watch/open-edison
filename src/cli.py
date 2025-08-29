@@ -4,8 +4,6 @@ CLI entrypoint for Open Edison.
 Provides `open-edison` executable when installed via pip/uvx/pipx.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import os
@@ -68,11 +66,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ],
         default="interactive",
         help="Source application to import from",
-    )
-    sp_import.add_argument(
-        "--project-dir",
-        type=Path,
-        help="When --source=cursor, path to the project containing .cursor/mcp.json",
     )
     sp_import.add_argument(
         "--config-dir",
@@ -250,11 +243,6 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         importer_argv: list[str] = []
         if args.source:
             importer_argv += ["--source", str(args.source)]
-        if getattr(args, "project_dir", None):
-            importer_argv += [
-                "--project-dir",
-                str(Path(args.project_dir).expanduser().resolve()),
-            ]
         if getattr(args, "config_dir", None):
             importer_argv += [
                 "--config-dir",
@@ -262,8 +250,6 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
             ]
         if args.merge:
             importer_argv += ["--merge", str(args.merge)]
-        if bool(getattr(args, "enable_imported", False)):
-            importer_argv += ["--enable-imported"]
         if bool(getattr(args, "dry_run", False)):
             importer_argv += ["--dry-run"]
 

@@ -9,20 +9,15 @@
 
 const https = require('https');
 const http = require('http');
-const url = require('url');
 
 // Test configuration examples
 const TEST_CONFIGS = [
     {
         name: "Local Development",
-        server_url: "http://localhost:3001/mcp/call",
+        server_url: "http://localhost:3000/mcp/",
         api_key: "your-secure-api-key"
     },
-    {
-        name: "Remote Server",
-        server_url: "https://your-server.com:3001/mcp/call",
-        api_key: "your-secure-api-key"
-    }
+    // Localhost-only setup; remote examples removed by design
 ];
 
 function testConnection(config) {
@@ -31,7 +26,13 @@ function testConnection(config) {
         console.log(`📍 URL: ${config.server_url}`);
         console.log(`🔑 API Key: ${config.api_key.substring(0, 8)}...`);
 
-        const parsedUrl = url.parse(config.server_url);
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(config.server_url);
+        } catch (e) {
+            console.log(`❌ Invalid URL: ${e.message}`);
+            return resolve({ success: false, error: e });
+        }
         const isHttps = parsedUrl.protocol === 'https:';
         const client = isHttps ? https : http;
 
@@ -55,12 +56,13 @@ function testConnection(config) {
         const options = {
             hostname: parsedUrl.hostname,
             port: parsedUrl.port || (isHttps ? 443 : 80),
-            path: parsedUrl.path,
+            path: parsedUrl.pathname + parsedUrl.search,
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${config.api_key}`,
                 'Content-Type': 'application/json',
-                'Content-Length': postData.length,
+                'Accept': 'application/json, text/event-stream',
+                'Content-Length': Buffer.byteLength(postData),
                 'User-Agent': 'Open-Edison-Connector-Test/1.0.0'
             },
             timeout: 5000
@@ -82,24 +84,35 @@ function testConnection(config) {
                     } catch (e) {
                         console.log(`📊 Response length: ${data.length} bytes (not JSON)`);
                     }
-                    resolve({ success: true, status: res.statusCode, data });
-                } else {
-                    console.log(`⚠️  Unexpected status: ${res.statusCode}`);
-                    console.log(`📄 Response: ${data.substring(0, 200)}...`);
-                    resolve({ success: false, status: res.statusCode, data });
+                    return resolve({ success: true, status: res.statusCode, data });
                 }
+
+                // Friendlier messaging for common cases
+                if (res.statusCode === 401) {
+                    console.log('🔒 Authentication failed (401). Check your API key in Open Edison `config.json` and extension settings.');
+                } else if (res.statusCode === 404) {
+                    console.log('🔎 Endpoint not found (404). Ensure the path is `/mcp/`.');
+                } else {
+                    console.log(`⚠️  HTTP ${res.statusCode}. Partial response: ${data.substring(0, 200)}...`);
+                }
+                resolve({ success: false, status: res.statusCode, data });
             });
         });
 
         req.on('error', (err) => {
-            console.log(`❌ Connection failed: ${err.message}`);
-            reject(err);
+            if (err && err.code === 'ECONNREFUSED') {
+                console.log('ℹ️  Open Edison is not running at http://localhost:3000. This is expected during packaging. Run `make run` to start it.');
+            } else {
+                console.log(`❌ Connection error: ${err.code || ''} ${err.message}`.trim());
+            }
+            // Do not fail the build; resolve with a non-success result
+            resolve({ success: false, error: err });
         });
 
         req.on('timeout', () => {
             console.log(`⏰ Connection timeout`);
             req.destroy();
-            reject(new Error('Connection timeout'));
+            resolve({ success: false, error: new Error('Connection timeout') });
         });
 
         req.write(postData);
@@ -157,7 +170,7 @@ function validateManifest() {
 
 function generateExampleCommand(config) {
     console.log(`\n📝 Example mcp-remote command for ${config.name}:`);
-    console.log(`npx -y mcp-remote "${config.server_url}" --header "Authorization:Bearer ${config.api_key}" --transport http-only --allow-http`);
+    console.log(`npx -y mcp-remote "${config.server_url}" --header "Authorization: Bearer ${config.api_key}" --header "Accept: application/json, text/event-stream" --transport http-only --allow-http`);
 }
 
 async function main() {
@@ -174,11 +187,10 @@ async function main() {
     console.log('⚠️  Note: Connections will fail unless your Open Edison server is running');
 
     for (const config of TEST_CONFIGS) {
-        try {
-            await testConnection(config);
-            generateExampleCommand(config);
-        } catch (err) {
-            console.log(`💥 Test failed for ${config.name}: ${err.message}`);
+        const result = await testConnection(config);
+        generateExampleCommand(config);
+        if (!result.success) {
+            console.log('📝 Skipping live MCP verification until the server is running.');
         }
     }
 

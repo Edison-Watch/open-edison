@@ -105,9 +105,10 @@ lint: check_uv ## Lint code with Ruff (src only)
 	@uv run ruff check .
 	@echo "$(GREEN)✅Ruff linting completed.$(RESET)"
 
-format: check_uv ## Format code with Ruff
-	@echo "$(YELLOW)🎨Formatting code with Ruff...$(RESET)"
-	@uv run ruff format .
+
+format: check_uv ## Format code with uv
+	@echo "$(YELLOW)🎨Formatting code with uv...$(RESET)"
+	@uv format .
 	@echo "$(GREEN)✅Code formatting completed.$(RESET)"
 
 fix: check_uv ## Auto-fix linting issues with Ruff
@@ -115,17 +116,17 @@ fix: check_uv ## Auto-fix linting issues with Ruff
 	@uv run ruff check . --fix
 	@echo "$(GREEN)✅Linting fixes applied.$(RESET)"
 
-basedpyright_check: check_uv ## Run type checking with Basedpyright
-	@echo "$(YELLOW)🔍Running Basedpyright...$(RESET)"
-	@uv run basedpyright .
-	@echo "$(GREEN)✅Basedpyright completed.$(RESET)"
+ty_checker_check: check_uv ## Run type checking with Ty
+	@echo "$(YELLOW)🔍Running Ty...$(RESET)"
+	@uv run ty check
+	@echo "$(GREEN)✅Ty completed.$(RESET)"
 
 deadcode: check_uv ## Find unused code with Vulture (fails on findings)
 	@echo "$(YELLOW)🪦 Scanning for dead code with Vulture...$(RESET)"
 	@uv run vulture src tests --min-confidence 60
 	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 60).$(RESET)"
 
-ci: sync lint basedpyright_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
+ci: sync lint ty_checker_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################
@@ -155,9 +156,16 @@ docker_build: ## Build the Docker image
 	@echo "$(GREEN)✅Docker image built and tagged as :$(DOCKER_IMAGE_TAG) and :latest.$(RESET)"
 
 docker_run: docker_build ## Run the Docker image
-	@echo "$(YELLOW)🔍Running Docker image...$(RESET)"
-	@docker run -p 3000:3000 -p 3001:3001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest
-	@echo "$(GREEN)✅Docker image running on ports 3000 and 3001.$(RESET)"
+	@echo "$(YELLOW)🔍Running Docker image and exposing ports 3000, 3001, and 50001...$(RESET)"
+	@docker run -e OPEN_EDISON_CONFIG_DIR=/app -p 3000:3000 -p 3001:3001 -p 50001:50001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest
+	@echo "$(GREEN)✅Docker image running. Visit http://localhost:3001 for the dashboard.$(RESET)"
+
+# Verify README curl | bash installer works on a clean Ubuntu base image
+.PHONY: install_curl_test
+install_curl_test: ## Build an Ubuntu-based image that runs the curl installer (smoke test)
+	@echo "$(YELLOW)🧪 Building installer test image (Ubuntu + curl | bash)...$(RESET)"
+	@docker build -f installation_test/Dockerfile -t open-edison-install-test:latest .
+	@echo "$(GREEN)✅ Installer test image built successfully.$(RESET)"
 
 ########################################################
 # Package for distribution

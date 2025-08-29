@@ -413,7 +413,7 @@ from src.proxy import MCPProxy
 
 ### Code Style
 
-- Use Ruff for formatting and linting (`make format` and `make lint`)
+- Use uv for formatting (`make format`) and Ruff for linting (`make lint`)
 - Type hints for all function signatures
 - Docstrings for all public functions/classes
 

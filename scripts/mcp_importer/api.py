@@ -1,140 +1,106 @@
-from __future__ import annotations
-
-from collections.abc import Iterable
-
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false
-from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from config import Config, get_config_dir, get_config_json_path  # type: ignore
-
-from .importers import IMPORTERS
-from .merge import MergePolicy, merge_servers
-
-
-@dataclass
-class ImportPreview:
-    target_dir: Path
-    source: str
-    merge_policy: str
-    enable_imported: bool
-    existing_names: list[str]
-    imported_names: list[str]
-    added: list[str]
-    replaced: list[str]
-    total_after_merge: int
-    merged_serialized: list[dict[str, Any]]
+import scripts.mcp_importer.paths as _paths
+from scripts.mcp_importer.exporters import export_to_claude_code, export_to_cursor, export_to_vscode
+from scripts.mcp_importer.importers import (
+    import_from_claude_code as _import_from_claude_code,
+)
+from scripts.mcp_importer.importers import (
+    import_from_cursor as _import_from_cursor,
+)
+from scripts.mcp_importer.importers import (
+    import_from_vscode as _import_from_vscode,
+)
+from scripts.mcp_importer.merge import MergePolicy, merge_servers
+from src.config import Config, MCPServerConfig, get_config_json_path
 
 
-def _serialize_servers(servers: Iterable[Any]) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    for s in servers:
-        try:
-            results.append(asdict(s))
-        except Exception:
-            results.append(
-                {
-                    "name": getattr(s, "name", ""),
-                    "command": getattr(s, "command", ""),
-                    "args": list(getattr(s, "args", [])),
-                    "env": dict(getattr(s, "env", {})),
-                    "enabled": bool(getattr(s, "enabled", False)),
-                    "roots": getattr(s, "roots", None),
-                    "oauth_scopes": getattr(s, "oauth_scopes", None),
-                    "oauth_client_name": getattr(s, "oauth_client_name", None),
-                }
-            )
-    return results
+class CLIENT(str, Enum):
+    CURSOR = "cursor"
+    VSCODE = "vscode"
+    CLAUDE_CODE = "claude-code"
 
 
-def preview_import(
+def detect_clients() -> set[CLIENT]:
+    detected: set[CLIENT] = set()
+    if _paths.detect_cursor_config_path() is not None:
+        detected.add(CLIENT.CURSOR)
+    if _paths.detect_vscode_config_path() is not None:
+        detected.add(CLIENT.VSCODE)
+    if _paths.detect_claude_code_config_path() is not None:
+        detected.add(CLIENT.CLAUDE_CODE)
+    return detected
+
+
+import_cursor = _import_from_cursor
+import_vscode = _import_from_vscode
+import_claude_code = _import_from_claude_code
+
+
+def import_from(client: CLIENT) -> list[MCPServerConfig]:
+    if client == CLIENT.CURSOR:
+        return import_cursor()
+    if client == CLIENT.VSCODE:
+        return import_vscode()
+    if client == CLIENT.CLAUDE_CODE:
+        return import_claude_code()
+    raise ValueError(f"Unsupported client: {client}")
+
+
+def save_imported_servers(
+    servers: list[MCPServerConfig],
     *,
-    source: str,
-    project_dir: Path | None = None,
-    config_dir: Path | None = None,
     merge_policy: str = MergePolicy.SKIP,
-    enable_imported: bool = False,
-) -> ImportPreview:
-    """Preview importing MCP servers without writing changes.
-
-    Returns a structured summary including the fully merged serialized config snippet.
-    """
-    importer = IMPORTERS.get(source)
-    if importer is None:
-        raise ValueError(f"Unsupported source: {source}")
-
-    # Resolve target config directory
-    target_dir: Path = Path(config_dir) if config_dir is not None else get_config_dir()
-    # Load config (auto-creates default if missing via Config)
-    cfg: Any = Config(target_dir)
-
-    # Load imported servers
-    imported_servers = (
-        importer(project_dir) if (source == "cursor") else importer()  # type: ignore[misc]
-    )
-
-    merged = merge_servers(
-        existing=cfg.mcp_servers,
-        imported=imported_servers,
-        policy=merge_policy,
-        enable_imported=bool(enable_imported),
-    )
-
-    existing_names = [str(getattr(s, "name", "")) for s in cast(Iterable[Any], cfg.mcp_servers)]
-    imported_names = [str(getattr(s, "name", "")) for s in imported_servers]
-    added = sorted({str(getattr(s, "name", "")) for s in merged} - set(existing_names))
-    replaced: list[str] = []
-    if merge_policy == MergePolicy.OVERWRITE:
-        replaced = sorted(set(existing_names) & set(imported_names))
-
-    merged_serialized = _serialize_servers(merged)
-
-    return ImportPreview(
-        target_dir=target_dir,
-        source=source,
-        merge_policy=merge_policy,
-        enable_imported=bool(enable_imported),
-        existing_names=sorted(existing_names),
-        imported_names=sorted(imported_names),
-        added=added,
-        replaced=replaced,
-        total_after_merge=len(merged_serialized),
-        merged_serialized=merged_serialized,
-    )
-
-
-def apply_import(
-    *,
-    source: str,
-    project_dir: Path | None = None,
     config_dir: Path | None = None,
-    merge_policy: str = MergePolicy.SKIP,
-    enable_imported: bool = False,
 ) -> Path:
-    """Apply an import by writing the merged config back to disk.
-
-    Returns the path to the written config.json.
-    """
-    target_dir: Path = Path(config_dir) if config_dir is not None else get_config_dir()
-    cfg: Any = Config(target_dir)
-    importer = IMPORTERS.get(source)
-    if importer is None:
-        raise ValueError(f"Unsupported source: {source}")
-
-    imported_servers = (
-        importer(project_dir) if (source == "cursor") else importer()  # type: ignore[misc]
+    target_path: Path = (
+        get_config_json_path() if config_dir is None else (Path(config_dir) / "config.json")
     )
-
-    merged = merge_servers(
-        existing=cfg.mcp_servers,
-        imported=imported_servers,
-        policy=merge_policy,
-        enable_imported=bool(enable_imported),
-    )
-
+    cfg: Config = Config(target_path)
+    merged = merge_servers(existing=cfg.mcp_servers, imported=servers, policy=merge_policy)
     cfg.mcp_servers = merged
-    cfg.save(target_dir)
+    cfg.save(target_path)
+    return target_path
 
-    # Resolve and return path
-    return get_config_json_path() if config_dir is None else Path(config_dir) / "config.json"
+
+def export_edison_to(
+    client: CLIENT,
+    *,
+    url: str = "http://localhost:3000/mcp/",
+    api_key: str = "dev-api-key-change-me",
+    server_name: str = "open-edison",
+    dry_run: bool = False,
+    force: bool = False,
+    create_if_missing: bool = False,
+) -> Any:
+    match client:
+        case CLIENT.CURSOR:
+            return export_to_cursor(
+                url=url,
+                api_key=api_key,
+                server_name=server_name,
+                dry_run=dry_run,
+                force=force,
+                create_if_missing=create_if_missing,
+            )
+        case CLIENT.VSCODE:
+            return export_to_vscode(
+                url=url,
+                api_key=api_key,
+                server_name=server_name,
+                dry_run=dry_run,
+                force=force,
+                create_if_missing=create_if_missing,
+            )
+        case CLIENT.CLAUDE_CODE:
+            return export_to_claude_code(
+                url=url,
+                api_key=api_key,
+                server_name=server_name,
+                dry_run=dry_run,
+                force=force,
+                create_if_missing=create_if_missing,
+            )

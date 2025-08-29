@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path
@@ -17,95 +15,82 @@ def is_linux() -> bool:
     return not is_windows() and not is_macos()
 
 
-def user_app_support_dir(app_name: str) -> Path:
-    """Return the OS-specific application support/config directory for an app name.
-
-    - macOS: ~/Library/Application Support/<App>
-    - Windows: %APPDATA%/<App> (fallback to ~/AppData/Roaming/<App>)
-    - Linux: $XDG_CONFIG_HOME/<app-lower> or ~/.config/<app-lower>
-    """
-    if is_macos():
-        return Path.home() / "Library" / "Application Support" / app_name
-    if is_windows():
-        appdata = os.environ.get("APPDATA")
-        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-        return base / app_name
-    # Linux / POSIX
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
-    return base / app_name.lower().replace(" ", "-")
-
-
-def find_cursor_project_file(project_dir: Path | None) -> list[Path]:
-    if not project_dir:
-        return []
-    candidate = (project_dir / ".cursor" / "mcp.json").resolve()
-    return [candidate] if candidate.exists() else []
-
-
 def find_cursor_user_file() -> list[Path]:
     """Find user-level Cursor MCP config (~/.cursor/mcp.json)."""
     p = (Path.home() / ".cursor" / "mcp.json").resolve()
     return [p] if p.exists() else []
 
 
-def find_windsurf_files() -> list[Path]:
-    candidates: list[Path] = []
+def find_vscode_user_mcp_file() -> list[Path]:
+    """Find VSCode user-level MCP config (User/mcp.json) on macOS or Linux."""
     if is_macos():
-        candidates.append(Path.home() / ".codeium" / "windsurf" / "mcp_config.json")
-    elif is_windows():
-        appdata = os.environ.get("APPDATA")
-        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-        candidates.append(base / "Codeium" / "windsurf" / "mcp_config.json")
-    else:  # linux
-        xdg = os.environ.get("XDG_CONFIG_HOME")
-        base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
-        candidates.append(base / ".codeium" / "windsurf" / "mcp_config.json")
-    return [p for p in candidates if p.exists()]
-
-
-def find_cline_files() -> list[Path]:
-    editors = ["Cursor", "Code"]
-    results: list[Path] = []
-    for editor in editors:
-        if is_macos():
-            base = (
-                Path.home() / "Library" / "Application Support" / editor / "User" / "globalStorage"
-            )
-            p = base / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json"
-        elif is_windows():
-            appdata = os.environ.get("APPDATA")
-            base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-            p = (
-                base
-                / editor
-                / "User"
-                / "globalStorage"
-                / "saoudrizwan.claude-dev"
-                / "settings"
-                / "cline_mcp_settings.json"
-            )
-        else:
-            base = Path.home() / ".config" / editor / "User" / "globalStorage"
-            p = base / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json"
-        if p.exists():
-            results.append(p)
-    return results
-
-
-def find_claude_desktop_file() -> list[Path]:
-    base = user_app_support_dir("Claude")
-    p = base / "claude_desktop_config.json"
-    return [p] if p.exists() else []
-
-
-def find_vscode_settings() -> list[Path]:
-    if is_macos():
-        p = Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json"
-    elif is_windows():
-        appdata = os.environ.get("APPDATA")
-        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-        p = base / "Code" / "User" / "settings.json"
+        p = Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
     else:
-        p = Path.home() / ".config" / "Code" / "User" / "settings.json"
+        p = Path.home() / ".config" / "Code" / "User" / "mcp.json"
+    p = p.resolve()
     return [p] if p.exists() else []
+
+
+def find_claude_code_user_settings_file() -> list[Path]:
+    """Find Claude Code user-level settings (~/.claude/settings.json)."""
+    p = (Path.home() / ".claude" / "settings.json").resolve()
+    return [p] if p.exists() else []
+
+
+def find_claude_code_user_all_candidates() -> list[Path]:
+    """Return ordered list of Claude Code user-level MCP config candidates.
+
+    Based on docs, check in priority order:
+      - ~/.claude.json (primary user-level)
+      - ~/.claude/settings.json
+      - ~/.claude/settings.local.json
+      - ~/.claude/mcp_servers.json
+    """
+    home = Path.home()
+    candidates: list[Path] = [
+        home / ".claude.json",
+        home / ".claude" / "settings.json",
+        home / ".claude" / "settings.local.json",
+        home / ".claude" / "mcp_servers.json",
+    ]
+    existing: list[Path] = []
+    for p in candidates:
+        rp = p.resolve()
+        if rp.exists():
+            existing.append(rp)
+    return existing
+
+
+# Shared utils for CLI import/export
+
+
+def detect_cursor_config_path() -> Path | None:
+    files = find_cursor_user_file()
+    return files[0] if files else None
+
+
+def detect_vscode_config_path() -> Path | None:
+    files = find_vscode_user_mcp_file()
+    return files[0] if files else None
+
+
+def get_default_vscode_config_path() -> Path:
+    if is_macos():
+        return (
+            Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+        ).resolve()
+    return (Path.home() / ".config" / "Code" / "User" / "mcp.json").resolve()
+
+
+def get_default_cursor_config_path() -> Path:
+    return (Path.home() / ".cursor" / "mcp.json").resolve()
+
+
+def detect_claude_code_config_path() -> Path | None:
+    candidates = find_claude_code_user_all_candidates()
+    return candidates[0] if candidates else None
+
+
+def get_default_claude_code_config_path() -> Path:
+    # Prefer top-level ~/.claude.json as default create target
+    return (Path.home() / ".claude.json").resolve()

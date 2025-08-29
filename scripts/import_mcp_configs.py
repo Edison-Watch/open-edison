@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Thin wrapper to run the MCP importer package CLI."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
