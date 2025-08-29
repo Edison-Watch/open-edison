@@ -61,3 +61,38 @@ def find_claude_code_user_all_candidates() -> list[Path]:
         if rp.exists():
             existing.append(rp)
     return existing
+
+
+# Shared utils for CLI import/export
+
+
+def detect_cursor_config_path() -> Path | None:
+    files = find_cursor_user_file()
+    return files[0] if files else None
+
+
+def detect_vscode_config_path() -> Path | None:
+    files = find_vscode_user_mcp_file()
+    return files[0] if files else None
+
+
+def get_default_vscode_config_path() -> Path:
+    if is_macos():
+        return (
+            Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+        ).resolve()
+    return (Path.home() / ".config" / "Code" / "User" / "mcp.json").resolve()
+
+
+def get_default_cursor_config_path() -> Path:
+    return (Path.home() / ".cursor" / "mcp.json").resolve()
+
+
+def detect_claude_code_config_path() -> Path | None:
+    candidates = find_claude_code_user_all_candidates()
+    return candidates[0] if candidates else None
+
+
+def get_default_claude_code_config_path() -> Path:
+    # Prefer top-level ~/.claude.json as default create target
+    return (Path.home() / ".claude.json").resolve()

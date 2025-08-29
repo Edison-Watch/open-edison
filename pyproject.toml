@@ -45,12 +45,8 @@ dev-dependencies = [
     "ty>=0.0.1a19",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "ruff>=0.12.3",
-  "pytest>=8.3.3",
-  "pytest-asyncio>=1.0.0",
-]
+ 
+
 
 [tool.hatch.metadata]
 allow-direct-references = true
