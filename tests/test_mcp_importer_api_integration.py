@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from scripts.mcp_importer.api import (
+from mcp_importer.api import (
     CLIENT,
     detect_clients,
     export_edison_to,
@@ -37,9 +37,7 @@ def test_import_and_save_cursor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     _write_json(editor_file, _sample_mcp_json("from-cursor"))
 
     # Patch importer to use our temp file (must patch symbol in importers module)
-    monkeypatch.setattr(
-        "scripts.mcp_importer.importers.find_cursor_user_file", lambda: [editor_file]
-    )
+    monkeypatch.setattr("mcp_importer.importers.find_cursor_user_file", lambda: [editor_file])
 
     servers = import_from(CLIENT.CURSOR)
     assert isinstance(servers, list) and len(servers) == 1
@@ -62,12 +60,8 @@ def test_export_to_cursor_overwrites_to_open_edison(
     _write_json(editor_file, _sample_mcp_json("preexisting"))
 
     # Patch exporter to target our temp file
-    monkeypatch.setattr(
-        "scripts.mcp_importer.exporters.find_cursor_user_file", lambda: [editor_file]
-    )
-    monkeypatch.setattr(
-        "scripts.mcp_importer.exporters._resolve_cursor_target", lambda: editor_file
-    )
+    monkeypatch.setattr("mcp_importer.exporters.find_cursor_user_file", lambda: [editor_file])
+    monkeypatch.setattr("mcp_importer.exporters._resolve_cursor_target", lambda: editor_file)
 
     result = export_edison_to(
         CLIENT.CURSOR,
@@ -90,15 +84,15 @@ def test_export_to_cursor_overwrites_to_open_edison(
 def test_detect_clients_with_patched_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Patch all detect_* functions to simulate all present
     monkeypatch.setattr(
-        "scripts.mcp_importer.paths.detect_cursor_config_path",
+        "mcp_importer.paths.detect_cursor_config_path",
         lambda: tmp_path / "fake-cursor.json",
     )
     monkeypatch.setattr(
-        "scripts.mcp_importer.paths.detect_vscode_config_path",
+        "mcp_importer.paths.detect_vscode_config_path",
         lambda: tmp_path / "fake-vscode.json",
     )
     monkeypatch.setattr(
-        "scripts.mcp_importer.paths.detect_claude_code_config_path",
+        "mcp_importer.paths.detect_claude_code_config_path",
         lambda: tmp_path / "fake-claude.json",
     )
 

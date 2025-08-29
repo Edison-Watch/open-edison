@@ -28,6 +28,8 @@ requires-python = ">= 3.12"
 [project.scripts]
 open-edison = "src.cli:main"
 open_edison = "src.cli:main"
+mcp-importer = "mcp_importer.__main__:main"
+mcp-importer-quick = "mcp_importer.quick_cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -52,7 +54,7 @@ dev-dependencies = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "src/mcp_importer"]
 include = [
   "README.md",
   "LICENSE",
