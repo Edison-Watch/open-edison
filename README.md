@@ -116,7 +116,6 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
     ```bash
     # From source (no install)
     uv run python -m mcp_importer.quick_cli --yes
-    # After install: mcp-importer-quick --yes
     ```
 
   - Preview what will be imported (no writes):

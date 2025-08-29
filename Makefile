@@ -14,6 +14,7 @@ PYTHON=uv run python
 TEST=uv run pytest
 PYTEST_ARGS ?=
 PROJECT_ROOT=.
+PIP=uv pip
 
 .PHONY: help
 help: ## Show this help message
