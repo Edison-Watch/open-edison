@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.37"
+version = "0.1.38"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -54,7 +54,10 @@ dev-dependencies = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "src/mcp_importer"]
+exclude = [
+  "src/mcp_importer/**",
+]
 include = [
   "README.md",
   "LICENSE",
