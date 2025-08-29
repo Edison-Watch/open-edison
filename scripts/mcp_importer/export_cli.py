@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from loguru import logger as log
 
-from .exporters import ExportError, export_to_cursor
+from .exporters import ExportError, export_to_cursor, export_to_vscode
 
 
 def _prompt_yes_no(message: str, *, default_no: bool = True) -> bool:
@@ -27,7 +26,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Export editor MCP config to use Open Edison (Cursor support)",
     )
-    p.add_argument("--target", choices=["cursor"], default="cursor")
+    p.add_argument("--target", choices=["cursor", "vscode"], default="cursor")
     p.add_argument("--dry-run", action="store_true", help="Show actions without writing")
     p.add_argument("--force", action="store_true", help="Rewrite even if already configured")
     p.add_argument(
@@ -49,45 +48,85 @@ def run_cli(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    if args.target != "cursor":
-        log.error("Only 'cursor' target is supported in this command")
-        return 2
+    if args.target == "cursor":
+        # Determine if file exists to decide on confirmation
+        from .paths import find_cursor_user_file
 
-    # Determine if file exists to decide on confirmation
-    from .paths import find_cursor_user_file
-
-    files = find_cursor_user_file()
-    target_path: Path
-    if files:
-        target_path = files[0]
-    else:
-        target_path = (Path.home() / ".cursor" / "mcp.json").resolve()
-
-    create_if_missing = False
-    if not target_path.exists():
-        if args.yes:
-            create_if_missing = True
+        files = find_cursor_user_file()
+        target_path: Path
+        if files:
+            target_path = files[0]
         else:
-            confirmed = _prompt_yes_no(
-                f"Cursor config not found at {target_path}. Create it?", default_no=False
-            )
-            if not confirmed:
-                log.info("Aborted: user declined to create missing file")
-                return 0
-            create_if_missing = True
+            target_path = (Path.home() / ".cursor" / "mcp.json").resolve()
 
-    try:
-        result = export_to_cursor(
-            url=args.url,
-            api_key=args.api_key,
-            server_name=args.name,
-            dry_run=args.dry_run,
-            force=args.force,
-            create_if_missing=create_if_missing,
-        )
-    except ExportError as e:
-        log.error(str(e))
-        return 1
+        create_if_missing = False
+        if not target_path.exists():
+            if args.yes:
+                create_if_missing = True
+            else:
+                confirmed = _prompt_yes_no(
+                    f"Cursor config not found at {target_path}. Create it?", default_no=False
+                )
+                if not confirmed:
+                    log.info("Aborted: user declined to create missing file")
+                    return 0
+                create_if_missing = True
+
+        try:
+            result = export_to_cursor(
+                url=args.url,
+                api_key=args.api_key,
+                server_name=args.name,
+                dry_run=args.dry_run,
+                force=args.force,
+                create_if_missing=create_if_missing,
+            )
+        except ExportError as e:
+            log.error(str(e))
+            return 1
+    elif args.target == "vscode":
+        # Determine if file exists to decide on confirmation
+        from .paths import find_vscode_user_mcp_file, is_macos
+
+        files = find_vscode_user_mcp_file()
+        if files:
+            target_path = files[0]
+        else:
+            if is_macos():
+                target_path = (
+                    Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+                ).resolve()
+            else:
+                target_path = (Path.home() / ".config" / "Code" / "User" / "mcp.json").resolve()
+
+        create_if_missing = False
+        if not target_path.exists():
+            if args.yes:
+                create_if_missing = True
+            else:
+                confirmed = _prompt_yes_no(
+                    f"VS Code MCP config not found at {target_path}. Create it?", default_no=False
+                )
+                if not confirmed:
+                    log.info("Aborted: user declined to create missing file")
+                    return 0
+                create_if_missing = True
+
+        try:
+            result = export_to_vscode(
+                url=args.url,
+                api_key=args.api_key,
+                server_name=args.name,
+                dry_run=args.dry_run,
+                force=args.force,
+                create_if_missing=create_if_missing,
+            )
+        except ExportError as e:
+            log.error(str(e))
+            return 1
+    else:
+        log.error("Unsupported target: {}", args.target)
+        return 2
 
     if result.dry_run:
         log.info("Dry-run complete. No changes written.")

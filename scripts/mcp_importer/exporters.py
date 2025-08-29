@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger as log
 
-from .paths import find_cursor_user_file, is_windows
+from .paths import find_cursor_user_file, find_vscode_user_mcp_file, is_macos, is_windows
 
 
 @dataclass
@@ -196,6 +196,100 @@ def export_to_cursor(
 
     _atomic_write_json(target_path, new_config)
     log.info("Wrote Cursor MCP config to {}", target_path)
+    return ExportResult(
+        target_path=target_path, backup_path=backup_path, wrote_changes=True, dry_run=False
+    )
+
+
+def export_to_vscode(
+    *,
+    url: str = "http://localhost:3000/mcp/",
+    api_key: str = "dev-api-key-change-me",
+    server_name: str = "open-edison",
+    dry_run: bool = False,
+    force: bool = False,
+    create_if_missing: bool = False,
+) -> ExportResult:
+    """Export editor config for VS Code to point solely to Open Edison.
+
+    Uses the user-level `mcp.json` path used by the importer.
+
+    Behavior mirrors Cursor export:
+    - Back up existing file if present.
+    - Abort on malformed JSON.
+    - If file does not exist, require create_if_missing=True or raise ExportError.
+    - Write a minimal mcpServers object with a single Open Edison server.
+    - Atomic writes.
+    """
+
+    if is_windows():
+        raise ExportError("Windows is not supported. Use macOS or Linux.")
+
+    existing_candidates = find_vscode_user_mcp_file()
+    if existing_candidates:
+        target_path = existing_candidates[0]
+    else:
+        if is_macos():
+            target_path = (
+                Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
+            ).resolve()
+        else:
+            target_path = (Path.home() / ".config" / "Code" / "User" / "mcp.json").resolve()
+
+    backup_path: Path | None = None
+
+    if target_path.exists():
+        # Validate existing JSON; abort if malformed
+        _ = _read_json_or_error(target_path)
+    else:
+        if not create_if_missing:
+            raise ExportError(
+                f"VS Code MCP config not found at {target_path}. Refusing to create without confirmation."
+            )
+
+    # Build the minimal config
+    new_config: dict[str, Any] = {
+        "mcpServers": _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+    }
+
+    # If already configured exactly as desired and not forcing, no-op
+    if target_path.exists():
+        try:
+            current = _read_json_or_error(target_path)
+            if (
+                _is_already_open_edison(current, url=url, api_key=api_key, name=server_name)
+                and not force
+            ):
+                log.info(
+                    "VS Code is already configured to use Open Edison. Skipping (use --force to rewrite)."
+                )
+                return ExportResult(
+                    target_path=target_path, backup_path=None, wrote_changes=False, dry_run=dry_run
+                )
+        except ExportError:
+            # Malformed was already raised earlier; this is defensive.
+            raise
+
+    # Prepare backup if file exists
+    if target_path.exists():
+        backup_path = target_path.with_name(target_path.name + f".bak-{_timestamp()}")
+        if dry_run:
+            log.info("[dry-run] Would back up {} -> {}", target_path, backup_path)
+        else:
+            _ensure_parent_dir(backup_path)
+            shutil.copy2(target_path, backup_path)
+            log.info("Backed up {} -> {}", target_path, backup_path)
+
+    # Write new config
+    if dry_run:
+        log.info("[dry-run] Would write minimal VS Code MCP config to {}", target_path)
+        log.debug("[dry-run] New JSON: {}", json.dumps(new_config, indent=2))
+        return ExportResult(
+            target_path=target_path, backup_path=backup_path, wrote_changes=False, dry_run=True
+        )
+
+    _atomic_write_json(target_path, new_config)
+    log.info("Wrote VS Code MCP config to {}", target_path)
     return ExportResult(
         target_path=target_path, backup_path=backup_path, wrote_changes=True, dry_run=False
     )
