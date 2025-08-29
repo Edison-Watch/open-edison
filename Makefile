@@ -160,6 +160,13 @@ docker_run: docker_build ## Run the Docker image
 	@docker run -e OPEN_EDISON_CONFIG_DIR=/app -p 3000:3000 -p 3001:3001 -p 50001:50001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest
 	@echo "$(GREEN)✅Docker image running. Visit http://localhost:3001 for the dashboard.$(RESET)"
 
+# Verify README curl | bash installer works on a clean Ubuntu base image
+.PHONY: install_curl_test
+install_curl_test: ## Build an Ubuntu-based image that runs the curl installer (smoke test)
+	@echo "$(YELLOW)🧪 Building installer test image (Ubuntu + curl | bash)...$(RESET)"
+	@docker build -f installation_test/Dockerfile -t open-edison-install-test:latest .
+	@echo "$(GREEN)✅ Installer test image built successfully.$(RESET)"
+
 ########################################################
 # Package for distribution
 ########################################################
