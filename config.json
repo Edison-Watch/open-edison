@@ -59,13 +59,26 @@
         },
         {
             "name": "supabase",
-            "command": "",
-            "args": [],
+            "command": "npx",
+            "args": [
+                "-y",
+                "@supabase/mcp-server"
+            ],
             "env": {
-                "SUPABASE_URL": "https://your-supabase-url.supabase.co",
-                "SUPABASE_API_KEY": "your-supabase-api-key",
-                "SUPABASE_DATABASE": "your-database-name"
+                "SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
+                "SUPABASE_ANON_KEY": "your-supabase-anon-key"
             },
+            "enabled": false
+        },
+        {
+            "name": "atlassian",
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.atlassian.com/v1/sse"
+            ],
+            "env": {},
             "enabled": false
         },
         {
@@ -83,27 +96,17 @@
             "enabled": false
         },
         {
-            "name": "atlassian",
-            "command": "npx",
-            "args": [
-                "-y",
-                "mcp-remote",
-                "https://mcp.atlassian.com/v1/sse"
-            ],
-            "env": {},
-            "enabled": false
-        },
-        {
             "name": "zapier",
             "command": "npx",
             "args": [
                 "-y",
                 "mcp-remote",
-                "https://mcp.zapier.com/api/mcp/s/{access_token}/mcp"
+                "https://mcp.zapier.com/api/mcp/s/REPLACE_WITH_ACCESS_TOKEN/mcp",
+                "--header",
+                "Accept: application/json, text/event-stream"
             ],
             "env": {},
-            "enabled": false,
-            "roots": []
+            "enabled": false
         }
     ]
 }
