@@ -1925,8 +1925,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
-                        <button className="button" disabled={saving} onClick={() => saveAll(true)}>{saving ? 'Saving…' : 'Save'}</button>
-                        <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Save and reinitialize'}</button>
+                        <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Save'}</button>
 
                     </div>
                 </div>
