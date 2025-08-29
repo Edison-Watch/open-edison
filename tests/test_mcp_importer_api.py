@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from scripts.mcp_importer.api import CLIENT, detect_clients, export_edison_to, import_from
+from mcp_importer.api import CLIENT, detect_clients, export_edison_to, import_from
 from tests.test_template import TestTemplate
 
 

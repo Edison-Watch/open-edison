@@ -11,10 +11,6 @@ def is_macos() -> bool:
     return sys.platform == "darwin"
 
 
-def is_linux() -> bool:
-    return not is_windows() and not is_macos()
-
-
 def find_cursor_user_file() -> list[Path]:
     """Find user-level Cursor MCP config (~/.cursor/mcp.json)."""
     p = (Path.home() / ".cursor" / "mcp.json").resolve()

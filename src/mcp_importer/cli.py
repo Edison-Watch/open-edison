@@ -24,8 +24,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--source",
-        choices=["cursor", "vscode", "claude-code", "interactive"],
-        default="interactive",
+        choices=["cursor", "vscode", "claude-code"],
+        required=True,
     )
     p.add_argument(
         "--config-dir",
@@ -43,26 +43,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def prompt_source_choice() -> str:
-    print("Select source to import from:")
-    options = list(IMPORTERS.keys())
-    for idx, name in enumerate(options, start=1):
-        print(f"  {idx}. {name}")
-    while True:
-        choice = input("Enter number: ").strip()
-        if choice.isdigit():
-            num = int(choice)
-            if 1 <= num <= len(options):
-                return options[num - 1]
-        print("Invalid selection. Try again.")
-
-
 def run_cli(argv: list[str] | None = None) -> int:  # noqa: C901
-    # TODO check this works as we want it to
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    source: str = prompt_source_choice() if args.source == "interactive" else args.source
+    source: str = args.source
 
     importer = IMPORTERS.get(source)
     if not importer:
