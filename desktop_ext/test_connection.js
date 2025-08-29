@@ -61,6 +61,7 @@ function testConnection(config) {
             headers: {
                 'Authorization': `Bearer ${config.api_key}`,
                 'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
                 'Content-Length': Buffer.byteLength(postData),
                 'User-Agent': 'Open-Edison-Connector-Test/1.0.0'
             },
@@ -169,7 +170,7 @@ function validateManifest() {
 
 function generateExampleCommand(config) {
     console.log(`\n📝 Example mcp-remote command for ${config.name}:`);
-    console.log(`npx -y mcp-remote "${config.server_url}" --header "Authorization:Bearer ${config.api_key}" --transport http-only --allow-http`);
+    console.log(`npx -y mcp-remote "${config.server_url}" --header "Authorization: Bearer ${config.api_key}" --header "Accept: application/json, text/event-stream" --transport http-only --allow-http`);
 }
 
 async function main() {

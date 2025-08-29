@@ -175,7 +175,7 @@ def _build_open_edison_server(
                 "mcp-remote",
                 url,
                 "--header",
-                f"Authorization:Bearer {api_key}",
+                f"Authorization: Bearer {api_key}",
                 "--transport",
                 "http-only",
                 "--allow-http",
@@ -203,7 +203,7 @@ def _is_already_open_edison(
     if not isinstance(args, list):
         return False
     args_str = [str(a) for a in args]
-    expected_header = f"Authorization:Bearer {api_key}"
+    expected_header = f"Authorization: Bearer {api_key}"
     return (
         url in args_str
         and expected_header in args_str

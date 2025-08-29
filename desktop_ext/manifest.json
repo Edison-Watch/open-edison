@@ -28,7 +28,9 @@
                 "mcp-remote",
                 "${user_config.server_url}",
                 "--header",
-                "Authorization:Bearer ${user_config.api_key}",
+                "Authorization: Bearer ${user_config.api_key}",
+                "--header",
+                "Accept: application/json, text/event-stream",
                 "--transport",
                 "http-only",
                 "--allow-http"

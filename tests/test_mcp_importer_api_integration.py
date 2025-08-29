@@ -84,7 +84,7 @@ def test_export_to_cursor_overwrites_to_open_edison(
     assert list(mcp.keys()) == ["open-edison"]
     args = mcp["open-edison"].get("args", [])
     assert "http://localhost:3000/mcp/" in args
-    assert "Authorization:Bearer dev-api-key-change-me" in args
+    assert "Authorization: Bearer dev-api-key-change-me" in args
 
 
 def test_detect_clients_with_patched_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
