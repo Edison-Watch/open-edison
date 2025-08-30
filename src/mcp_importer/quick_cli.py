@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterable
 
-from mcp_importer.api import (
+from src.mcp_importer.api import (
     CLIENT,
     detect_clients,
     export_edison_to,

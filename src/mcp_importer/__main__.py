@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 
-from mcp_importer.cli import run_cli as import_run_cli
-from mcp_importer.export_cli import run_cli as export_run_cli
+from src.mcp_importer.cli import run_cli as import_run_cli
+from src.mcp_importer.export_cli import run_cli as export_run_cli
 
 
 def main() -> int:

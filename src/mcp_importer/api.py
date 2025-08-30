@@ -3,19 +3,19 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import mcp_importer.paths as _paths
-from mcp_importer.exporters import export_to_claude_code, export_to_cursor, export_to_vscode
-from mcp_importer.importers import (
+from src.config import Config, MCPServerConfig, get_config_json_path
+from src.mcp_importer import paths as _paths
+from src.mcp_importer.exporters import export_to_claude_code, export_to_cursor, export_to_vscode
+from src.mcp_importer.importers import (
     import_from_claude_code as _import_from_claude_code,
 )
-from mcp_importer.importers import (
+from src.mcp_importer.importers import (
     import_from_cursor as _import_from_cursor,
 )
-from mcp_importer.importers import (
+from src.mcp_importer.importers import (
     import_from_vscode as _import_from_vscode,
 )
-from mcp_importer.merge import MergePolicy, merge_servers
-from src.config import Config, MCPServerConfig, get_config_json_path
+from src.mcp_importer.merge import MergePolicy, merge_servers
 
 
 class CLIENT(str, Enum):
