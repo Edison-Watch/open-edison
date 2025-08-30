@@ -109,7 +109,7 @@ lint: check_uv ## Lint code with Ruff (src only)
 
 format: check_uv ## Format code with uv
 	@echo "$(YELLOW)🎨Formatting code with uv...$(RESET)"
-	@uv format .
+	@uv format
 	@echo "$(GREEN)✅Code formatting completed.$(RESET)"
 
 fix: check_uv ## Auto-fix linting issues with Ruff
