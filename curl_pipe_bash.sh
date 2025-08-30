@@ -23,27 +23,28 @@ case "$OS_NAME" in
     ;;
 esac
 
-# Ensure PATH includes common user-local bins where uv may be installed
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
 # Install uv if missing (official installer). Non-interactive.
-if ! command -v uv >/dev/null 2>&1; then
+# Note, do not export PATH for the uv bin before the uv installer,
+#  because it will inhibit the uv installer from updating bashrc/zshrc
+if ! PATH="$PATH:$HOME/.local/bin" command -v uv >/dev/null 2>&1; then
   log "Installing uv (Python packaging/runner) ..."
   # shellcheck disable=SC2312
   if ! curl -fsSL https://astral.sh/uv/install.sh | sh; then
     err "Failed to install uv via installer script"
     exit 1
   fi
-  # Re-export PATH in case installer just placed uv
-  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+  # Export PATH to uv bin
+  export PATH="$PATH:$HOME/.local/bin"
 else
+  # Export PATH to uv bin
+  export PATH="$PATH:$HOME/.local/bin"
   log "uv already installed: $(uv --version || echo unknown)"
 fi
 
 # Validate uv is callable now
-if ! command -v uv >/dev/null 2>&1; then
+if ! command -v "uv" >/dev/null 2>&1; then
   err "uv not found on PATH after installation. Ensure $HOME/.local/bin is in PATH."
-  err "Try:  echo 'export PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc"
+  err "Try:  echo 'export PATH=\"$PATH:$HOME/.local/bin\"' >> ~/.bashrc && source ~/.bashrc"
   exit 1
 fi
 
