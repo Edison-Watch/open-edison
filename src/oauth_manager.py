@@ -7,6 +7,7 @@ Provides detection, token management, and authentication flow coordination.
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
@@ -137,7 +138,6 @@ class OAuthManager:
                             expires_in = getattr(existing_tokens, "expires_in", None)
                             if expires_in:
                                 # If expires_in is available, we can calculate expiration
-                                from datetime import datetime, timedelta
 
                                 expiry = datetime.now() + timedelta(seconds=expires_in)
                                 token_expires_at = expiry.isoformat()

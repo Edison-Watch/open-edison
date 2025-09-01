@@ -23,6 +23,12 @@ class CLIENT(str, Enum):
     VSCODE = "vscode"
     CLAUDE_CODE = "claude-code"
 
+    def __str__(self) -> str:
+        return self.value.capitalize()
+
+    def __repr__(self) -> str:
+        return str(self)
+
 
 def detect_clients() -> set[CLIENT]:
     detected: set[CLIENT] = set()
@@ -53,12 +59,18 @@ def import_from(client: CLIENT) -> list[MCPServerConfig]:
 def save_imported_servers(
     servers: list[MCPServerConfig],
     *,
+    dry_run: bool = False,
     merge_policy: str = MergePolicy.SKIP,
     config_dir: Path | None = None,
-) -> Path:
+) -> Path | None:
     target_path: Path = (
         get_config_json_path() if config_dir is None else (Path(config_dir) / "config.json")
     )
+    if dry_run:
+        print(
+            f"[dry-run] Would import {len(servers)} server(s) and save to config.json (at {target_path})"
+        )
+        return None
     cfg: Config = Config(target_path)
     merged = merge_servers(existing=cfg.mcp_servers, imported=servers, policy=merge_policy)
     cfg.mcp_servers = merged
@@ -76,6 +88,11 @@ def export_edison_to(
     force: bool = False,
     create_if_missing: bool = False,
 ) -> Any:
+    if dry_run:
+        print(
+            f"[dry-run] Would export Open Edison to '{client}' (backup and replace editor MCP config)"
+        )
+        return None
     match client:
         case CLIENT.CURSOR:
             return export_to_cursor(
