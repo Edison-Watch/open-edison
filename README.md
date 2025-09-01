@@ -48,11 +48,11 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 
 Run locally with uvx: `uvx open-edison`
 
-Optionally, import your existing MCP configs from Cursor, VS Code, or Claude Code with:
+Optionally, run the setup wizard to import/configure MCP:
 
 ```bash
-# From source (no install) — quick one-liner (add --dry-run to preview)
-uv run python -m src.mcp_importer.quick_cli --yes
+uv run python -m src.setup_tui.main
+# add --dry-run to preview without writing
 ```
 
 <details>
@@ -107,38 +107,13 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 <details>
 <summary>🔄 Import from Cursor/VS Code/Claude Code</summary>
 
-### Import from Cursor/VS Code/Claude Code
+Run the interactive setup wizard to detect clients, import servers, and configure your editor:
 
-- **CLI**
+```bash
+uv run python -m src.setup_tui.main
+```
 
-  - Import & configure to use edison as your MCP server:
-
-    ```bash
-    # From source (no install)
-    uv run python -m src.mcp_importer.quick_cli --yes
-    ```
-
-  - Preview what will be imported (no writes):
-
-    ```bash
-    uv run python -m src.mcp_importer --source cursor --dry-run
-    ```
-
-  - Import servers into Open Edison `config.json` (merge policy defaults to `skip`):
-
-    ```bash
-    uv run python -m src.mcp_importer --source cursor
-    uv run python -m src.mcp_importer --source vscode
-    uv run python -m src.mcp_importer --source claude-code
-    ```
-
-  - Point your editor to Open Edison (backup original config and replace with a single Open Edison server):
-
-    ```bash
-    uv run python -m src.mcp_importer export --target cursor --yes
-    uv run python -m src.mcp_importer export --target vscode --yes
-    uv run python -m src.mcp_importer export --target claude-code --yes
-    ```
+Use `--dry-run` to preview without writing.
 
 </details>
 
