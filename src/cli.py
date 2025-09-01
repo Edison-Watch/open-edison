@@ -8,15 +8,15 @@ import argparse
 import asyncio
 import os
 import subprocess as _subprocess
-import sys
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn
 
 from loguru import logger as _log  # type: ignore[reportMissingImports]
 
-from .config import Config, get_config_dir, get_config_json_path
-from .server import OpenEdisonProxy
+from src.config import Config, get_config_dir, get_config_json_path
+from src.mcp_importer.cli import run_cli
+from src.server import OpenEdisonProxy
 
 log: Any = _log
 
@@ -45,7 +45,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # import-mcp: import MCP servers from other tools into config.json
     sp_import = subparsers.add_parser(
         "import-mcp",
-        help="Import MCP servers from other tools (Cursor, Windsurf, Cline, Claude Desktop, etc.)",
+        help="Import MCP servers from other tools (Cursor, VS Code, Claude Code)",
         description=(
             "Import MCP server configurations from other tools into Open Edison config.json.\n"
             "Use --source to choose the tool and optional flags to control merging."
@@ -55,16 +55,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--source",
         choices=[
             "cursor",
-            "windsurf",
-            "cline",
-            "claude-desktop",
             "vscode",
             "claude-code",
-            "gemini-cli",
-            "codex",
-            "interactive",
         ],
-        default="interactive",
+        default="cursor",
         help="Source application to import from",
     )
     sp_import.add_argument(
@@ -226,35 +220,8 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         raise SystemExit(exit_code)
 
     if getattr(args, "command", None) == "import-mcp":
-        # Defer-import importer package (lives under repository scripts/)
-        importer_pkg = Path(__file__).parent.parent / "scripts" / "mcp_importer"
-        try:
-            if str(importer_pkg) not in sys.path:
-                sys.path.insert(0, str(importer_pkg))
-            from mcp_importer.cli import run_cli  # type: ignore
-        except Exception as imp_exc:  # noqa: BLE001
-            log.error(
-                "Failed to load MCP importer package from {}: {}",
-                importer_pkg,
-                imp_exc,
-            )
-            raise SystemExit(1) from imp_exc
-
-        importer_argv: list[str] = []
-        if args.source:
-            importer_argv += ["--source", str(args.source)]
-        if getattr(args, "config_dir", None):
-            importer_argv += [
-                "--config-dir",
-                str(Path(args.config_dir).expanduser().resolve()),
-            ]
-        if args.merge:
-            importer_argv += ["--merge", str(args.merge)]
-        if bool(getattr(args, "dry_run", False)):
-            importer_argv += ["--dry-run"]
-
-        rc_val: int = int(cast(Any, run_cli)(importer_argv))
-        raise SystemExit(rc_val)
+        result_code = run_cli(argv)
+        raise SystemExit(result_code)
 
     # default: run server (top-level flags)
     try:

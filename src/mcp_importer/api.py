@@ -3,9 +3,10 @@ import asyncio
 from collections.abc import Awaitable
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any
 
 from fastmcp import FastMCP
+from loguru import logger as log
 
 from src.config import Config, MCPServerConfig, get_config_json_path
 from src.mcp_importer import paths as _paths
@@ -22,14 +23,6 @@ from src.mcp_importer.importers import (
 )
 from src.mcp_importer.merge import MergePolicy, merge_servers
 from src.oauth_manager import OAuthStatus, get_oauth_manager
-
-
-@runtime_checkable
-class _MCPClientLike(Protocol):
-    async def list_tools(self) -> Any: ...
-    async def list_resources(self) -> Any: ...
-    async def list_prompts(self) -> Any: ...
-    def shutdown(self) -> Awaitable[Any] | Any: ...
 
 
 class CLIENT(str, Enum):
@@ -144,6 +137,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         if not server.command.strip():
             return False
 
+        # Inline backend config and capability listing (no extra helpers)
         backend_cfg: dict[str, Any] = {
             "mcpServers": {
                 server.name: {
@@ -156,26 +150,40 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         }
 
         proxy: FastMCP[Any] | None = None
+        host: FastMCP[Any] | None = None
         try:
-            proxy = FastMCP.as_proxy(backend=backend_cfg, name=f"open-edison-verify-{server.name}")
-            s: _MCPClientLike = cast(_MCPClientLike, proxy)
+            proxy = FastMCP.as_proxy(backend_cfg)
+            host = FastMCP(name=f"open-edison-verify-host-{server.name}")
+            host.mount(proxy, prefix=server.name)
+
+            async def _call_list(kind: str) -> Any:
+                manager_name = {
+                    "tools": "_tool_manager",
+                    "resources": "_resource_manager",
+                    "prompts": "_prompt_manager",
+                }[kind]
+                manager = getattr(host, manager_name)
+                return await getattr(manager, f"list_{kind}")()
+
             await asyncio.wait_for(
                 asyncio.gather(
-                    s.list_tools(),
-                    s.list_resources(),
-                    s.list_prompts(),
+                    _call_list("tools"),
+                    _call_list("resources"),
+                    _call_list("prompts"),
                 ),
-                timeout=15.0,
+                timeout=30.0,
             )
             return True
-        except Exception:
+        except Exception as e:
+            log.error("MCP verification failed for '{}': {}", server.name, e)
             return False
         finally:
             try:
-                if isinstance(proxy, FastMCP):
-                    result = proxy.shutdown()  # type: ignore[attr-defined]
-                    if isinstance(result, Awaitable):
-                        await result  # type: ignore[func-returns-value]
+                for obj in (host, proxy):
+                    if isinstance(obj, FastMCP):
+                        result = obj.shutdown()  # type: ignore[attr-defined]
+                        if isinstance(result, Awaitable):
+                            await result  # type: ignore[func-returns-value]
             except Exception:
                 pass
 
