@@ -65,7 +65,10 @@ include = [
   "prompt_permissions.json",
   "docs/**",
 ]
-force-include = { "src/frontend_dist" = "frontend_dist" }
+artifacts = [
+  "src/frontend_dist/**",
+]
+
 
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
@@ -80,9 +83,12 @@ include = [
   "resource_permissions.json",
   "prompt_permissions.json",
   "src/**",
-  "src/frontend_dist/**",
   "docs/**",
 ]
+artifacts = [
+  "src/frontend_dist/**",
+]
+
 
 [tool.hatch.build.targets.sdist.hooks.custom]
 path = "hatch_build.py"

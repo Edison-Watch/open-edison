@@ -16,12 +16,22 @@ class BuildHook(BuildHookInterface):  # type: ignore
     """
 
     def initialize(self, version: str, build_data: dict) -> None:  # noqa: D401 # type: ignore
+        # For editable builds, just return without doing anything
+        # This prevents failures during `uv sync` in CI environments
+        if version == "editable":
+            return
+
+        # For wheel and sdist builds, ensure frontend assets are present
+        self._ensure_frontend_assets()
+
+    def _ensure_frontend_assets(self) -> None:
+        """Ensure frontend assets are available for packaging."""
         project_root = Path(self.root)
         src_frontend_dist = project_root / "src" / "frontend_dist"
         repo_frontend_dist = project_root / "frontend" / "dist"
 
         # Always ensure frontend assets are available for packaging
-        # Fast path: already present in src/
+        # Fast path: already present in src/ with actual content
         if (src_frontend_dist / "index.html").exists():
             self.app.display_info("frontend_dist already present; skipping build/copy")
             return
@@ -34,21 +44,9 @@ class BuildHook(BuildHookInterface):  # type: ignore
             self.app.display_info("Copied frontend/dist -> src/frontend_dist for packaging")
             return
 
-        # If no frontend assets are available, create a minimal placeholder
-        # This prevents build failures while still allowing the package to be built
-        if not src_frontend_dist.exists():
-            src_frontend_dist.mkdir(parents=True, exist_ok=True)
-            # Create a minimal index.html placeholder
-            placeholder_html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Open Edison Dashboard</title>
-    <meta charset="utf-8">
-</head>
-<body>
-    <h1>Open Edison Dashboard</h1>
-    <p>Frontend assets not available. Run 'make build_package' to build the full dashboard.</p>
-</body>
-</html>"""
-            (src_frontend_dist / "index.html").write_text(placeholder_html)
-            self.app.display_info("Created minimal frontend placeholder for packaging")
+        # If we reach here, neither src/frontend_dist nor frontend/dist exist
+        # This should fail the build as requested
+        raise RuntimeError(
+            "Packaged dashboard (src/frontend_dist) missing and frontend/dist not found. "
+            "Run 'make build_package' to generate assets before packaging/uvx."
+        )
