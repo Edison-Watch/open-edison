@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.42"
+version = "0.1.44"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -22,6 +22,7 @@ dependencies = [
     "opentelemetry-sdk>=1.36.0",
     "opentelemetry-exporter-otlp>=1.36.0",
     "hatchling>=1.27.0",
+    "questionary>=2.1.1",
 ]
 requires-python = ">= 3.12"
 
@@ -82,7 +83,6 @@ include = [
   "src/frontend_dist/**",
   "docs/**",
 ]
-
 
 [tool.hatch.build.targets.sdist.hooks.custom]
 path = "hatch_build.py"
