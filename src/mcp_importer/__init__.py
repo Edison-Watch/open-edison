@@ -1,6 +1,6 @@
 """MCP importer package for Open Edison scripts.
 
-Import submodules explicitly as needed, e.g. `from mcp_importer import cli`.
+Import submodules explicitly as needed, e.g. `from src.mcp_importer import cli`.
 """
 
 # pyright: reportUnsupportedDunderAll=false
