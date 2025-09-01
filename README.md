@@ -52,7 +52,7 @@ Optionally, import your existing MCP configs from Cursor, VS Code, or Claude Cod
 
 ```bash
 # From source (no install) — quick one-liner (add --dry-run to preview)
-uv run python -m mcp_importer.quick_cli --yes
+uv run python -m src.mcp_importer.quick_cli --yes
 ```
 
 <details>
@@ -115,29 +115,29 @@ OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 
     ```bash
     # From source (no install)
-    uv run python -m mcp_importer.quick_cli --yes
+    uv run python -m src.mcp_importer.quick_cli --yes
     ```
 
   - Preview what will be imported (no writes):
 
     ```bash
-    uv run python -m mcp_importer --source cursor --dry-run
+    uv run python -m src.mcp_importer --source cursor --dry-run
     ```
 
   - Import servers into Open Edison `config.json` (merge policy defaults to `skip`):
 
     ```bash
-    uv run python -m mcp_importer --source cursor
-    uv run python -m mcp_importer --source vscode
-    uv run python -m mcp_importer --source claude-code
+    uv run python -m src.mcp_importer --source cursor
+    uv run python -m src.mcp_importer --source vscode
+    uv run python -m src.mcp_importer --source claude-code
     ```
 
   - Point your editor to Open Edison (backup original config and replace with a single Open Edison server):
 
     ```bash
-    uv run python -m mcp_importer export --target cursor --yes
-    uv run python -m mcp_importer export --target vscode --yes
-    uv run python -m mcp_importer export --target claude-code --yes
+    uv run python -m src.mcp_importer export --target cursor --yes
+    uv run python -m src.mcp_importer export --target vscode --yes
+    uv run python -m src.mcp_importer export --target claude-code --yes
     ```
 
 </details>
