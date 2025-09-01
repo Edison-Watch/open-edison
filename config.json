@@ -38,10 +38,10 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@modelcontextprotocol/server-github"
+                "@github/mcp-server-github"
             ],
             "env": {
-                "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token-here"
+                "GITHUB_TOKEN": "your-github-token-here"
             },
             "enabled": false
         },
@@ -62,11 +62,10 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@supabase/mcp-server"
+                "@supabase/mcp-server-supabase@latest"
             ],
             "env": {
-                "SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
-                "SUPABASE_ANON_KEY": "your-supabase-anon-key"
+                "SUPABASE_ACCESS_TOKEN": "your-supabase-access-token"
             },
             "enabled": false
         },
@@ -77,6 +76,40 @@
                 "-y",
                 "mcp-remote",
                 "https://mcp.atlassian.com/v1/sse"
+            ],
+            "env": {},
+            "enabled": false
+        },
+        {
+            "name": "figma",
+            "command": "npx",
+            "args": [
+                "-y",
+                "figma-developer-mcp",
+                "--stdio"
+            ],
+            "env": {
+                "FIGMA_API_KEY": "your-figma-api-key"
+            },
+            "enabled": false
+        },
+        {
+            "name": "figma_dev_mode",
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "http://127.0.0.1:3845/sse"
+            ],
+            "env": {},
+            "enabled": false
+        },
+        {
+            "name": "playwright",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@automatalabs/mcp-server-playwright"
             ],
             "env": {},
             "enabled": false
