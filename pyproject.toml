@@ -64,7 +64,6 @@ include = [
   "prompt_permissions.json",
   "docs/**",
 ]
-force-include = { "src/frontend_dist" = "frontend_dist" }
 
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
