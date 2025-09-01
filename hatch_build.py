@@ -34,21 +34,7 @@ class BuildHook(BuildHookInterface):  # type: ignore
             self.app.display_info("Copied frontend/dist -> src/frontend_dist for packaging")
             return
 
-        # If no frontend assets are available, create a minimal placeholder
-        # This prevents build failures while still allowing the package to be built
-        if not src_frontend_dist.exists():
-            src_frontend_dist.mkdir(parents=True, exist_ok=True)
-            # Create a minimal index.html placeholder
-            placeholder_html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Open Edison Dashboard</title>
-    <meta charset="utf-8">
-</head>
-<body>
-    <h1>Open Edison Dashboard</h1>
-    <p>Frontend assets not available. Run 'make build_package' to build the full dashboard.</p>
-</body>
-</html>"""
-            (src_frontend_dist / "index.html").write_text(placeholder_html)
-            self.app.display_info("Created minimal frontend placeholder for packaging")
+        raise RuntimeError(
+            "Packaged dashboard (src/frontend_dist) missing and frontend/dist not found. "
+            "Run 'make build_package' to generate assets before packaging/uvx."
+        )
