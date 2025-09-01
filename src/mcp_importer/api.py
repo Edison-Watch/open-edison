@@ -3,16 +3,33 @@ import asyncio
 from collections.abc import Awaitable
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast, runtime_checkable
 
 from fastmcp import FastMCP
 
-import mcp_importer.paths as _paths
-from mcp_importer.exporters import export_to_claude_code, export_to_cursor, export_to_vscode
-from mcp_importer.importers import import_from_claude_code, import_from_cursor, import_from_vscode
-from mcp_importer.merge import MergePolicy, merge_servers
 from src.config import Config, MCPServerConfig, get_config_json_path
+from src.mcp_importer import paths as _paths
+from src.mcp_importer.exporters import (
+    ExportResult,
+    export_to_claude_code,
+    export_to_cursor,
+    export_to_vscode,
+)
+from src.mcp_importer.importers import (
+    import_from_claude_code,
+    import_from_cursor,
+    import_from_vscode,
+)
+from src.mcp_importer.merge import MergePolicy, merge_servers
 from src.oauth_manager import OAuthStatus, get_oauth_manager
+
+
+@runtime_checkable
+class _MCPClientLike(Protocol):
+    async def list_tools(self) -> Any: ...
+    async def list_resources(self) -> Any: ...
+    async def list_prompts(self) -> Any: ...
+    def shutdown(self) -> Awaitable[Any] | Any: ...
 
 
 class CLIENT(str, Enum):
@@ -79,12 +96,17 @@ def export_edison_to(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
-) -> Any:
+) -> ExportResult:
     if dry_run:
         print(
             f"[dry-run] Would export Open Edison to '{client}' (backup and replace editor MCP config)"
         )
-        return None
+        return ExportResult(
+            target_path=Path(""),
+            backup_path=None,
+            wrote_changes=False,
+            dry_run=True,
+        )
     match client:
         case CLIENT.CURSOR:
             return export_to_cursor(
@@ -115,7 +137,7 @@ def export_edison_to(
             )
 
 
-def verify_mcp_server(server: MCPServerConfig) -> bool:
+def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
     """Minimal validation: try listing tools/resources/prompts via FastMCP within a timeout."""
 
     async def _verify_async() -> bool:
@@ -136,7 +158,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:
         proxy: FastMCP[Any] | None = None
         try:
             proxy = FastMCP.as_proxy(backend=backend_cfg, name=f"open-edison-verify-{server.name}")
-            s: Any = proxy
+            s: _MCPClientLike = cast(_MCPClientLike, proxy)
             await asyncio.wait_for(
                 asyncio.gather(
                     s.list_tools(),
@@ -160,7 +182,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:
     return asyncio.run(_verify_async())
 
 
-def server_needs_oauth(server: MCPServerConfig) -> bool:
+def server_needs_oauth(server: MCPServerConfig) -> bool:  # noqa
     """Return True if the remote server currently needs OAuth; False otherwise."""
 
     async def _needs_oauth_async() -> bool:
