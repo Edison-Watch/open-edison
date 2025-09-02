@@ -122,7 +122,7 @@ If `config.json` doesn't exist, Open Edison creates a default configuration:
 ```bash
 make setup
 # or
-python -c "from src.config import Config; Config.create_default().save()"
+python -c "from src.config import Config; cfg=Config(); cfg.create_default(); cfg.save()"
 ```
 
 ### Validation
@@ -133,7 +133,7 @@ Configuration is validated on startup using Python dataclasses:
 from src.config import Config
 
 # Load and validate configuration
-config = Config.load()
+config = Config()
 print(f"Server will run on {config.server.host}:{config.server.port}")
 ```
 
@@ -150,6 +150,36 @@ make run
 ```
 
 Later on this will be doable via the API
+
+### Configuration Directory
+
+By default, configuration is loaded from a platform-appropriate config directory. You can override the location using `OPEN_EDISON_CONFIG_DIR`.
+
+Resolution order:
+
+1. `OPEN_EDISON_CONFIG_DIR` environment variable, if set
+2. OS-specific defaults (e.g., `~/Library/Application Support/Open Edison` on macOS, `$XDG_CONFIG_HOME/open-edison` on Linux)
+3. Fallback to `~/.open-edison`
+
+### Telemetry
+
+Open Edison can emit basic telemetry metrics.
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "otlp_endpoint": "https://otel-collector-production-e7a6.up.railway.app/v1/metrics",
+    "headers": { "x-auth": "token" },
+    "export_interval_ms": 60000
+  }
+}
+```
+
+- `enabled`: Toggle telemetry on/off
+- `otlp_endpoint`: Custom OTLP endpoint (defaults to a hosted collector if not set)
+- `headers`: Optional headers for the exporter
+- `export_interval_ms`: Export interval in milliseconds
 
 ## Security Considerations
 

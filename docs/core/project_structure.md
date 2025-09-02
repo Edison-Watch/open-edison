@@ -10,12 +10,12 @@ Open Edison is a **single-user MCP (Model Context Protocol) proxy server** desig
 
 ```
 open-edison/
-├── main.py                # Entry point - starts the proxy server
+├── main.py                # Entry point - starts both MCP and API servers
 ├── config.json            # JSON configuration (no database needed)
 ├── src/                   # Main source code
-│   ├── server.py          # FastAPI server with authentication
+│   ├── server.py          # FastAPI management API + dashboard wiring
 │   ├── config.py          # JSON configuration management
-│   ├── proxy.py           # MCP server proxy and process management
+│   ├── single_user_mcp.py # FastMCP single-user manager (MCP protocol server)
 │   └── __init__.py        # Package initialization
 ├── tests/                 # Test suite
 │   ├── test_config.py     # Configuration tests
@@ -31,11 +31,11 @@ open-edison/
 
 #### 1. Main Server (`src/server.py`)
 
-- **OpenEdisonProxy**: The core proxy server class
-- **FastAPI integration**: REST API for management (single port: 3000)
-- **Simple authentication**: Bearer token API key authentication
-- **MCP server management**: Start/stop/status of configured MCP servers
-- **Request proxying**: Routes MCP calls to running servers
+- **OpenEdisonProxy**: Orchestrates both servers and routes
+- **Ports**: FastMCP protocol on 3000 (path `/mcp/`), FastAPI management API on 3001
+- **Authentication**: Bearer token API key for management endpoints
+- **MCP management**: Mount/unmount/reinitialize configured MCP servers
+- **Dashboard**: Serves packaged frontend at `/dashboard` on the API server
 
 #### 2. Configuration System (`src/config.py`)
 
@@ -44,12 +44,11 @@ open-edison/
 - **Auto-generation**: Creates default config if missing
 - **Hot reload**: Configuration changes require restart (keeps it simple)
 
-#### 3. MCP Proxy (`src/proxy.py`)
+#### 3. Single-User MCP (`src/single_user_mcp.py`)
 
-- **Process management**: Manages MCP servers as subprocesses
-- **Health monitoring**: Tracks running/stopped server states
-- **Request routing**: Routes MCP requests to appropriate servers
-- **Subprocess isolation**: Each MCP server runs independently
+- **FastMCP integration**: Hosts the MCP protocol server
+- **Server lifecycle**: Initializes and manages configured servers
+- **Mounting**: Supports dynamic mount/unmount via API
 
 ## Data Flow
 
@@ -90,7 +89,7 @@ MCP over streamable HTTP works by sending JSON-RPC messages from the client to t
 
 ## Development Stack
 
-- **Python 3.12+** with **Rye** package management
+- **Python 3.12+** with **uv** package management
 - **FastAPI** for HTTP API endpoints
 - **JSON** for configuration (no database)
 - **Subprocess** for MCP server management
@@ -140,27 +139,28 @@ The project uses a **simple JSON configuration approach** with no database depen
 - **Portable**: Easy to backup and restore
 - **Human Readable**: Easy to edit and understand
 
-## API Endpoints (Port 3000)
+## API Endpoints (Management API on Port 3001)
 
-### Health & Status
+### Public
 
-- **GET /health**: Health check endpoint (no auth required)
-- **GET /mcp/status**: Get status of configured MCP servers
+- **GET /health**: Health check (no auth)
+- **GET /mcp/status**: List configured MCP servers and enabled flags (no auth)
+- **GET /sessions**: Recent session summaries (no auth)
 
-### MCP Server Management
+### Auth required (Bearer: `Authorization: Bearer <api_key>`)
 
-- **POST /mcp/{server_name}/start**: Start a specific MCP server
-- **POST /mcp/{server_name}/stop**: Stop a specific MCP server
+- **GET /mcp/mounted**: List currently mounted servers
+- **POST /mcp/reinitialize**: Reinitialize servers from config
+- **POST /mcp/mount/{server_name}**: Mount a server by name
+- **DELETE /mcp/mount/{server_name}**: Unmount a server by name
+- **GET /mcp/oauth/status** and related `/mcp/oauth/*` endpoints: OAuth status/management for remote servers
 
-### MCP Communication
+### Utilities
 
-- **POST /mcp/call**: Proxy MCP calls to running servers
+- **POST /api/permissions-changed**: Invalidate internal caches after JSON permission updates
+- **GET /events**: Server-Sent Events stream
 
-### Session Management
-
-- **GET /sessions**: Get session logs (placeholder for future SQLite logging)
-
-All endpoints except `/health` require API key authentication via `Authorization: Bearer <api_key>` header.
+MCP protocol server runs on Port 3000 at path `/mcp/`.
 
 ## Getting Started
 
@@ -169,7 +169,7 @@ All endpoints except `/health` require API key authentication via `Authorization
 3. **Configure MCP servers**: Edit `config.json` with your MCP servers
 4. **Run server**: `make run`
 
-The server will start on `localhost:3000` with both HTTP API and MCP proxy functionality.
+The MCP protocol server starts on `localhost:3000/mcp/`, and the management API + dashboard on `http://localhost:3001`.
 
 ## Design Philosophy
 

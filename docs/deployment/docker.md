@@ -16,7 +16,10 @@ make docker_build
 make docker_run
 ```
 
-The server will be available at `http://localhost:3000`.
+Services:
+
+- MCP protocol server: `http://localhost:3000/mcp/`
+- Management API + dashboard: `http://localhost:3001`
 
 ## Manual Docker Commands
 

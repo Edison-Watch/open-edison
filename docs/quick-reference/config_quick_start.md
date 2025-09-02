@@ -9,7 +9,7 @@
 make setup
 
 # Or manually
-python -c "from src.config import Config; Config.create_default().save()"
+python -c "from src.config import Config; cfg=Config(); cfg.create_default(); cfg.save()"
 ```
 
 ### 2. Basic Configuration
@@ -112,8 +112,8 @@ chmod 600 config.json
 ## 🧪 **Test Configuration**
 
 ```bash
-# Validate config
-python -c "from src.config import config; print('✅ Config valid')"
+# Validate config by loading
+python -c "from src.config import Config; print('✅ Loaded' if Config() else '❌')"
 
 # Test server
 curl http://localhost:3001/health
@@ -180,7 +180,7 @@ curl -H "Authorization: Bearer your-api-key" \
 python -m json.tool config.json
 
 # Check configuration loading
-python -c "from src.config import Config; Config.load()"
+python -c "from src.config import Config; _=Config()"
 ```
 
 ### Server Won't Start

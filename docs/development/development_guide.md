@@ -23,10 +23,10 @@ Open Edison is a single-user MCP (Model Context Protocol) proxy server designed 
 graph TB
     Client[MCP Client/Frontend] --> API[FastAPI Server]
     API --> Auth[API Key Auth]
-    API --> Proxy[MCP Proxy]
-    Proxy --> Servers[MCP Servers]
+    API --> MCP[SingleUserMCP]
+    MCP --> Servers[MCP Servers]
     Config[JSON Config] --> API
-    Config --> Proxy
+    Config --> MCP
     
     subgraph "MCP Servers"
         FS[Filesystem MCP]
@@ -34,9 +34,9 @@ graph TB
         Custom[Custom MCPs]
     end
     
-    Proxy --> FS
-    Proxy --> GH
-    Proxy --> Custom
+    MCP --> FS
+    MCP --> GH
+    MCP --> Custom
 ```
 
 ### Key Design Principles
@@ -65,20 +65,15 @@ The main HTTP server that provides the REST API interface.
 
 - `OpenEdisonProxy` - Main server class
 
-### 2. MCP Proxy (`src/proxy.py`)
+### 2. Single-User MCP (`src/single_user_mcp.py`)
 
-Manages MCP server processes and handles communication.
+FastMCP-based manager that initializes and manages MCP servers and hosts the MCP protocol server.
 
 **Responsibilities:**
 
-- MCP server process management (start/stop)
-- Process health monitoring
-- Request routing to appropriate MCP servers
-- JSON-RPC communication (future implementation)
-
-**Key Classes:**
-
-- `MCPProxy` - Core proxy logic
+- Server initialization and lifecycle
+- Mount/unmount operations via API
+- Hosting MCP protocol at port 3000 (`/mcp/`)
 
 ### 3. Configuration System (`src/config.py`)
 
@@ -107,15 +102,15 @@ sequenceDiagram
     participant Main as main.py
     participant Server as OpenEdisonProxy
     participant Config as Configuration
-    participant Proxy as MCPProxy
+    participant MCP as SingleUserMCP
     
     Main->>Config: Load config.json
     Main->>Server: Create server instance
-    Server->>Proxy: Initialize MCP proxy
+    Server->>MCP: Initialize FastMCP server
     Server->>Server: Create FastAPI app
     Main->>Server: Start server
     Server->>Config: Get enabled servers
-    Server->>Proxy: Start enabled MCP servers
+    Server->>MCP: Prepare configured servers
     Server->>Server: Start uvicorn server
 ```
 
@@ -125,18 +120,10 @@ sequenceDiagram
 sequenceDiagram
     participant Client as Client
     participant API as FastAPI
-    participant Auth as Authentication
-    participant Proxy as MCPProxy
-    participant MCP as MCP Server
+    participant MCP as MCP Server (FastMCP)
     
-    Client->>API: POST /mcp/call
-    API->>Auth: Verify API key
-    Auth-->>API: Authorized
-    API->>Proxy: handle_request()
-    Proxy->>MCP: JSON-RPC call
-    MCP-->>Proxy: Response
-    Proxy-->>API: Formatted response
-    API-->>Client: HTTP response
+    Client->>MCP: JSON-RPC over HTTP to /mcp/
+    MCP-->>Client: JSON-RPC response
 ```
 
 ## Configuration System
@@ -168,7 +155,7 @@ sequenceDiagram
 
 ### Configuration Loading
 
-1. **Default Location**: `config.json` in project root
+1. **Default Location**: Platform config dir or `OPEN_EDISON_CONFIG_DIR`; file `config.json`
 2. **Auto-generation**: Creates default config if missing
 3. **Type Safety**: Uses dataclasses for validation
 4. **Environment Support**: Per-server environment variables
@@ -193,11 +180,13 @@ class ServerConfig:
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
 | GET | `/health` | Health check | No |
-| GET | `/mcp/status` | Server status | Yes |
-| POST | `/mcp/{name}/start` | Start server | Yes |
-| POST | `/mcp/{name}/stop` | Stop server | Yes |
-| POST | `/mcp/call` | Proxy MCP request | Yes |
-| GET | `/sessions` | Get session logs | Yes |
+| GET | `/mcp/status` | Configured servers (name, enabled) | No |
+| GET | `/sessions` | Recent session summaries | No |
+| GET | `/mcp/mounted` | Mounted servers | Yes |
+| POST | `/mcp/reinitialize` | Reinitialize servers | Yes |
+| POST | `/mcp/mount/{name}` | Mount server | Yes |
+| DELETE | `/mcp/mount/{name}` | Unmount server | Yes |
+| GET/POST/... | `/mcp/oauth/*` | OAuth status/management | Yes |
 
 ### Authentication
 
@@ -229,11 +218,7 @@ class ServerConfig:
 # Server status
 {
     "servers": [
-        {
-            "name": "filesystem",
-            "enabled": true,
-            "running": true
-        }
+        {"name": "filesystem", "enabled": true}
     ]
 }
 ```
@@ -249,8 +234,8 @@ make sync
 # Create default configuration
 make setup
 
-# Run in development mode
-make dev
+# Run the server
+make run
 ```
 
 ### Code Quality
@@ -271,7 +256,7 @@ make ci
 
 ### Development Server
 
-- **Auto-reload**: Use `make dev` for development
+- **Run**: `make run`
 - **Logging**: Structured logging with loguru
 - **Configuration**: Edit `config.json` and restart
 
@@ -357,8 +342,8 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
 src/
 ├── __init__.py         # Package initialization
 ├── config.py          # Configuration management
-├── server.py          # FastAPI server
-├── proxy.py           # MCP proxy logic
+├── server.py          # FastAPI management API + dashboard
+├── single_user_mcp.py # FastMCP single-user manager
 └── utils/             # Future utilities
     ├── logging.py     # Session logging (future)
     └── helpers.py     # Common utilities (future)
@@ -376,8 +361,8 @@ from fastapi import FastAPI
 from loguru import logger as log
 
 # Local imports
-from src.config import config
-from src.proxy import MCPProxy
+from src.config import Config
+from src.single_user_mcp import SingleUserMCP
 ```
 
 ## Design Decisions

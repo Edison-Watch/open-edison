@@ -8,7 +8,9 @@ http://localhost:3001
 
 ## Authentication
 
-All endpoints except `/health` require API key authentication:
+Public endpoints: `/health`, `/mcp/status`, `/sessions`.
+
+All other endpoints require API key authentication:
 
 ```
 Authorization: Bearer <api_key>
@@ -56,29 +58,21 @@ curl http://localhost:3001/health
 
 ---
 
-### MCP Server Status
+### MCP Server Status (Public)
 
 #### GET `/mcp/status`
 
-Get status of all configured MCP servers.
+Get configured MCP servers and their enabled flags.
 
-**Authentication**: Required
+**Authentication**: None required
 
 **Response**:
 
 ```json
 {
   "servers": [
-    {
-      "name": "filesystem",
-      "enabled": true,
-      "running": true
-    },
-    {
-      "name": "github", 
-      "enabled": false,
-      "running": false
-    }
+    { "name": "filesystem", "enabled": true },
+    { "name": "github", "enabled": false }
   ]
 }
 ```
@@ -97,105 +91,70 @@ curl -H "Authorization: Bearer your-api-key" \
 
 ---
 
-### Start MCP Server
+### MCP Server Control
 
-#### POST `/mcp/{server_name}/start`
+#### GET `/mcp/mounted`
 
-Start a specific MCP server by name.
+List currently mounted MCP servers.
 
 **Authentication**: Required
-
-**Path Parameters**:
-
-- `server_name` (string) - Name of the MCP server to start
-
-**Response**:
-
-```json
-{
-  "message": "Server {server_name} started successfully"
-}
-```
-
-**Status Codes**:
-
-- `200` - Server started successfully
-- `401` - Invalid API key
-- `500` - Failed to start server
 
 **Example**:
 
 ```bash
-curl -X POST \
-     -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/mcp/filesystem/start
+curl -H "Authorization: Bearer your-api-key" http://localhost:3001/mcp/mounted
 ```
 
----
+#### POST `/mcp/reinitialize`
 
-### Stop MCP Server
-
-#### POST `/mcp/{server_name}/stop`
-
-Stop a specific MCP server by name.
+Reinitialize servers from the current configuration.
 
 **Authentication**: Required
-
-**Path Parameters**:
-
-- `server_name` (string) - Name of the MCP server to stop
-
-**Response**:
-
-```json
-{
-  "message": "Server {server_name} stopped successfully"
-}
-```
-
-**Status Codes**:
-
-- `200` - Server stopped successfully
-- `401` - Invalid API key
-- `500` - Failed to stop server
 
 **Example**:
 
 ```bash
-curl -X POST \
-     -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/mcp/filesystem/stop
+curl -X POST -H "Authorization: Bearer your-api-key" http://localhost:3001/mcp/reinitialize
+```
+
+#### POST `/mcp/mount/{server_name}`
+
+Mount a server by name.
+
+**Authentication**: Required
+
+**Example**:
+
+```bash
+curl -X POST -H "Authorization: Bearer your-api-key" http://localhost:3001/mcp/mount/filesystem
+```
+
+#### DELETE `/mcp/mount/{server_name}`
+
+Unmount a server by name.
+
+**Authentication**: Required
+
+**Example**:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer your-api-key" http://localhost:3001/mcp/mount/filesystem
 ```
 
 ---
 
-### Session Logs
+### Session Logs (Public)
 
 #### GET `/sessions`
 
-Get session logs (to be implemented).
+Return recent MCP session summaries.
 
-**Authentication**: Required
-
-**Response**:
-
-```json
-{
-  "sessions": [],
-  "message": "Session logging not yet implemented"
-}
-```
-
-**Status Codes**:
-
-- `200` - Success (empty results)
-- `401` - Invalid API key
+**Authentication**: None required
 
 **Example**:
 
 ```bash
-curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/sessions
+curl http://localhost:3001/sessions
 ```
 
 ---
@@ -217,11 +176,6 @@ All endpoints return consistent error responses:
 - **500 Internal Server Error**: Server error or MCP operation failed
 
 ### Authentication Error
-
-```bash
-curl http://localhost:3001/mcp/status
-# Response: 403 Forbidden
-```
 
 ```bash
 curl -H "Authorization: Bearer invalid-key" \
@@ -257,16 +211,7 @@ class OpenEdisonClient:
     async def get_server_status(self):
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.base_url}/mcp/status", 
-                headers=self.headers
-            ) as resp:
-                return await resp.json()
-    
-    async def start_server(self, server_name):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/mcp/{server_name}/start",
-                headers=self.headers
+                f"{self.base_url}/mcp/status"
             ) as resp:
                 return await resp.json()
 
@@ -301,14 +246,12 @@ class OpenEdisonClient {
   }
 
   async getServerStatus() {
-    const response = await fetch(`${this.baseUrl}/mcp/status`, {
-      headers: this.headers
-    });
+    const response = await fetch(`${this.baseUrl}/mcp/status`);
     return response.json();
   }
 
-  async startServer(serverName) {
-    const response = await fetch(`${this.baseUrl}/mcp/${serverName}/start`, {
+  async mountServer(serverName) {
+    const response = await fetch(`${this.baseUrl}/mcp/mount/${serverName}`, {
       method: 'POST',
       headers: this.headers
     });
@@ -347,17 +290,13 @@ api_call() {
 echo "=== Health Check ==="
 curl -s "$BASE_URL/health" | jq .
 
-# Server status
+# Server status (public)
 echo -e "\n=== Server Status ==="
-api_call "$BASE_URL/mcp/status" | jq .
+curl -s "$BASE_URL/mcp/status" | jq .
 
-# Start filesystem server
-echo -e "\n=== Starting Filesystem Server ==="
-api_call -X POST "$BASE_URL/mcp/filesystem/start" | jq .
-
-# Check status again
-echo -e "\n=== Updated Status ==="
-api_call "$BASE_URL/mcp/status" | jq '.servers[] | select(.name=="filesystem")'
+# Mount filesystem server
+echo -e "\n=== Mounting Filesystem Server ==="
+api_call -X POST "$BASE_URL/mcp/mount/filesystem" | jq .
 ```
 
 ## Versioning
