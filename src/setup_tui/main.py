@@ -5,9 +5,12 @@ import questionary
 from src.config import MCPServerConfig
 from src.mcp_importer.api import (
     CLIENT,
+    authorize_server_oauth,
     detect_clients,
     export_edison_to,
+    has_oauth_tokens,
     import_from,
+    save_imported_servers,
     verify_mcp_server,
 )
 
@@ -31,7 +34,9 @@ def show_welcome_screen(*, dry_run: bool = False) -> None:
     questionary.confirm("Ready to begin the setup process?", default=True).ask()
 
 
-def handle_mcp_source(source: CLIENT, *, dry_run: bool = False) -> list[MCPServerConfig]:
+def handle_mcp_source(
+    source: CLIENT, *, dry_run: bool = False, skip_oauth: bool = False
+) -> list[MCPServerConfig]:
     """Handle the MCP source."""
     if not questionary.confirm(
         f"We have found {source.name} installed. Would you like to import its MCP servers to open-edison?",
@@ -49,6 +54,31 @@ def handle_mcp_source(source: CLIENT, *, dry_run: bool = False) -> list[MCPServe
         print(f"Verifying the configuration for {config.name}... (TODO)")
         result = verify_mcp_server(config)
         if result:
+            # If this is a remote server, check OAuth status and optionally authorize
+            if config.is_remote_server():
+                # Always check token presence; if absent, prompt for OAuth unless skipped
+                tokens_present: bool = has_oauth_tokens(config)
+                if not tokens_present:
+                    if skip_oauth:
+                        print(
+                            f"Skipping OAuth for {config.name} due to --skip-oauth (no tokens present). This server will not be imported."
+                        )
+                        continue
+
+                    if questionary.confirm(
+                        f"{config.name} is a remote server and no OAuth credentials were found. Obtain credentials now?",
+                        default=True,
+                    ).ask():
+                        success = authorize_server_oauth(config)
+                        if not success:
+                            print(
+                                f"Failed to obtain OAuth credentials for {config.name}. Skipping this server."
+                            )
+                            continue
+                    else:
+                        print(f"Skipping {config.name} per user choice.")
+                        continue
+
             verified_configs.append(config)
         else:
             print(
@@ -116,7 +146,7 @@ def show_manual_setup_screen() -> None:
     print(manual_setup_text)
 
 
-def run(*, dry_run: bool = False) -> None:
+def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:
     """Run the complete setup process."""
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
@@ -127,7 +157,7 @@ def run(*, dry_run: bool = False) -> None:
     configs: list[MCPServerConfig] = []
 
     for source in mcp_sources:
-        configs.extend(handle_mcp_source(source, dry_run=dry_run))
+        configs.extend(handle_mcp_source(source, dry_run=dry_run, skip_oauth=skip_oauth))
 
     if len(configs) == 0:
         print(
@@ -141,15 +171,24 @@ def run(*, dry_run: bool = False) -> None:
     for client in mcp_clients:
         confirm_apply_configs(client, dry_run=dry_run)
 
+    # Persist imported servers into config.json
+    if len(configs) > 0:
+        save_imported_servers(configs, dry_run=dry_run)
+
     show_manual_setup_screen()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Open Edison Setup TUI")
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without writing")
+    parser.add_argument(
+        "--skip-oauth",
+        action="store_true",
+        help="Skip OAuth for remote servers (they will be omitted from import)",
+    )
     args = parser.parse_args(argv)
 
-    run(dry_run=args.dry_run)
+    run(dry_run=args.dry_run, skip_oauth=args.skip_oauth)
     return 0
 
 

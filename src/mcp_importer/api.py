@@ -190,7 +190,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
     return asyncio.run(_verify_async())
 
 
-def server_needs_oauth(server: MCPServerConfig) -> bool:  # noqa
+def server_needs_oauth(server: MCPServerConfig) -> bool:
     """Return True if the remote server currently needs OAuth; False otherwise."""
 
     async def _needs_oauth_async() -> bool:
@@ -202,3 +202,112 @@ def server_needs_oauth(server: MCPServerConfig) -> bool:  # noqa
         return info.status == OAuthStatus.NEEDS_AUTH
 
     return asyncio.run(_needs_oauth_async())
+
+
+def authorize_server_oauth(server: MCPServerConfig) -> bool:
+    """Run an interactive OAuth flow for a remote MCP server and cache tokens.
+
+    Returns True if authorization succeeded (tokens cached and a ping succeeded),
+    False otherwise. Local servers return True immediately.
+    """
+
+    async def _authorize_async() -> bool:
+        if not server.is_remote_server():
+            return True
+
+        remote_url: str | None = server.get_remote_url()
+        if not remote_url:
+            log.error("OAuth requested for remote server '{}' but no URL found", server.name)
+            return False
+
+        oauth_manager = get_oauth_manager()
+
+        try:
+            # Import lazily to avoid import-time side effects
+            from fastmcp import Client as FastMCPClient  # type: ignore
+            from fastmcp.client.auth import OAuth  # type: ignore
+
+            # Debug info prior to starting OAuth
+            print(
+                "[OAuth] Starting authorization",
+                f"server={server.name}",
+                f"remote_url={remote_url}",
+                f"cache_dir={oauth_manager.cache_dir}",
+                f"scopes={server.oauth_scopes}",
+                f"client_name={server.oauth_client_name or 'Open Edison Setup'}",
+            )
+
+            oauth = OAuth(
+                mcp_url=remote_url,
+                scopes=server.oauth_scopes,
+                client_name=server.oauth_client_name or "Open Edison Setup",
+                token_storage_cache_dir=oauth_manager.cache_dir,
+                callback_port=50001,
+            )
+
+            # Establish a connection to trigger OAuth if needed
+            async with FastMCPClient(remote_url, auth=oauth) as client:  # type: ignore
+                log.info(
+                    "Starting OAuth flow for '{}' (a browser window may open; if not, follow the printed URL)",
+                    server.name,
+                )
+                await client.ping()
+
+            # Refresh cached status
+            info = await oauth_manager.check_oauth_requirement(server.name, remote_url)
+
+            # Post-authorization token inspection (no secrets printed)
+            try:
+                from fastmcp.client.auth.oauth import FileTokenStorage  # type: ignore
+
+                storage = FileTokenStorage(server_url=remote_url, cache_dir=oauth_manager.cache_dir)
+                tokens = await storage.get_tokens()
+                access_present = bool(getattr(tokens, "access_token", None)) if tokens else False
+                refresh_present = bool(getattr(tokens, "refresh_token", None)) if tokens else False
+                expires_at = getattr(tokens, "expires_at", None) if tokens else None
+                print(
+                    "[OAuth] Authorization result:",
+                    f"status={info.status.value}",
+                    f"has_refresh_token={info.has_refresh_token}",
+                    f"token_expires_at={info.token_expires_at or expires_at}",
+                    f"tokens_cached=access:{access_present}/refresh:{refresh_present}",
+                )
+            except Exception as _e:  # noqa: BLE001
+                print("[OAuth] Authorization completed, but token inspection failed:", _e)
+
+            log.info("OAuth completed and tokens cached for '{}'", server.name)
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.error("OAuth authorization failed for '{}': {}", server.name, e)
+            print("[OAuth] Authorization failed:", e)
+            return False
+
+    return asyncio.run(_authorize_async())
+
+
+def has_oauth_tokens(server: MCPServerConfig) -> bool:
+    """Return True if cached OAuth tokens exist for the remote server.
+
+    Local servers return True (no OAuth needed).
+    """
+
+    async def _check_async() -> bool:
+        if not server.is_remote_server():
+            return True
+
+        remote_url: str | None = server.get_remote_url()
+        if not remote_url:
+            return False
+
+        try:
+            from fastmcp.client.auth.oauth import FileTokenStorage  # type: ignore
+
+            storage = FileTokenStorage(
+                server_url=remote_url, cache_dir=get_oauth_manager().cache_dir
+            )
+            tokens = await storage.get_tokens()
+            return bool(tokens and (tokens.access_token or tokens.refresh_token))
+        except Exception:
+            return False
+
+    return asyncio.run(_check_async())
