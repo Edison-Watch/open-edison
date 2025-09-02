@@ -1,0 +1,90 @@
+name: Install matrix (macOS/Linux)
+
+on:
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  uvx:
+    name: direct uvx (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - name: Setup Open Edison
+        uses: ./.github/actions/setup
+      - name: direct uvx smoke (PyPI)
+        run: |
+          uvx open-edison --help
+
+  curl-installer:
+    name: curl|bash installer (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Curl installer smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          REPO="${{ github.repository }}"; REF="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            REPO="${{ github.event.workflow_run.head_repository.full_name }}"
+            REF="${{ github.event.workflow_run.head_branch }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            REPO="${{ github.event.pull_request.head.repo.full_name }}"; REF="${{ github.event.pull_request.head.ref }}"
+          fi
+          echo "Using repo $REPO @ $REF"
+          curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/curl_pipe_bash.sh" | bash -s -- -h
+
+  clone-make-run:
+    name: clone & make run (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - name: Setup Open Edison
+        uses: ./.github/actions/setup
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: make setup
+        run: make setup
+      - name: Start server
+        run: |
+          set -euxo pipefail
+          make run &
+          echo $! > server.pid
+          # wait for port 3001 to be up
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then
+              echo "server healthy"; break; fi; sleep 1; done
+      - name: Health check
+        run: curl -sf http://localhost:3001/health | tee /dev/stderr
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+
+
+

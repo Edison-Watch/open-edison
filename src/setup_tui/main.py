@@ -51,7 +51,7 @@ def handle_mcp_source(
     verified_configs: list[MCPServerConfig] = []
 
     for config in configs:
-        print(f"Verifying the configuration for {config.name}... (TODO)")
+        print(f"Verifying the configuration for {config.name}... ")
         result = verify_mcp_server(config)
         if result:
             # If this is a remote server, check OAuth status and optionally authorize
@@ -125,8 +125,10 @@ def show_manual_setup_screen() -> None:
 
     To set up open-edison manually in other clients, find your client's MCP config
     JSON file and add the following configuration:
+    """
 
-    "mcpServers": {
+    json_snippet = """{
+      "mcpServers": {
         "open-edison": {
           "command": "npx",
           "args": [
@@ -138,12 +140,17 @@ def show_manual_setup_screen() -> None:
             "Authorization: Bearer dev-api-key-change-me"
           ]
         }
-      },
+      }
+    }"""
 
+    after_text = """
     Make sure to replace 'dev-api-key-change-me' with your actual API key.
     """
 
     print(manual_setup_text)
+    # Use questionary's print with style for color
+    questionary.print(json_snippet, style="bold fg:ansigreen")
+    print(after_text)
 
 
 def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:

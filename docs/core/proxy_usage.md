@@ -16,13 +16,7 @@ make run
 uv run python main.py
 ```
 
-The server starts on `localhost:3001` with:
-
-- **MCP Proxy**: Will proxy MCP calls (future implementation)
-
-And api on `localhost:3001`
-
-- **FastAPI**: REST endpoints for management
+The MCP protocol server runs at `http://localhost:3000/mcp/` and the management API + dashboard are at `http://localhost:3001`.
 
 ### 2. Verify Server Health
 
@@ -40,7 +34,7 @@ curl http://localhost:3001/health
 
 ## HTTP API Reference
 
-All API endpoints require authentication except `/health`:
+Most API endpoints require authentication; public endpoints are noted.
 
 ```bash
 # Authentication header
@@ -69,11 +63,10 @@ curl http://localhost:3001/health
 
 #### GET `/mcp/status`
 
-Get status of all configured MCP servers:
+Get configured MCP servers and their enabled flags (public):
 
 ```bash
-curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/mcp/status
+curl http://localhost:3001/mcp/status
 ```
 
 **Response:**
@@ -81,103 +74,62 @@ curl -H "Authorization: Bearer your-api-key" \
 ```json
 {
   "servers": [
-    {
-      "name": "filesystem",
-      "enabled": true,
-      "running": true
-    },
-    {
-      "name": "github",
-      "enabled": false,
-      "running": false
-    }
+    { "name": "filesystem", "enabled": true },
+    { "name": "github", "enabled": false }
   ]
 }
 ```
 
 ### MCP Server Control
 
-#### POST `/mcp/{server_name}/start`
+#### GET `/mcp/mounted`
 
-Start a specific MCP server:
-
-```bash
-curl -X POST \
-     -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/mcp/filesystem/start
-```
-
-**Response:**
-
-```json
-{
-  "message": "Server filesystem started successfully"
-}
-```
-
-#### POST `/mcp/{server_name}/stop`
-
-Stop a specific MCP server:
+List currently mounted servers (auth):
 
 ```bash
-curl -X POST \
-     -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/mcp/filesystem/stop
+curl -H "Authorization: Bearer your-api-key" \
+     http://localhost:3001/mcp/mounted
 ```
 
-**Response:**
+#### POST `/mcp/reinitialize`
 
-```json
-{
-  "message": "Server filesystem stopped successfully"
-}
+Reinitialize servers from the current configuration (auth):
+
+```bash
+curl -X POST -H "Authorization: Bearer your-api-key" \
+     http://localhost:3001/mcp/reinitialize
+```
+
+#### POST `/mcp/mount/{server_name}`
+
+Mount a server by name (auth):
+
+```bash
+curl -X POST -H "Authorization: Bearer your-api-key" \
+     http://localhost:3001/mcp/mount/filesystem
+```
+
+#### DELETE `/mcp/mount/{server_name}`
+
+Unmount a server by name (auth):
+
+```bash
+curl -X DELETE -H "Authorization: Bearer your-api-key" \
+     http://localhost:3001/mcp/mount/filesystem
 ```
 
 ### MCP Communication
 
-#### POST `/mcp/call`
-
-Proxy MCP calls to running servers (currently placeholder):
-
-```bash
-curl -X POST \
-     -H "Authorization: Bearer your-api-key" \
-     -H "Content-Type: application/json" \
-     -d '{"method": "tools/list", "id": 1}' \
-     http://localhost:3001/mcp/call
-```
-
-**Response:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "message": "MCP request handling not yet implemented",
-    "request": {"method": "tools/list", "id": 1}
-  }
-}
-```
+Use an MCP client to connect to the MCP server at `http://localhost:3000/mcp/` (for example `npx -y mcp-remote http://localhost:3000/mcp/ --http-only`). The management API does not proxy JSON-RPC calls.
 
 ### Session Logging
 
 #### GET `/sessions`
 
-Get session logs (placeholder for future SQLite implementation):
+Get recent MCP session summaries (public):
 
 ```bash
-curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:3001/sessions
-```
-
-**Response:**
-
-```json
-{
-  "sessions": [],
-  "message": "Session logging not yet implemented"
-}
+curl http://localhost:3001/sessions
 ```
 
 ## MCP Server Management
@@ -185,10 +137,9 @@ curl -H "Authorization: Bearer your-api-key" \
 ### Server Lifecycle
 
 1. **Configuration**: Define servers in `config.json`
-2. **Auto-start**: Enabled servers start automatically
-3. **Manual Control**: Start/stop servers via API
-4. **Health Monitoring**: Check server status
-5. **Process Management**: Servers run as subprocesses
+2. **Initialization**: FastMCP initializes servers on startup
+3. **Manual Control**: Mount/unmount servers via API
+4. **Monitoring**: Check mounted servers and status endpoints
 
 ### Process Management
 
@@ -275,23 +226,22 @@ async def manage_mcp_servers():
             health = await resp.json()
             print(f"Server status: {health['status']}")
         
-        # Get MCP server status
+        # Get configured servers
         async with session.get(
-            "http://localhost:3001/mcp/status",
-            headers=headers
+            "http://localhost:3001/mcp/status"
         ) as resp:
             status = await resp.json()
-            print("MCP Servers:")
+            print("Configured servers:")
             for server in status['servers']:
-                print(f"- {server['name']}: {'running' if server['running'] else 'stopped'}")
-        
-        # Start a server
+                print(f"- {server['name']} (enabled={server['enabled']})")
+
+        # Mount a server
         async with session.post(
-            "http://localhost:3001/mcp/filesystem/start",
+            "http://localhost:3001/mcp/mount/filesystem",
             headers=headers
         ) as resp:
             result = await resp.json()
-            print(f"Start result: {result['message']}")
+            print(f"Mount result: {result}")
 
 asyncio.run(manage_mcp_servers())
 ```
@@ -313,20 +263,20 @@ async function manageMCPServers() {
     const health = await axios.get(`${API_BASE}/health`);
     console.log('Server status:', health.data.status);
     
-    // Get server status
-    const status = await axios.get(`${API_BASE}/mcp/status`, { headers });
-    console.log('MCP Servers:');
+    // Get configured servers
+    const status = await axios.get(`${API_BASE}/mcp/status`);
+    console.log('Configured servers:');
     status.data.servers.forEach(server => {
-      console.log(`- ${server.name}: ${server.running ? 'running' : 'stopped'}`);
+      console.log(`- ${server.name} (enabled=${server.enabled})`);
     });
-    
-    // Start filesystem server
-    const start = await axios.post(
-      `${API_BASE}/mcp/filesystem/start`, 
+
+    // Mount filesystem server
+    const mount = await axios.post(
+      `${API_BASE}/mcp/mount/filesystem`, 
       {}, 
       { headers }
     );
-    console.log('Start result:', start.data.message);
+    console.log('Mount result:', mount.data);
     
   } catch (error) {
     console.error('Error:', error.response?.data || error.message);
@@ -359,13 +309,13 @@ curl -s "$BASE_URL/health" | jq .
 echo "Getting MCP server status..."
 api_call "$BASE_URL/mcp/status" | jq .
 
-# Start filesystem server
-echo "Starting filesystem server..."
-api_call -X POST "$BASE_URL/mcp/filesystem/start" | jq .
+# Mount filesystem server
+echo "Mounting filesystem server..."
+api_call -X POST "$BASE_URL/mcp/mount/filesystem" | jq .
 
-# Check status again
-echo "Checking status after start..."
-api_call "$BASE_URL/mcp/status" | jq '.servers[] | select(.name=="filesystem")'
+# Check mounted
+echo "Getting mounted servers..."
+api_call "$BASE_URL/mcp/mounted" | jq .
 ```
 
 ## Use Cases
@@ -396,17 +346,17 @@ import aiohttp
 async def enable_work_servers():
     headers = {"Authorization": "Bearer work-api-key"}
     
-    # Start work-related servers
+    # Mount work-related servers
     work_servers = ["github", "documents", "slack-integration"]
     
     async with aiohttp.ClientSession() as session:
         for server in work_servers:
             async with session.post(
-                f"http://localhost:3001/mcp/{server}/start",
+                f"http://localhost:3001/mcp/mount/{server}",
                 headers=headers
             ) as resp:
                 result = await resp.json()
-                print(f"Started {server}: {result['message']}")
+                print(f"Mounted {server}: {result}")
 ```
 
 ### 3. Server Health Monitoring
@@ -430,10 +380,10 @@ async def monitor_servers():
                 status = await resp.json()
                 
                 for server in status['servers']:
-                    if server['enabled'] and not server['running']:
-                        print(f"Restarting {server['name']}...")
+                    # Example: ensure critical servers are mounted
+                    if server['enabled'] and server['name'] == 'filesystem':
                         await session.post(
-                            f"http://localhost:3001/mcp/{server['name']}/start",
+                            f"http://localhost:3001/mcp/mount/{server['name']}",
                             headers=headers
                         )
         
@@ -452,8 +402,8 @@ asyncio.run(monitor_servers())
    # Check if command exists
    which uvx
    
-   # Check configuration
-   python -c "from src.config import config; print(config.mcp_servers[0].command)"
+   # Check configuration load
+   python -c "from src.config import Config; print(Config().mcp_servers[0].command)"
    
    # Check logs
    tail -f server.log
@@ -485,9 +435,9 @@ asyncio.run(monitor_servers())
    # Check server status
    curl -H "Authorization: Bearer api-key" http://localhost:3001/mcp/status
    
-   # Restart crashed server
+   # Remount server by name
    curl -X POST -H "Authorization: Bearer api-key" \
-        http://localhost:3001/mcp/server-name/start
+        http://localhost:3001/mcp/mount/server-name
    ```
 
 ### Debug Mode
