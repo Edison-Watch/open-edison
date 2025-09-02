@@ -19,17 +19,17 @@ Notes:
 
 High-level summary of automation coverage for each install path and platform.
 
-| Install method       | macOS           | Linux (debian-based) | Windows     |
-|----------------------|-------------    |----------------------|-------------|
-| direct uvx           | CI              | CI                   | Manual only |
-| curl pipe bash       | CI              | CI                   | None        |
-| clone & make run     | CI              | CI                   | None        |
-| clone & docker_run   | Experimental CI | CI                   | Manual only |
+| Install method       | macOS                                  | Linux (debian-based) | Windows     |
+|----------------------|----------------------------------------|----------------------|-------------|
+| direct uvx           | CI                                     | CI                   | Manual only |
+| curl pipe bash       | CI                                     | CI                   | None        |
+| clone & make run     | CI                                     | CI                   | None        |
+| clone & docker_run   | CI (No nested virtualization possible) | CI                   | Manual only |
 
 Notes:
 
 - macOS has CI coverage for the "clone & make run" path via GitHub Actions runners.
 - Linux has CI coverage for the "direct uvx" path (Ubuntu 22.04, 24.04 matrix) via package build + `uvx ... --help` smoke.
 - curl|bash installer runs as a smoke test on macOS and Ubuntu.
-- Docker run is experimental on macOS due to nested/virtualized Docker constraints; Ubuntu uses native Docker.
+- Docker on GitHub-hosted macOS runners is not supported due to virtualization limitations; job is disabled by default. Ubuntu uses native Docker on hosted runners. See `setup-docker-on-macos` action notes [link](https://github.com/marketplace/actions/setup-docker-on-macos).
 - "Make target" indicates a reproducible local target exists in the `Makefile` (e.g., `make install_curl_test`, `make run`, `make docker_run`).
