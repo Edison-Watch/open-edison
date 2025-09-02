@@ -137,7 +137,7 @@ class MCPServerConfig:
         try:
             idx: int = self.args.index("mcp-remote")
             for candidate in self.args[idx + 1 :]:
-                if candidate.startswith("https://") or candidate.startswith("http://"):
+                if candidate.startswith(("https://", "http://")):
                     return candidate
             return None
         except Exception:

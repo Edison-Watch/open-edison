@@ -190,20 +190,6 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
     return asyncio.run(_verify_async())
 
 
-def server_needs_oauth(server: MCPServerConfig) -> bool:
-    """Return True if the remote server currently needs OAuth; False otherwise."""
-
-    async def _needs_oauth_async() -> bool:
-        if not server.is_remote_server():
-            return False
-        info = await get_oauth_manager().check_oauth_requirement(
-            server.name, server.get_remote_url()
-        )
-        return info.status == OAuthStatus.NEEDS_AUTH
-
-    return asyncio.run(_needs_oauth_async())
-
-
 def authorize_server_oauth(server: MCPServerConfig) -> bool:
     """Run an interactive OAuth flow for a remote MCP server and cache tokens.
 
