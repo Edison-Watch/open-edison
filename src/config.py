@@ -118,7 +118,7 @@ class MCPServerConfig:
             idx: int = self.args.index("mcp-remote")
             # Look for first https?:// argument after 'mcp-remote'
             for candidate in self.args[idx + 1 :]:
-                if candidate.startswith("https://") or candidate.startswith("http://"):
+                if candidate.startswith(("https://", "http://")):
                     return candidate.startswith("https://")
             return False
         except Exception:

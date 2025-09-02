@@ -22,7 +22,7 @@ from src.mcp_importer.importers import (
     import_from_vscode,
 )
 from src.mcp_importer.merge import MergePolicy, merge_servers
-from src.oauth_manager import OAuthStatus, get_oauth_manager
+from src.oauth_manager import get_oauth_manager
 
 
 class CLIENT(str, Enum):
