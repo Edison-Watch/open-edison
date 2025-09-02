@@ -1,6 +1,7 @@
 name: Install matrix (macOS/Linux)
 
 on:
+  workflow_call:
   workflow_run:
     workflows: ["CI (grouped)"]
     types: [completed]

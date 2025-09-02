@@ -1,10 +1,3 @@
-"""
-Open Edison Server
-
-Simple FastAPI + FastMCP server for single-user MCP proxy.
-No multi-user support, no complex routing - just a straightforward proxy.
-"""
-
 import asyncio
 import json
 import traceback
