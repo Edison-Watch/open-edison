@@ -181,7 +181,7 @@ build: check_uv ## Build the package
 # PyPI packaging and publish
 ########################################################
 
-.PHONY: clean_dist build_dist check_twine publish_testpypi test_publish publish_pypi
+.PHONY: clean_dist build_dist check_twine publish_testpypi test_publish publish_pypi publish_pre_pypi mark_prerelease mark_release
 
 clean_dist: ## Remove dist/ directory
 	@echo "$(YELLOW)🧹Cleaning dist directory...$(RESET)"
@@ -212,6 +212,27 @@ publish_pypi: build_package check_twine ## Upload distributions to PyPI (product
 	@uv run python -m twine check dist/*
 	@uv run python -m twine upload --repository pypi dist/* --verbose
 	@echo "$(GREEN)✅Upload to PyPI complete.$(RESET)"
+
+publish_pre_pypi: build_package check_twine ## Upload pre-release distributions to PyPI (requires a/b/rc/dev version)
+	@echo "$(YELLOW)🚀Uploading pre-release to PyPI...$(RESET)"
+	@echo "$(YELLOW)🔎 Checking version is a pre-release (aN/bN/rcN/devN)...$(RESET)"
+	@$(PYTHON) scripts/verify_prerelease_version.py
+	@echo "$(YELLOW)🔎 Validating metadata with twine check...$(RESET)"
+	@uv run python -m twine check dist/*
+	@uv run python -m twine upload --repository pypi dist/* --verbose
+	@echo "$(GREEN)✅ Pre-release upload to PyPI complete.$(RESET)"
+
+########################################################
+# Version Marking (pre-release / release)
+########################################################
+
+mark_prerelease: ## Add or bump pre-release suffix (default rc); commits the change
+	@echo "$(YELLOW)🔧 Marking version as pre-release (rc by default)...$(RESET)"
+	@$(PYTHON) scripts/version_mark.py prerelease --tag rc --commit
+
+mark_release: ## Strip any pre-release suffix; commits the change
+	@echo "$(YELLOW)🔧 Marking version as release (strip pre-release)...$(RESET)"
+	@$(PYTHON) scripts/version_mark.py release --commit
 
 # Aliases for publishing to real PyPI
 .PHONY: publish release
