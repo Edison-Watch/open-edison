@@ -33,7 +33,7 @@ jobs:
         os: [macos-14, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Curl installer smoke
+      - name: Curl installer smoke test
         shell: bash
         run: |
           set -euxo pipefail

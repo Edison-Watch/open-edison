@@ -19,12 +19,12 @@ Notes:
 
 High-level summary of automation coverage for each install path and platform.
 
-| Install method       | macOS                                  | Linux (debian-based) | Windows     |
-|----------------------|----------------------------------------|----------------------|-------------|
-| direct uvx           | CI                                     | CI                   | Manual only |
-| curl pipe bash       | CI                                     | CI                   | None        |
-| clone & make run     | CI                                     | CI                   | None        |
-| clone & docker_run   | CI (No nested virtualization possible) | CI                   | Manual only |
+| Install method       | macOS                           | Linux (debian-based) | Windows     |
+|----------------------|---------------------------------|----------------------|-------------|
+| direct uvx           | CI                              | CI                   | Manual only |
+| curl pipe bash       | CI                              | CI                   | None        |
+| clone & make run     | CI                              | CI                   | None        |
+| clone & docker_run   | None (no nested virtualization) | CI                   | Manual only |
 
 Notes:
 
