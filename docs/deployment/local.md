@@ -58,7 +58,7 @@ pip install -r requirements.lock
 make setup
 
 # Or manually
-python -c "from src.config import Config; Config.create_default().save()"
+python -c "from src.config import Config; cfg=Config(); cfg.create_default(); cfg.save()"
 ```
 
 ### 4. Configure
@@ -104,8 +104,8 @@ make sync
 # Setup configuration
 make setup
 
-# Run development server (with auto-reload if supported)
-make dev
+# Run the server
+make run
 
 # Run tests
 make test
@@ -124,12 +124,11 @@ make ci
 # Start server
 make run
 
-# Health check
-curl http://localhost:3000/health
+# Health check (API)
+curl http://localhost:3001/health
 
-# Check MCP server status (requires API key)
-curl -H "Authorization: Bearer your-api-key" \
-     http://localhost:3000/mcp/status
+# Check MCP server status (public)
+curl http://localhost:3001/mcp/status
 ```
 
 ## Configuration

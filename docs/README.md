@@ -24,7 +24,7 @@ Fast lookup guides:
 Design decisions and technical deep-dives:
 
 - **[Single-User Design](architecture/single_user_design.md)** - Why simplicity over multi-user complexity
-- **[JSON vs Database Config](architecture/config_decisions.md)** - Configuration architecture decisions
+- JSON vs Database config decisions: integrated into the configuration guide
 
 ### 💻 **Development** [`development/`](development/)
 
@@ -40,8 +40,7 @@ Production deployment guides:
 
 - **[Docker Deployment](deployment/docker.md)** - Container-based deployment
 - **[Local Installation](deployment/local.md)** - Local development setup
-- **[Production Setup](deployment/production.md)** - Production configuration
-
+  
 ## 🚀 **Getting Started**
 
 New to Open Edison? Start here:

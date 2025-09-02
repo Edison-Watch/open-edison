@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sys
 
 from src.mcp_importer.cli import run_cli as import_run_cli

@@ -1,0 +1,63 @@
+name: Install matrix (Docker)
+
+on:
+  workflow_call:
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  docker-run-ubuntu:
+    name: clone & docker_run (Ubuntu)
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - name: Build image
+        run: docker build -t open-edison:ci .
+      - name: Run container
+        run: |
+          docker run -d --name edison-ci -e OPEN_EDISON_CONFIG_DIR=/app -p 3001:3001 -v ${{ github.workspace }}/config.json:/app/config.json open-edison:ci
+          for i in {1..60}; do if curl -sf http://localhost:3001/health >/dev/null; then echo ok; break; fi; sleep 1; done
+      - name: Health check
+        run: curl -sf http://localhost:3001/health | tee /dev/stderr
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs edison-ci || true
+          docker rm -f edison-ci || true
+
+  docker-run-macos:
+    name: clone & docker_run (macOS, self-hosted) [DISABLED]
+    # Disabled by default: GitHub-hosted macOS runners cannot run Docker due to lack of nested virtualization.
+    # See: https://github.com/marketplace/actions/setup-docker-on-macos
+    if: ${{ false }}
+    runs-on: [self-hosted, macos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install colima and docker (experimental)
+        run: |
+          brew update
+          brew install colima docker
+          colima start --cpu 2 --memory 4 --disk 10
+      - name: Build image
+        run: docker build -t open-edison:ci .
+      - name: Run container
+        run: |
+          docker run -d --name edison-ci -e OPEN_EDISON_CONFIG_DIR=/app -p 3001:3001 -v ${{ github.workspace }}/config.json:/app/config.json open-edison:ci
+          for i in {1..60}; do if curl -sf http://localhost:3001/health >/dev/null; then echo ok; break; fi; sleep 1; done
+      - name: Health check
+        run: curl -sf http://localhost:3001/health | tee /dev/stderr
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs edison-ci || true
+          docker rm -f edison-ci || true
+          colima stop || true
+
+

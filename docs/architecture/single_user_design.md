@@ -38,17 +38,9 @@ Open Edison deliberately embraces a **single-user design philosophy** that prior
 
 See [configuration.md](../core/configuration.md)
 
-## MCP Server Design
+## MCP Server and API Design
 
-See [mcp_server.md](../core/mcp_server.md)
-
-## Authentication Design
-
-See [authentication.md](../core/authentication.md)
-
-## API Design
-
-See [api.md](../core/api.md)
+See [Project Structure](../core/project_structure.md) and [API Reference](../quick-reference/api_reference.md)
 
 ## Comparison with edison.watch
 
