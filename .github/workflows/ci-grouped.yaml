@@ -1,0 +1,66 @@
+name: CI (grouped)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup
+        uses: ./.github/actions/setup
+      - name: Run Ruff linting
+        run: make lint
+
+  typecheck:
+    name: Type Check (Ty)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup
+        uses: ./.github/actions/setup
+      - name: Run Ty
+        run: uv run ty check .
+
+  deadcode:
+    name: Dead Code (Vulture)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup
+        uses: ./.github/actions/setup
+      - name: Run Vulture
+        run: make deadcode
+
+  tests:
+    name: Tests (Pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup
+        uses: ./.github/actions/setup
+      - name: Run tests
+        run: make test
+
+

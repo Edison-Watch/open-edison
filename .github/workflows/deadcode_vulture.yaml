@@ -1,17 +1,11 @@
-name: Dead Code (Vulture)
+name: Dead Code (Vulture) [legacy]
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - '**'
-    paths-ignore:
-      - '.github/workflows/**'
+  # Replaced by CI (grouped). Keep manual trigger only.
+  workflow_dispatch:
 
 jobs:
   vulture:
-    if: github.event_name == 'pull_request' || github.event.pull_request == null
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

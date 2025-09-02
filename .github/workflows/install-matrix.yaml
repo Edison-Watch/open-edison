@@ -1,13 +1,9 @@
 name: Install matrix (macOS/Linux)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - '**'
-    paths-ignore:
-      - '.github/workflows/**'
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
@@ -17,9 +13,12 @@ jobs:
       matrix:
         os: [macos-14, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Setup Open Edison
         uses: ./.github/actions/setup
       - name: direct uvx smoke (PyPI)
@@ -32,16 +31,18 @@ jobs:
       matrix:
         os: [macos-14, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Curl installer smoke test
         shell: bash
         run: |
           set -euxo pipefail
-          REPO="${{ github.repository }}"
-          REF="${{ github.ref_name }}"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            REPO="${{ github.event.pull_request.head.repo.full_name }}"
-            REF="${{ github.event.pull_request.head.ref }}"
+          REPO="${{ github.repository }}"; REF="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            REPO="${{ github.event.workflow_run.head_repository.full_name }}"
+            REF="${{ github.event.workflow_run.head_branch }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            REPO="${{ github.event.pull_request.head.repo.full_name }}"; REF="${{ github.event.pull_request.head.ref }}"
           fi
           echo "Using repo $REPO @ $REF"
           curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/curl_pipe_bash.sh" | bash -s -- -h
@@ -52,9 +53,12 @@ jobs:
       matrix:
         os: [macos-14, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Setup Open Edison
         uses: ./.github/actions/setup
       - name: Setup Node

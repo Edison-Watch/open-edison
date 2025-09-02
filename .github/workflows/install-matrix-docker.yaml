@@ -1,22 +1,21 @@
 name: Install matrix (Docker)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - '**'
-    paths-ignore:
-      - '.github/workflows/**'
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
   docker-run-ubuntu:
     name: clone & docker_run (Ubuntu)
     runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Build image
         run: docker build -t open-edison:ci .
       - name: Run container
