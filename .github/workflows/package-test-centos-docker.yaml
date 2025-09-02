@@ -22,8 +22,13 @@ jobs:
     steps:
       - name: Install system dependencies
         run: |
-          dnf update -y
-          dnf install -y python3 python3-pip git make
+          # Update package lists
+          microdnf update -y
+          # Install required packages
+          microdnf install -y python3 python3-pip git make tar
+          # Verify installations
+          python3 --version
+          git --version
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,5 +50,5 @@ jobs:
 
       - name: Test package build with uvx
         run: |
-          cd /
-          uvx --refresh --from "${{ github.workspace }}/" open-edison --help
+          echo "Testing uvx command from current directory:"
+          uvx --refresh --from . open-edison --help
