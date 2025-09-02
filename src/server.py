@@ -1,3 +1,9 @@
+"""
+Open Edison MCP Proxy Server
+Main server entrypoint for FastAPI and FastMCP integration.
+See README for usage and configuration details.
+"""
+
 import asyncio
 import json
 import traceback
