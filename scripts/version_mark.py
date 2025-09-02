@@ -18,7 +18,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 VERSION_PATTERN = re.compile(
     r"^(version\s*=\s*\")(?P<maj>\d+)\.(?P<min>\d+)\.(?P<pat>\d+)(?P<pre>(a|b|rc|dev)(?P<num>\d+))?(\"\s*)$",
     re.MULTILINE,
@@ -62,10 +61,7 @@ def apply_prerelease(text: str, tag: str) -> tuple[str, str]:
         m_tag = re.match(r"(a|b|rc|dev)", pre)
         current_tag = m_tag.group(0) if m_tag else ""
         current_num = int(num_str) if num_str else 0
-        if current_tag == tag:
-            next_num = current_num + 1
-        else:
-            next_num = 1
+        next_num = current_num + 1 if current_tag == tag else 1
         new_version = f"{maj}.{min_}.{pat}{tag}{next_num}"
     else:
         # No pre-release, add tag1
