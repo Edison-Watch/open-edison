@@ -20,15 +20,15 @@ jobs:
     container:
       image: quay.io/centos/centos:stream${{ matrix.centos_version }}-minimal
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install system dependencies
         run: |
           dnf update -y
           dnf install -y python3 python3-pip git make
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Open Edison
         uses: ./.github/actions/setup
