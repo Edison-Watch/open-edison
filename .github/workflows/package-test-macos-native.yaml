@@ -1,4 +1,4 @@
-name: Package build test (ubuntu amd64)
+name: Package build test (macos)
 
 on:
   pull_request:
@@ -11,11 +11,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-package-build-ubuntu:
+  test-package-build-macos:
     if: github.event_name == 'pull_request' || github.event.pull_request == null
     strategy:
       matrix:
-        os: [ubuntu-24.04, ubuntu-22.04]
+        os: [macos-15, macos-14, macos-13]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -25,13 +25,6 @@ jobs:
 
       - name: Setup Open Edison
         uses: ./.github/actions/setup
-
-      - name: Install Node.js and npm
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Build package
         run: make build_package
