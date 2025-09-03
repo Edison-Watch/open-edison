@@ -14,8 +14,8 @@ from loguru import logger as _log  # type: ignore[reportMissingImports]
 
 from src.config import Config, get_config_dir, get_config_json_path
 from src.mcp_importer.cli import run_cli
-from src.setup_tui.main import run_import_tui
 from src.server import OpenEdisonProxy
+from src.setup_tui.main import run_import_tui
 
 log: Any = _log
 
