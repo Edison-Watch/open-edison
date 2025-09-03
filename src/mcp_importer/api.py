@@ -259,7 +259,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             async def _list_tools_only() -> Any:
                 return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-            await asyncio.wait_for(_list_tools_only(), timeout=10.0)
+            await asyncio.wait_for(_list_tools_only(), timeout=30.0)
             return True
         except Exception as e:
             log.error("MCP verification failed for '{}': {}", server.name, e)
