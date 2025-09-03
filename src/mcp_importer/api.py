@@ -27,6 +27,7 @@ from src.mcp_importer.importers import (
 from src.mcp_importer.merge import MergePolicy, merge_servers
 from src.oauth_manager import OAuthStatus, get_oauth_manager
 from src.oauth_override import OpenEdisonOAuth
+from src.tools.io import suppress_fds
 
 
 class CLIENT(str, Enum):
@@ -202,9 +203,11 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     proxy_remote: FastMCP[Any] | None = None
                     host_remote: FastMCP[Any] | None = None
                     try:
-                        proxy_remote = FastMCP.as_proxy(backend_cfg_remote)
-                        host_remote = FastMCP(name=f"open-edison-verify-host-{server.name}")
-                        host_remote.mount(proxy_remote, prefix=server.name)
+                        # TODO: In debug mode, do not suppress child process output.
+                        with suppress_fds(suppress_stdout=False, suppress_stderr=True):
+                            proxy_remote = FastMCP.as_proxy(backend_cfg_remote)
+                            host_remote = FastMCP(name=f"open-edison-verify-host-{server.name}")
+                            host_remote.mount(proxy_remote, prefix=server.name)
 
                         async def _list_tools_only() -> Any:
                             return await host_remote._tool_manager.list_tools()  # type: ignore[attr-defined]
@@ -233,21 +236,23 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     if oauth_info.status in (OAuthStatus.NEEDS_AUTH, OAuthStatus.AUTHENTICATED):
                         return True
                     # NOT_REQUIRED: quick unauthenticated ping
+                    # TODO: In debug mode, do not suppress child process output.
+                    questionary.print(f"Testing connection to '{server.name}'...", style="bold fg:ansigreen")
                     log.debug(f"Establishing contact with remote server '{server.name}'")
-                    # Async timeout
                     async with asyncio.timeout(connection_timeout):
                         async with FastMCPClient(
                             remote_url,
                             auth=None,
                             timeout=connection_timeout,
                             init_timeout=connection_timeout,
-                        ) as client:  # type: ignore
+                        ) as client:
                             log.debug(f"Connection established to '{server.name}'; pinging...")
-                            await asyncio.wait_for(client.ping(), timeout=connection_timeout)
+                            with suppress_fds(suppress_stdout=True, suppress_stderr=True):
+                                await asyncio.wait_for(fut=client.ping(), timeout=1.0)
                             log.info(f"Ping received from '{server.name}'; shutting down client")
                             ping_succeeded = True
                         log.debug(f"Client '{server.name}' shut down")
-                        return ping_succeeded
+                    return ping_succeeded
                 except TimeoutError:
                     if ping_succeeded:
                         questionary.print(
@@ -281,9 +286,13 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         proxy_local: FastMCP[Any] | None = None
         host_local: FastMCP[Any] | None = None
         try:
-            proxy_local = FastMCP.as_proxy(backend_cfg_local)
-            host_local = FastMCP(name=f"open-edison-verify-host-{server.name}")
-            host_local.mount(proxy_local, prefix=server.name)
+            # TODO: In debug mode, do not suppress child process output.
+            log.info("Checking properties of '{}'...", server.name)
+            with suppress_fds(suppress_stdout=False, suppress_stderr=True):
+                proxy_local = FastMCP.as_proxy(backend_cfg_local)
+                host_local = FastMCP(name=f"open-edison-verify-host-{server.name}")
+                host_local.mount(proxy_local, prefix=server.name)
+            log.info("MCP properties check succeeded for '{}'", server.name)
 
             async def _list_tools_only() -> Any:
                 return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
