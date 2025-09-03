@@ -19,6 +19,8 @@ from fastmcp.client.auth.oauth import (
 )
 from loguru import logger as log
 
+from src.oauth_override import OpenEdisonOAuth
+
 
 class OAuthStatus(Enum):
     """OAuth authentication status for MCP servers."""
@@ -209,7 +211,7 @@ class OAuthManager:
             return None
 
         try:
-            oauth = OAuth(
+            oauth = OpenEdisonOAuth(
                 mcp_url=mcp_url,
                 scopes=scopes or info.scopes,
                 client_name=client_name or info.client_name,
