@@ -1,11 +1,14 @@
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false
 import asyncio
-from collections.abc import Awaitable
+import contextlib
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
+from fastmcp.client.auth import OAuth
+from fastmcp.client.auth.oauth import FileTokenStorage
 from loguru import logger as log
 
 from src.config import Config, MCPServerConfig, get_config_json_path
@@ -22,7 +25,7 @@ from src.mcp_importer.importers import (
     import_from_vscode,
 )
 from src.mcp_importer.merge import MergePolicy, merge_servers
-from src.oauth_manager import get_oauth_manager
+from src.oauth_manager import OAuthStatus, get_oauth_manager
 
 
 class CLIENT(str, Enum):
@@ -37,15 +40,16 @@ class CLIENT(str, Enum):
         return str(self)
 
 
-def detect_clients() -> set[CLIENT]:
-    detected: set[CLIENT] = set()
+def detect_clients() -> list[CLIENT]:
+    detected: list[CLIENT] = []
     if _paths.detect_cursor_config_path() is not None:
-        detected.add(CLIENT.CURSOR)
+        detected.append(CLIENT.CURSOR)
     if _paths.detect_vscode_config_path() is not None:
-        detected.add(CLIENT.VSCODE)
+        detected.append(CLIENT.VSCODE)
     if _paths.detect_claude_code_config_path() is not None:
-        detected.add(CLIENT.CLAUDE_CODE)
-    return detected
+        detected.append(CLIENT.CLAUDE_CODE)
+    # Return clients sorted alphabetically by identifier
+    return sorted(detected, key=lambda c: c.value)
 
 
 def import_from(client: CLIENT) -> list[MCPServerConfig]:
@@ -136,8 +140,105 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
     async def _verify_async() -> bool:
         if not server.command.strip():
             return False
+        oauth_info = None
 
-        # Inline backend config and capability listing (no extra helpers)
+        # If this is a remote server, consult OAuth requirement first. Only skip
+        # verification when OAuth is actually required and no tokens are present.
+        try:
+            if server.is_remote_server():
+                remote_url: str | None = server.get_remote_url()
+                if remote_url:
+                    oauth_info = await get_oauth_manager().check_oauth_requirement(
+                        server.name, remote_url
+                    )
+                    if oauth_info.status != OAuthStatus.NOT_REQUIRED:
+                        # Token presence check
+                        storage = FileTokenStorage(
+                            server_url=remote_url, cache_dir=get_oauth_manager().cache_dir
+                        )
+                        tokens = await storage.get_tokens()
+                        no_tokens: bool = not tokens or (
+                            not getattr(tokens, "access_token", None)
+                            and not getattr(tokens, "refresh_token", None)
+                        )
+                        # Detect if inline headers are present in args (translated from config)
+                        has_inline_headers: bool = any(
+                            (a == "--header" or a.startswith("--header")) for a in server.args
+                        )
+                        if (
+                            oauth_info.status == OAuthStatus.NEEDS_AUTH
+                            and no_tokens
+                            and not has_inline_headers
+                        ):
+                            log.info(
+                                "Skipping verification for remote server '{}' pending OAuth",
+                                server.name,
+                            )
+                            return True
+        except Exception:
+            # If token inspection fails, continue with normal verification path
+            pass
+
+        # Remote servers
+        if server.is_remote_server():
+            remote_url = server.get_remote_url()
+            if remote_url:
+                # If inline headers are specified (e.g., API key), verify via proxy to honor headers
+                has_inline_headers: bool = any(
+                    (a == "--header" or a.startswith("--header")) for a in server.args
+                )
+                if has_inline_headers:
+                    backend_cfg: dict[str, Any] = {
+                        "mcpServers": {
+                            server.name: {
+                                "command": server.command,
+                                "args": server.args,
+                                "env": server.env or {},
+                                **({"roots": server.roots} if server.roots else {}),
+                            }
+                        }
+                    }
+                    proxy: FastMCP[Any] | None = None
+                    host: FastMCP[Any] | None = None
+                    try:
+                        proxy = FastMCP.as_proxy(backend_cfg)
+                        host = FastMCP(name=f"open-edison-verify-host-{server.name}")
+                        host.mount(proxy, prefix=server.name)
+
+                        async def _list_tools_only() -> Any:
+                            return await host._tool_manager.list_tools()  # type: ignore[attr-defined]
+
+                        await asyncio.wait_for(_list_tools_only(), timeout=10.0)
+                        return True
+                    except Exception as e:
+                        log.error(
+                            "MCP remote (headers) verification failed for '{}': {}", server.name, e
+                        )
+                        return False
+                    finally:
+                        for obj in (host, proxy):
+                            if isinstance(obj, FastMCP):
+                                with contextlib.suppress(Exception):
+                                    result = obj.shutdown()  # type: ignore[attr-defined]
+                                    await asyncio.wait_for(result, timeout=2.0)  # type: ignore[func-returns-value]
+                # Otherwise, avoid triggering OAuth flows during verification
+                try:
+                    if oauth_info is None:
+                        oauth_info = await get_oauth_manager().check_oauth_requirement(
+                            server.name, remote_url
+                        )
+                    # If OAuth is needed or we are already authenticated, don't initiate browser flows here
+                    if oauth_info.status in (OAuthStatus.NEEDS_AUTH, OAuthStatus.AUTHENTICATED):
+                        return True
+                    # NOT_REQUIRED: quick unauthenticated ping
+                    async with FastMCPClient(remote_url, auth=None) as client:  # type: ignore
+                        await asyncio.wait_for(client.ping(), timeout=10.0)
+                    return True
+                except Exception as e:  # noqa: BLE001
+                    log.error("MCP remote verification failed for '{}': {}", server.name, e)
+                    return False
+
+        # Local/stdio servers: mount via proxy and perform a single light operation (tools only)
         backend_cfg: dict[str, Any] = {
             "mcpServers": {
                 server.name: {
@@ -156,36 +257,20 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             host = FastMCP(name=f"open-edison-verify-host-{server.name}")
             host.mount(proxy, prefix=server.name)
 
-            async def _call_list(kind: str) -> Any:
-                manager_name = {
-                    "tools": "_tool_manager",
-                    "resources": "_resource_manager",
-                    "prompts": "_prompt_manager",
-                }[kind]
-                manager = getattr(host, manager_name)
-                return await getattr(manager, f"list_{kind}")()
+            async def _list_tools_only() -> Any:
+                return await host._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-            await asyncio.wait_for(
-                asyncio.gather(
-                    _call_list("tools"),
-                    _call_list("resources"),
-                    _call_list("prompts"),
-                ),
-                timeout=30.0,
-            )
+            await asyncio.wait_for(_list_tools_only(), timeout=10.0)
             return True
         except Exception as e:
             log.error("MCP verification failed for '{}': {}", server.name, e)
             return False
         finally:
-            try:
-                for obj in (host, proxy):
-                    if isinstance(obj, FastMCP):
+            for obj in (host, proxy):
+                if isinstance(obj, FastMCP):
+                    with contextlib.suppress(Exception):
                         result = obj.shutdown()  # type: ignore[attr-defined]
-                        if isinstance(result, Awaitable):
-                            await result  # type: ignore[func-returns-value]
-            except Exception:
-                pass
+                        await asyncio.wait_for(result, timeout=2.0)  # type: ignore[func-returns-value]
 
     return asyncio.run(_verify_async())
 
@@ -209,10 +294,6 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
         oauth_manager = get_oauth_manager()
 
         try:
-            # Import lazily to avoid import-time side effects
-            from fastmcp import Client as FastMCPClient  # type: ignore
-            from fastmcp.client.auth import OAuth  # type: ignore
-
             # Debug info prior to starting OAuth
             print(
                 "[OAuth] Starting authorization",
@@ -244,8 +325,6 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
 
             # Post-authorization token inspection (no secrets printed)
             try:
-                from fastmcp.client.auth.oauth import FileTokenStorage  # type: ignore
-
                 storage = FileTokenStorage(server_url=remote_url, cache_dir=oauth_manager.cache_dir)
                 tokens = await storage.get_tokens()
                 access_present = bool(getattr(tokens, "access_token", None)) if tokens else False
@@ -286,8 +365,6 @@ def has_oauth_tokens(server: MCPServerConfig) -> bool:
             return False
 
         try:
-            from fastmcp.client.auth.oauth import FileTokenStorage  # type: ignore
-
             storage = FileTokenStorage(
                 server_url=remote_url, cache_dir=get_oauth_manager().cache_dir
             )

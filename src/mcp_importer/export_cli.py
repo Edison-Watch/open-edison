@@ -5,8 +5,10 @@ from loguru import logger as log
 
 from .exporters import ExportError, export_to_claude_code, export_to_cursor, export_to_vscode
 from .paths import (
+    detect_claude_code_config_path,
     detect_cursor_config_path,
     detect_vscode_config_path,
+    get_default_claude_code_config_path,
     get_default_cursor_config_path,
     get_default_vscode_config_path,
 )
@@ -135,8 +137,6 @@ def _handle_vscode(args: argparse.Namespace) -> int:
 
 
 def _handle_claude_code(args: argparse.Namespace) -> int:
-    from .paths import detect_claude_code_config_path, get_default_claude_code_config_path
-
     detected = detect_claude_code_config_path()
     target_path: Path = detected if detected else get_default_claude_code_config_path()
 

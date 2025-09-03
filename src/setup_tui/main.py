@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 
 import questionary
 
@@ -13,6 +14,7 @@ from src.mcp_importer.api import (
     save_imported_servers,
     verify_mcp_server,
 )
+from src.oauth_manager import OAuthStatus, get_oauth_manager
 
 
 def show_welcome_screen(*, dry_run: bool = False) -> None:
@@ -54,30 +56,43 @@ def handle_mcp_source(
         print(f"Verifying the configuration for {config.name}... ")
         result = verify_mcp_server(config)
         if result:
-            # If this is a remote server, check OAuth status and optionally authorize
+            # For remote servers, only prompt if OAuth is actually required
             if config.is_remote_server():
-                # Always check token presence; if absent, prompt for OAuth unless skipped
-                tokens_present: bool = has_oauth_tokens(config)
-                if not tokens_present:
-                    if skip_oauth:
-                        print(
-                            f"Skipping OAuth for {config.name} due to --skip-oauth (no tokens present). This server will not be imported."
+                # Heuristic: if inline headers are present (e.g., API key), treat as not requiring OAuth
+                has_inline_headers: bool = any(
+                    (a == "--header" or a.startswith("--header")) for a in config.args
+                )
+                if not has_inline_headers:
+                    # Prefer cached result from verification; only check if missing
+                    oauth_mgr = get_oauth_manager()
+                    info = oauth_mgr.get_server_info(config.name)
+                    if info is None:
+                        info = asyncio.run(
+                            oauth_mgr.check_oauth_requirement(config.name, config.get_remote_url())
                         )
-                        continue
 
-                    if questionary.confirm(
-                        f"{config.name} is a remote server and no OAuth credentials were found. Obtain credentials now?",
-                        default=True,
-                    ).ask():
-                        success = authorize_server_oauth(config)
-                        if not success:
-                            print(
-                                f"Failed to obtain OAuth credentials for {config.name}. Skipping this server."
-                            )
-                            continue
-                    else:
-                        print(f"Skipping {config.name} per user choice.")
-                        continue
+                    if info.status == OAuthStatus.NEEDS_AUTH:
+                        tokens_present: bool = has_oauth_tokens(config)
+                        if not tokens_present:
+                            if skip_oauth:
+                                print(
+                                    f"Skipping OAuth for {config.name} due to --skip-oauth (OAuth required, no tokens). This server will not be imported."
+                                )
+                                continue
+
+                            if questionary.confirm(
+                                f"{config.name} requires OAuth and no credentials were found. Obtain credentials now?",
+                                default=True,
+                            ).ask():
+                                success = authorize_server_oauth(config)
+                                if not success:
+                                    print(
+                                        f"Failed to obtain OAuth credentials for {config.name}. Skipping this server."
+                                    )
+                                    continue
+                            else:
+                                print(f"Skipping {config.name} per user choice.")
+                                continue
 
             verified_configs.append(config)
         else:
