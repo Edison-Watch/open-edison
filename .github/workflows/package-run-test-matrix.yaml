@@ -1,0 +1,193 @@
+name: Package run test matrix (macOS/Linux)
+
+on:
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pypi-run-test:
+    name: pypi package run test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Open Edison
+        uses: ./.github/actions/setup
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build package
+        run: |
+          make build_package
+
+      - name: Install package
+        run: |
+          uv pip install dist/*.whl
+
+      - name: Run package (smoke test)
+        run: |
+          uv run open-edison --help
+
+      - name: Prepare config
+        run: |
+          mkdir -p test_config
+          cp config.json test_config/
+          cp tool_permissions.json test_config/
+          cp resource_permissions.json test_config/
+          cp prompt_permissions.json test_config/
+          touch test_config/.setup_tui_ran
+
+      - name: Run package
+        run: |
+          uv run open-edison --config-dir test_config &
+          echo $! > server.pid
+
+          # wait for port 3001 to be up
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then
+              echo "server healthy"; break; fi; sleep 1; done
+
+          # Run mcp test client
+          uv run python scripts/mcp_test_client.py
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+
+  curl-installer-run-test:
+    name: curl|bash installer run test(${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Open Edison
+        uses: ./.github/actions/setup
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build package
+        run: |
+          make build_package
+
+      - name: Prepare config
+        run: |
+          mkdir -p test_config
+          cp config.json test_config/
+          cp tool_permissions.json test_config/
+          cp resource_permissions.json test_config/
+          cp prompt_permissions.json test_config/
+          touch test_config/.setup_tui_ran
+
+          export UV_PROJECT="$PWD"
+          export UV_FIND_LINKS="$PWD/dist"
+
+      - name: Curl installer run test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          REPO="${{ github.repository }}"; REF="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            REPO="${{ github.event.workflow_run.head_repository.full_name }}"
+            REF="${{ github.event.workflow_run.head_branch }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            REPO="${{ github.event.pull_request.head.repo.full_name }}"; REF="${{ github.event.pull_request.head.ref }}"
+          fi
+          echo "Using repo $REPO @ $REF"
+          curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/curl_pipe_bash.sh" | bash -s -- --config-dir test_config &
+          echo $! > server.pid
+          # wait for port 3001 to be up
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then
+              echo "server healthy"; break; fi; sleep 1; done
+
+          # Run mcp test client
+          uv run python scripts/mcp_test_client.py
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+
+
+  clone-make-run-test:
+    name: clone & make run test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Open Edison
+        uses: ./.github/actions/setup
+        
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: make setup
+        run: make setup
+
+      - name: Prepare config
+        run: |
+          mkdir -p dev_config_dir
+          cp config.json dev_config_dir/
+          cp tool_permissions.json dev_config_dir/
+          cp resource_permissions.json dev_config_dir/
+          cp prompt_permissions.json dev_config_dir/
+          touch dev_config_dir/.setup_tui_ran
+
+      - name: Start server
+        run: |
+          set -euxo pipefail
+          make run &
+          echo $! > server.pid
+          # wait for port 3001 to be up
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/health >/dev/null; then
+              echo "server healthy"; break; fi; sleep 1; done
+
+          # Run mcp test client
+          uv run python scripts/mcp_test_client.py
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
+
+
