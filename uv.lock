@@ -983,7 +983,7 @@ wheels = [
 
 [[package]]
 name = "open-edison"
-version = "0.1.60"
+version = "0.1.61"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
