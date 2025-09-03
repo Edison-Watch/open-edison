@@ -29,7 +29,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 .PHONY: run
 run: check_uv sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
-	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run python main.py
+	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run open-edison
 
 ########################################################
 # Check dependencies
