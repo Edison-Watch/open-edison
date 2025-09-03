@@ -242,14 +242,14 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
 
 
 # Triggered from cli.py
-def run_import_tui(args: argparse.Namespace) -> None:
+def run_import_tui(args: argparse.Namespace, force: bool = False) -> None:
     """Run the import TUI, if necessary."""
     # Find config dir, check if ".setup_tui_run" exists
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
 
     setup_tui_run_file = config_dir / ".setup_tui_run"
-    if not setup_tui_run_file.exists():
+    if not setup_tui_run_file.exists() or force:
         run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
 
     setup_tui_run_file.touch()

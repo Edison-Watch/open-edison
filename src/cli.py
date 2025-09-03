@@ -47,6 +47,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="(For the setup wizard) Skip OAuth for remote servers (they will be omitted from import)",
     )
+    parser.add_argument(
+        "--wizard-force",
+        action="store_true",
+        help="(For the setup wizard) Force running the setup wizard even if it has already been run",
+    )
     # Website runs from packaged assets by default; no extra website flags
 
     # Subcommands (extensible)
@@ -132,7 +137,7 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         raise SystemExit(result_code)
 
     # Run import tui if necessary
-    run_import_tui(args)
+    run_import_tui(args, force=args.wizard_force)
 
     try:
         asyncio.run(_run_server(args))
