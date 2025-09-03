@@ -230,8 +230,18 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     if oauth_info.status in (OAuthStatus.NEEDS_AUTH, OAuthStatus.AUTHENTICATED):
                         return True
                     # NOT_REQUIRED: quick unauthenticated ping
-                    async with FastMCPClient(remote_url, auth=None) as client:  # type: ignore
+                    # print(f"Pinging remote server '{server.name}' without OAuth")
+                    async with FastMCPClient(remote_url, auth=None, timeout=10.0) as client:  # type: ignore
+                        # print(
+                        #    f"Pinging remote server '{server.name}' without OAuth - Inside client with-statement"
+                        # )
                         await asyncio.wait_for(client.ping(), timeout=10.0)
+                        # print(
+                        #    f"Pinging remote server '{server.name}' without OAuth - Inside client with-statement but after ping"
+                        # )
+                    # print(
+                    #    f"Pinging remote server '{server.name}' without OAuth - After client with-statement"
+                    # )
                     return True
                 except Exception as e:  # noqa: BLE001
                     log.error("MCP remote verification failed for '{}': {}", server.name, e)

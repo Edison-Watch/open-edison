@@ -173,13 +173,12 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
 
-    mcp_sources = detect_clients()
-    mcp_clients = detect_clients()
+    mcp_clients = list(sorted(detect_clients(), key=lambda x: x.value))
 
     configs: list[MCPServerConfig] = []
 
-    for source in mcp_sources:
-        configs.extend(handle_mcp_source(source, dry_run=dry_run, skip_oauth=skip_oauth))
+    for client in mcp_clients:
+        configs.extend(handle_mcp_source(client, dry_run=dry_run, skip_oauth=skip_oauth))
 
     if len(configs) == 0:
         print(
