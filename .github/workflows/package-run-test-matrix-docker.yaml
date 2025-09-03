@@ -1,0 +1,43 @@
+name: Package run test matrix (Docker)
+
+on:
+  workflow_run:
+    workflows: ["CI (grouped)"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docker-run-test-ubuntu:
+    name: clone & docker_run (Ubuntu)
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Open Edison (install uv)
+        uses: ./.github/actions/setup
+
+      - name: Build image
+        run: docker build -t open-edison:ci .
+
+      - name: Run container
+        run: |
+          docker run -d --name edison-ci -e OPEN_EDISON_CONFIG_DIR=/app -p 3000:3000 -p 3001:3001 -v ${{ github.workspace }}/config.json:/app/config.json open-edison:ci
+          for i in {1..60}; do if curl -sf http://localhost:3001/health >/dev/null; then echo ok; break; fi; sleep 1; done
+
+      - name: Health check
+        run: curl -sf http://localhost:3001/health | tee /dev/stderr
+
+      - name: Run mcp test client
+        run: |
+          uv run python scripts/mcp_test_client.py
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs edison-ci || true
+          docker rm -f edison-ci || true
