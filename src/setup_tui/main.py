@@ -36,7 +36,7 @@ def show_welcome_screen(*, dry_run: bool = False) -> None:
     questionary.confirm("Ready to begin the setup process?", default=True).ask()
 
 
-def handle_mcp_source(
+def handle_mcp_source(  # noqa: C901
     source: CLIENT, *, dry_run: bool = False, skip_oauth: bool = False
 ) -> list[MCPServerConfig]:
     """Handle the MCP source."""

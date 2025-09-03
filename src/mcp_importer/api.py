@@ -7,7 +7,6 @@ from typing import Any
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
-from fastmcp.client.auth import OAuth
 from fastmcp.client.auth.oauth import FileTokenStorage
 from loguru import logger as log
 
@@ -41,16 +40,15 @@ class CLIENT(str, Enum):
         return str(self)
 
 
-def detect_clients() -> list[CLIENT]:
-    detected: list[CLIENT] = []
+def detect_clients() -> set[CLIENT]:
+    detected: set[CLIENT] = set()
     if _paths.detect_cursor_config_path() is not None:
-        detected.append(CLIENT.CURSOR)
+        detected.add(CLIENT.CURSOR)
     if _paths.detect_vscode_config_path() is not None:
-        detected.append(CLIENT.VSCODE)
+        detected.add(CLIENT.VSCODE)
     if _paths.detect_claude_code_config_path() is not None:
-        detected.append(CLIENT.CLAUDE_CODE)
-    # Return clients sorted alphabetically by identifier
-    return sorted(detected, key=lambda c: c.value)
+        detected.add(CLIENT.CLAUDE_CODE)
+    return detected
 
 
 def import_from(client: CLIENT) -> list[MCPServerConfig]:
@@ -138,7 +136,7 @@ def export_edison_to(
 def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
     """Minimal validation: try listing tools/resources/prompts via FastMCP within a timeout."""
 
-    async def _verify_async() -> bool:
+    async def _verify_async() -> bool:  # noqa: C901
         if not server.command.strip():
             return False
         oauth_info = None
@@ -185,11 +183,11 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             remote_url = server.get_remote_url()
             if remote_url:
                 # If inline headers are specified (e.g., API key), verify via proxy to honor headers
-                has_inline_headers: bool = any(
+                has_inline_headers_remote: bool = any(
                     (a == "--header" or a.startswith("--header")) for a in server.args
                 )
-                if has_inline_headers:
-                    backend_cfg: dict[str, Any] = {
+                if has_inline_headers_remote:
+                    backend_cfg_remote: dict[str, Any] = {
                         "mcpServers": {
                             server.name: {
                                 "command": server.command,
@@ -199,15 +197,15 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             }
                         }
                     }
-                    proxy: FastMCP[Any] | None = None
-                    host: FastMCP[Any] | None = None
+                    proxy_remote: FastMCP[Any] | None = None
+                    host_remote: FastMCP[Any] | None = None
                     try:
-                        proxy = FastMCP.as_proxy(backend_cfg)
-                        host = FastMCP(name=f"open-edison-verify-host-{server.name}")
-                        host.mount(proxy, prefix=server.name)
+                        proxy_remote = FastMCP.as_proxy(backend_cfg_remote)
+                        host_remote = FastMCP(name=f"open-edison-verify-host-{server.name}")
+                        host_remote.mount(proxy_remote, prefix=server.name)
 
                         async def _list_tools_only() -> Any:
-                            return await host._tool_manager.list_tools()  # type: ignore[attr-defined]
+                            return await host_remote._tool_manager.list_tools()  # type: ignore[attr-defined]
 
                         await asyncio.wait_for(_list_tools_only(), timeout=10.0)
                         return True
@@ -217,7 +215,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                         )
                         return False
                     finally:
-                        for obj in (host, proxy):
+                        for obj in (host_remote, proxy_remote):
                             if isinstance(obj, FastMCP):
                                 with contextlib.suppress(Exception):
                                     result = obj.shutdown()  # type: ignore[attr-defined]
@@ -240,7 +238,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     return False
 
         # Local/stdio servers: mount via proxy and perform a single light operation (tools only)
-        backend_cfg: dict[str, Any] = {
+        backend_cfg_local: dict[str, Any] = {
             "mcpServers": {
                 server.name: {
                     "command": server.command,
@@ -251,15 +249,15 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             }
         }
 
-        proxy: FastMCP[Any] | None = None
-        host: FastMCP[Any] | None = None
+        proxy_local: FastMCP[Any] | None = None
+        host_local: FastMCP[Any] | None = None
         try:
-            proxy = FastMCP.as_proxy(backend_cfg)
-            host = FastMCP(name=f"open-edison-verify-host-{server.name}")
-            host.mount(proxy, prefix=server.name)
+            proxy_local = FastMCP.as_proxy(backend_cfg_local)
+            host_local = FastMCP(name=f"open-edison-verify-host-{server.name}")
+            host_local.mount(proxy_local, prefix=server.name)
 
             async def _list_tools_only() -> Any:
-                return await host._tool_manager.list_tools()  # type: ignore[attr-defined]
+                return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
 
             await asyncio.wait_for(_list_tools_only(), timeout=10.0)
             return True
@@ -267,7 +265,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             log.error("MCP verification failed for '{}': {}", server.name, e)
             return False
         finally:
-            for obj in (host, proxy):
+            for obj in (host_local, proxy_local):
                 if isinstance(obj, FastMCP):
                     with contextlib.suppress(Exception):
                         result = obj.shutdown()  # type: ignore[attr-defined]

@@ -51,7 +51,7 @@ def safe_read_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:
+def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:  # noqa: C901
     command_val = node.get("command", "")
     command = str(command_val) if isinstance(command_val, str) else ""
 

@@ -26,7 +26,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
-from fastmcp.client.auth import OAuth
 from loguru import logger as log
 from pydantic import BaseModel, Field
 
