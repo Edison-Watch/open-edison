@@ -1,12 +1,14 @@
 import argparse
 import asyncio
+import contextlib
 import sys
+from collections.abc import Generator
 
 import questionary
 from loguru import logger as log
 
 import src.oauth_manager as oauth_mod
-from src.config import MCPServerConfig
+from src.config import MCPServerConfig, get_config_dir
 from src.mcp_importer.api import (
     CLIENT,
     authorize_server_oauth,
@@ -100,7 +102,7 @@ def handle_mcp_source(  # noqa: C901
             verified_configs.append(config)
         else:
             print(
-                f"The configuration for {config.name} is not valid. Please check the configuration and try again."
+                f"Verification failed for the configuration of {config.name}. Please check the configuration and try again."
             )
 
     return verified_configs
@@ -171,13 +173,18 @@ def show_manual_setup_screen() -> None:
     print(after_text)
 
 
-def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
-    """Run the complete setup process."""
-    # Suppress loguru output for a cleaner TUI experience
-    import contextlib
-
+@contextlib.contextmanager
+def suppress_loguru_output() -> Generator[None, None, None]:
+    """Suppress loguru output."""
     with contextlib.suppress(Exception):
         log.remove()
+    yield
+    log.add(sys.stdout, level="INFO")
+
+
+@suppress_loguru_output()
+def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
+    """Run the complete setup process."""
 
     # Route oauth_manager's log calls to questionary for TUI output
     class _TuiLogger:
@@ -232,6 +239,18 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
 
     # Restore loguru output after setup
     log.add(sys.stdout, level="INFO")
+
+
+# Triggered from cli.py
+def run_import_tui(args: argparse.Namespace) -> None:
+    """Run the import TUI, if necessary."""
+    # Find config dir, check if ".setup_tui_run" exists
+    config_dir = get_config_dir()
+    setup_tui_run_file = config_dir / ".setup_tui_run"
+    if not setup_tui_run_file.exists():
+        run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
+
+    setup_tui_run_file.touch()
 
 
 def main(argv: list[str] | None = None) -> int:

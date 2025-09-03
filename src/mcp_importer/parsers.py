@@ -159,14 +159,28 @@ def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
     return results
 
 
-def parse_mcp_like_json(data: dict[str, Any], default_enabled: bool = True) -> list[Any]:
+def deduplicate_by_name(servers: list[MCPServerConfig]) -> list[MCPServerConfig]:
+    result: list[MCPServerConfig] = []
+    names = set()
+    for server in servers:
+        if server.name not in names:
+            names.add(server.name)
+            result.append(server)
+    return result
+
+
+def parse_mcp_like_json(
+    data: dict[str, Any], default_enabled: bool = True
+) -> list[MCPServerConfig]:
     # First, try top-level keys
     top_level = _collect_top_level(data, default_enabled)
+    res: list[MCPServerConfig] = []
     if top_level:
-        return top_level
-
-    # Then, try nested structures heuristically
-    nested = _collect_nested(data, default_enabled)
-    if not nested:
-        log.debug("No MCP-like entries detected in provided data")
-    return nested
+        res = top_level
+    else:
+        # Then, try nested structures heuristically
+        nested = _collect_nested(data, default_enabled)
+        if not nested:
+            log.debug("No MCP-like entries detected in provided data")
+        res = nested
+    return deduplicate_by_name(res)

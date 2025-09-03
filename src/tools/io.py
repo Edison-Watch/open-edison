@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -35,5 +33,3 @@ def suppress_fds(*, suppress_stdout: bool = False, suppress_stderr: bool = True)
                 os.dup2(backup, fd)
             finally:
                 os.close(backup)
-
-
