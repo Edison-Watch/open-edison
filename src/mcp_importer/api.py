@@ -5,10 +5,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import questionary
 from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
 from fastmcp.client.auth.oauth import FileTokenStorage
-import questionary
 from loguru import logger as log  # kept for non-TUI contexts; printing used in TUI flows
 
 from src.config import Config, MCPServerConfig, get_config_json_path
