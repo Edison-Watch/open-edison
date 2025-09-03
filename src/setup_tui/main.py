@@ -170,7 +170,7 @@ def show_manual_setup_screen() -> None:
     print(after_text)
 
 
-def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:
+def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
     """Run the complete setup process."""
     # Suppress loguru output for a cleaner TUI experience
     import contextlib
