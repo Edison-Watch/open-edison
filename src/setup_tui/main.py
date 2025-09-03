@@ -173,42 +173,45 @@ def show_manual_setup_screen() -> None:
     print(after_text)
 
 
+class _TuiLogger:
+    def _fmt(self, msg: object, *args: object) -> str:
+        try:
+            if isinstance(msg, str) and args:
+                return msg.format(*args)
+        except Exception:
+            pass
+        return str(msg)
+
+    def info(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="fg:ansiblue")
+
+    def debug(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="fg:ansiblack")
+
+    def warning(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="bold fg:ansiyellow")
+
+    def error(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="bold fg:ansired")
+
+
 @contextlib.contextmanager
 def suppress_loguru_output() -> Generator[None, None, None]:
     """Suppress loguru output."""
     with contextlib.suppress(Exception):
         log.remove()
+
+    old_logger = oauth_mod.log
+    # Route oauth_manager's log calls to questionary for TUI output
+    oauth_mod.log = _TuiLogger()  # type: ignore[attr-defined]
     yield
+    oauth_mod.log = old_logger
     log.add(sys.stdout, level="INFO")
 
 
 @suppress_loguru_output()
 def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
     """Run the complete setup process."""
-
-    # Route oauth_manager's log calls to questionary for TUI output
-    class _TuiLogger:
-        def _fmt(self, msg: object, *args: object) -> str:
-            try:
-                if isinstance(msg, str) and args:
-                    return msg.format(*args)
-            except Exception:
-                pass
-            return str(msg)
-
-        def info(self, msg: object, *args: object, **kwargs: object) -> None:
-            questionary.print(self._fmt(msg, *args), style="fg:ansiblue")
-
-        def debug(self, msg: object, *args: object, **kwargs: object) -> None:
-            questionary.print(self._fmt(msg, *args), style="fg:ansiblack")
-
-        def warning(self, msg: object, *args: object, **kwargs: object) -> None:
-            questionary.print(self._fmt(msg, *args), style="bold fg:ansiyellow")
-
-        def error(self, msg: object, *args: object, **kwargs: object) -> None:
-            questionary.print(self._fmt(msg, *args), style="bold fg:ansired")
-
-    oauth_mod.log = _TuiLogger()  # type: ignore[attr-defined]
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
 
@@ -244,15 +247,15 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
 # Triggered from cli.py
 def run_import_tui(args: argparse.Namespace, force: bool = False) -> None:
     """Run the import TUI, if necessary."""
-    # Find config dir, check if ".setup_tui_run" exists
+    # Find config dir, check if ".setup_tui_ran" exists
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    setup_tui_run_file = config_dir / ".setup_tui_run"
-    if not setup_tui_run_file.exists() or force:
+    setup_tui_ran_file = config_dir / ".setup_tui_ran"
+    if not setup_tui_ran_file.exists() or force:
         run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
 
-    setup_tui_run_file.touch()
+    setup_tui_ran_file.touch()
 
 
 def main(argv: list[str] | None = None) -> int:

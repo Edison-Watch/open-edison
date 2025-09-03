@@ -238,7 +238,8 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     # NOT_REQUIRED: quick unauthenticated ping
                     # TODO: In debug mode, do not suppress child process output.
                     questionary.print(
-                        f"Testing connection to '{server.name}'...", style="bold fg:ansigreen"
+                        f"Testing connection to '{server.name}'... (timeout: {connection_timeout}s)",
+                        style="bold fg:ansigreen",
                     )
                     log.debug(f"Establishing contact with remote server '{server.name}'")
                     async with asyncio.timeout(connection_timeout):
