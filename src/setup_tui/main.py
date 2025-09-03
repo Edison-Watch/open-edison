@@ -108,6 +108,7 @@ def handle_mcp_source(  # noqa: C901
                                 print(f"Skipping {config.name} per user choice.")
                                 continue
 
+            print(f"Verification successful for {config.name}.")
             verified_configs.append(config)
         else:
             print(
