@@ -1,15 +1,25 @@
 import argparse
+import asyncio
+import contextlib
+import sys
+from collections.abc import Generator
 
 import questionary
+from loguru import logger as log
 
-from src.config import MCPServerConfig
+import src.oauth_manager as oauth_mod
+from src.config import MCPServerConfig, get_config_dir
 from src.mcp_importer.api import (
     CLIENT,
+    authorize_server_oauth,
     detect_clients,
     export_edison_to,
+    has_oauth_tokens,
     import_from,
+    save_imported_servers,
     verify_mcp_server,
 )
+from src.oauth_manager import OAuthStatus, get_oauth_manager
 
 
 def show_welcome_screen(*, dry_run: bool = False) -> None:
@@ -31,7 +41,9 @@ def show_welcome_screen(*, dry_run: bool = False) -> None:
     questionary.confirm("Ready to begin the setup process?", default=True).ask()
 
 
-def handle_mcp_source(source: CLIENT, *, dry_run: bool = False) -> list[MCPServerConfig]:
+def handle_mcp_source(  # noqa: C901
+    source: CLIENT, *, dry_run: bool = False, skip_oauth: bool = False
+) -> list[MCPServerConfig]:
     """Handle the MCP source."""
     if not questionary.confirm(
         f"We have found {source.name} installed. Would you like to import its MCP servers to open-edison?",
@@ -49,11 +61,48 @@ def handle_mcp_source(source: CLIENT, *, dry_run: bool = False) -> list[MCPServe
         print(f"Verifying the configuration for {config.name}... ")
         result = verify_mcp_server(config)
         if result:
-            print(f"The configuration for {config.name} is valid!")
+            # For remote servers, only prompt if OAuth is actually required
+            if config.is_remote_server():
+                # Heuristic: if inline headers are present (e.g., API key), treat as not requiring OAuth
+                has_inline_headers: bool = any(
+                    (a == "--header" or a.startswith("--header")) for a in config.args
+                )
+                if not has_inline_headers:
+                    # Prefer cached result from verification; only check if missing
+                    oauth_mgr = get_oauth_manager()
+                    info = oauth_mgr.get_server_info(config.name)
+                    if info is None:
+                        info = asyncio.run(
+                            oauth_mgr.check_oauth_requirement(config.name, config.get_remote_url())
+                        )
+
+                    if info.status == OAuthStatus.NEEDS_AUTH:
+                        tokens_present: bool = has_oauth_tokens(config)
+                        if not tokens_present:
+                            if skip_oauth:
+                                print(
+                                    f"Skipping OAuth for {config.name} due to --skip-oauth (OAuth required, no tokens). This server will not be imported."
+                                )
+                                continue
+
+                            if questionary.confirm(
+                                f"{config.name} requires OAuth and no credentials were found. Obtain credentials now?",
+                                default=True,
+                            ).ask():
+                                success = authorize_server_oauth(config)
+                                if not success:
+                                    print(
+                                        f"Failed to obtain OAuth credentials for {config.name}. Skipping this server."
+                                    )
+                                    continue
+                            else:
+                                print(f"Skipping {config.name} per user choice.")
+                                continue
+
             verified_configs.append(config)
         else:
             print(
-                f"The configuration for {config.name} is not valid. Please check the configuration and try again."
+                f"Verification failed for the configuration of {config.name}. Please check the configuration and try again."
             )
 
     return verified_configs
@@ -98,7 +147,7 @@ def show_manual_setup_screen() -> None:
     JSON file and add the following configuration:
     """
 
-    json_snippet = """{
+    json_snippet = """\t{
       "mcpServers": {
         "open-edison": {
           "command": "npx",
@@ -124,18 +173,54 @@ def show_manual_setup_screen() -> None:
     print(after_text)
 
 
-def run(*, dry_run: bool = False) -> None:
+class _TuiLogger:
+    def _fmt(self, msg: object, *args: object) -> str:
+        try:
+            if isinstance(msg, str) and args:
+                return msg.format(*args)
+        except Exception:
+            pass
+        return str(msg)
+
+    def info(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="fg:ansiblue")
+
+    def debug(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="fg:ansiblack")
+
+    def warning(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="bold fg:ansiyellow")
+
+    def error(self, msg: object, *args: object, **kwargs: object) -> None:
+        questionary.print(self._fmt(msg, *args), style="bold fg:ansired")
+
+
+@contextlib.contextmanager
+def suppress_loguru_output() -> Generator[None, None, None]:
+    """Suppress loguru output."""
+    with contextlib.suppress(Exception):
+        log.remove()
+
+    old_logger = oauth_mod.log
+    # Route oauth_manager's log calls to questionary for TUI output
+    oauth_mod.log = _TuiLogger()  # type: ignore[attr-defined]
+    yield
+    oauth_mod.log = old_logger
+    log.add(sys.stdout, level="INFO")
+
+
+@suppress_loguru_output()
+def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
     """Run the complete setup process."""
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
 
-    mcp_sources = detect_clients()
-    mcp_clients = detect_clients()
+    mcp_clients = sorted(detect_clients(), key=lambda x: x.value)
 
     configs: list[MCPServerConfig] = []
 
-    for source in mcp_sources:
-        configs.extend(handle_mcp_source(source, dry_run=dry_run))
+    for client in mcp_clients:
+        configs.extend(handle_mcp_source(client, dry_run=dry_run, skip_oauth=skip_oauth))
 
     if len(configs) == 0:
         print(
@@ -149,15 +234,41 @@ def run(*, dry_run: bool = False) -> None:
     for client in mcp_clients:
         confirm_apply_configs(client, dry_run=dry_run)
 
+    # Persist imported servers into config.json
+    if len(configs) > 0:
+        save_imported_servers(configs, dry_run=dry_run)
+
     show_manual_setup_screen()
+
+    # Restore loguru output after setup
+    log.add(sys.stdout, level="INFO")
+
+
+# Triggered from cli.py
+def run_import_tui(args: argparse.Namespace, force: bool = False) -> None:
+    """Run the import TUI, if necessary."""
+    # Find config dir, check if ".setup_tui_ran" exists
+    config_dir = get_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    setup_tui_ran_file = config_dir / ".setup_tui_ran"
+    if not setup_tui_ran_file.exists() or force:
+        run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
+
+    setup_tui_ran_file.touch()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Open Edison Setup TUI")
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without writing")
+    parser.add_argument(
+        "--skip-oauth",
+        action="store_true",
+        help="Skip OAuth for remote servers (they will be omitted from import)",
+    )
     args = parser.parse_args(argv)
 
-    run(dry_run=args.dry_run)
+    run(dry_run=args.dry_run, skip_oauth=args.skip_oauth)
     return 0
 
 

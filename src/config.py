@@ -108,12 +108,21 @@ class MCPServerConfig:
         Remote servers use mcp-remote with HTTPS URLs and may require OAuth.
         Local servers run as child processes and don't need OAuth.
         """
-        return (
-            self.command == "npx"
-            and len(self.args) >= 3
-            and self.args[1] == "mcp-remote"
-            and self.args[2].startswith("https://")
-        )
+        if self.command != "npx":
+            return False
+
+        # Be tolerant of npx flags by scanning for 'mcp-remote' and the subsequent HTTPS URL
+        try:
+            if "mcp-remote" not in self.args:
+                return False
+            idx: int = self.args.index("mcp-remote")
+            # Look for first https?:// argument after 'mcp-remote'
+            for candidate in self.args[idx + 1 :]:
+                if candidate.startswith(("https://", "http://")):
+                    return candidate.startswith("https://")
+            return False
+        except Exception:
+            return False
 
     def get_remote_url(self) -> str | None:
         """
@@ -122,9 +131,17 @@ class MCPServerConfig:
         Returns:
             The HTTPS URL if this is a remote server, None otherwise
         """
-        if self.is_remote_server():
-            return self.args[2]
-        return None
+        # Reuse the same tolerant parsing as is_remote_server
+        if self.command != "npx" or "mcp-remote" not in self.args:
+            return None
+        try:
+            idx: int = self.args.index("mcp-remote")
+            for candidate in self.args[idx + 1 :]:
+                if candidate.startswith(("https://", "http://")):
+                    return candidate
+            return None
+        except Exception:
+            return None
 
 
 @dataclass

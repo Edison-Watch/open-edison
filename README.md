@@ -47,13 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/Edison-Watch/open-edison/main/curl_
 ```
 
 Run locally with uvx: `uvx open-edison`
-
-Optionally, run the setup wizard to import/configure MCP:
-
-```bash
-uv run python -m src.setup_tui.main
-# add --dry-run to preview without writing
-```
+That will run the setup wizard if necessary.
 
 <details>
 <summary>⬇️ Install Node.js/npm (optional for MCP tools)</summary>
@@ -101,19 +95,6 @@ open-edison run --config-dir ~/edison-config
 # or via environment variable
 OPEN_EDISON_CONFIG_DIR=~/edison-config open-edison run
 ```
-
-</details>
-
-<details>
-<summary>🔄 Import from Cursor/VS Code/Claude Code</summary>
-
-Run the interactive setup wizard to detect clients, import servers, and configure your editor:
-
-```bash
-uv run python -m src.setup_tui.main
-```
-
-Use `--dry-run` to preview without writing.
 
 </details>
 

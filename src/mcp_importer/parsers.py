@@ -1,6 +1,7 @@
 # pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingImports=false, reportUnknownMemberType=false
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any, cast
 
@@ -50,7 +51,7 @@ def safe_read_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:
+def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool) -> Any:  # noqa: C901
     command_val = node.get("command", "")
     command = str(command_val) if isinstance(command_val, str) else ""
 
@@ -67,11 +68,34 @@ def _coerce_server_entry(name: str, node: dict[str, Any], default_enabled: bool)
 
     args: list[str] = [str(a) for a in args_raw]
 
+    # If command is provided as a full string with flags, split into program + args
+    if command and (" " in command or command.endswith(("\t", "\n"))):
+        try:
+            parts = shlex.split(command)
+            if parts:
+                command = parts[0]
+                # Prepend split args before any provided args to preserve order
+                args = parts[1:] + args
+        except Exception:
+            # If shlex fails, keep original command/args
+            pass
+
     env_raw = node.get("env") or node.get("environment") or {}
     env: dict[str, str] = {}
     if isinstance(env_raw, dict):
         for k, v in env_raw.items():
             env[str(k)] = str(v)
+
+    # Support Cursor-style remote config: { "url": "...", "headers": {...} }
+    # Translate to `npx mcp-remote <url> [--header Key: Value]*` so downstream verification works.
+    url_val = node.get("url")
+    if isinstance(url_val, str) and url_val:
+        command = "npx"
+        args = ["-y", "mcp-remote", url_val]
+        headers_raw = node.get("headers")
+        if isinstance(headers_raw, dict):
+            for hk, hv in headers_raw.items():
+                args.extend(["--header", f"{str(hk)}: {str(hv)}"])
 
     enabled = bool(node.get("enabled", default_enabled))
 
@@ -135,14 +159,28 @@ def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
     return results
 
 
-def parse_mcp_like_json(data: dict[str, Any], default_enabled: bool = True) -> list[Any]:
+def deduplicate_by_name(servers: list[MCPServerConfig]) -> list[MCPServerConfig]:
+    result: list[MCPServerConfig] = []
+    names = set()
+    for server in servers:
+        if server.name not in names:
+            names.add(server.name)
+            result.append(server)
+    return result
+
+
+def parse_mcp_like_json(
+    data: dict[str, Any], default_enabled: bool = True
+) -> list[MCPServerConfig]:
     # First, try top-level keys
     top_level = _collect_top_level(data, default_enabled)
+    res: list[MCPServerConfig] = []
     if top_level:
-        return top_level
-
-    # Then, try nested structures heuristically
-    nested = _collect_nested(data, default_enabled)
-    if not nested:
-        log.debug("No MCP-like entries detected in provided data")
-    return nested
+        res = top_level
+    else:
+        # Then, try nested structures heuristically
+        nested = _collect_nested(data, default_enabled)
+        if not nested:
+            log.debug("No MCP-like entries detected in provided data")
+        res = nested
+    return deduplicate_by_name(res)

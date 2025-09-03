@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+from fastmcp.server.dependencies import get_context
 from loguru import logger as log
 
 from src.config import Config, MCPServerConfig
@@ -281,9 +282,6 @@ class SingleUserMCP(FastMCP[Any]):
     async def _send_list_changed_notifications(self) -> None:
         """Send notifications to clients about changed component lists."""
         try:
-            # Import here to avoid circular imports
-            from fastmcp.server.dependencies import get_context
-
             try:
                 context = get_context()
                 # Queue notifications for all component types since we don't know

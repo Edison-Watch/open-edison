@@ -286,6 +286,13 @@ install_git_hooks: ## Install project git hooks (pre-push)
 	@chmod +x .git/hooks/pre-push
 	@echo "$(GREEN)✅ pre-push hook installed.$(RESET)"
 
+.PHONY: hooks-install
+hooks-install: ## Configure repo to use scripts/git-hooks via core.hooksPath
+	@echo "$(YELLOW)🔧 Configuring git hooks path to scripts/git-hooks...$(RESET)"
+	@chmod +x scripts/git-hooks/pre-push
+	@git config --local core.hooksPath scripts/git-hooks
+	@echo "$(GREEN)✅ core.hooksPath set to scripts/git-hooks; pre-push hook activated.$(RESET)"
+
 ########################################################
 # Version Management
 ########################################################

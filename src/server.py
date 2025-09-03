@@ -24,6 +24,7 @@ from fastapi.responses import (
 )
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
 from loguru import logger as log
 from pydantic import BaseModel, Field
@@ -36,6 +37,7 @@ from src.middleware.session_tracking import (
     create_db_session,
 )
 from src.oauth_manager import OAuthStatus, get_oauth_manager
+from src.oauth_override import OpenEdisonOAuth
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -952,12 +954,8 @@ class OpenEdisonProxy:
 
             log.info(f"🔗 Testing connection to {server_name} at {remote_url}")
 
-            # Import FastMCP client for testing
-            from fastmcp import Client as FastMCPClient
-            from fastmcp.client.auth import OAuth
-
             # Create OAuth auth object
-            oauth = OAuth(
+            oauth = OpenEdisonOAuth(
                 mcp_url=remote_url,
                 scopes=scopes,
                 client_name=client_name or "OpenEdison MCP Gateway",
