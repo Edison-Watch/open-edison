@@ -121,7 +121,6 @@ async def _run_server(args: Any) -> None:
 
     try:
         await proxy.start()
-        _ = await asyncio.Event().wait()
     except KeyboardInterrupt:
         log.info("Received shutdown signal")
 
