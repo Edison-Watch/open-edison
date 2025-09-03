@@ -12,7 +12,7 @@ jobs:
     name: pypi package run test (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
@@ -74,7 +74,7 @@ jobs:
     name: curl|bash installer run test(${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
@@ -141,7 +141,7 @@ jobs:
     name: clone & make run test (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
