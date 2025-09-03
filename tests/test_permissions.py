@@ -325,9 +325,13 @@ class TestPermissionsReload:
             # Delete the tool permissions file
             (temp_path / "tool_permissions.json").unlink()
 
-            # Re-load should raise when files are missing
-            with pytest.raises(PermissionsError):
-                permissions = Permissions(temp_path)  # type: ignore[attr-defined]
+            # Re-load should auto-bootstrap missing files and not raise
+            permissions = Permissions(temp_path)  # type: ignore[attr-defined]
+            assert isinstance(permissions, Permissions)
+            # The loader should have recreated the missing file (copied defaults or stub)
+            assert (temp_path / "tool_permissions.json").exists()
+            # And permissions should be a dict (may contain defaults or be empty stub)
+            assert isinstance(permissions.tool_permissions, dict)
 
     def test_reload_preserves_instance(self):
         """Test that reload preserves the same instance."""

@@ -137,7 +137,9 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         raise SystemExit(result_code)
 
     # Run import tui if necessary
-    run_import_tui(args, force=args.wizard_force)
+    tui_success = run_import_tui(args, force=args.wizard_force)
+    if not tui_success:
+        raise SystemExit(1)
 
     try:
         asyncio.run(_run_server(args))
