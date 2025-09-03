@@ -255,6 +255,7 @@ class TestPermissionsLoadTwice:
             (temp_path / "tool_permissions.json").write_text(json.dumps(tool_perms2))
 
             # Load second time
+            Permissions.clear_permissions_file_cache()
             permissions2 = Permissions(temp_path)
             assert len(permissions2.tool_permissions) == 2
             assert permissions2.tool_permissions["server1_tool1"].enabled is False
@@ -295,6 +296,7 @@ class TestPermissionsReload:
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
             # Re-load permissions by constructing a new instance
+            Permissions.clear_permissions_file_cache()
             permissions = Permissions(temp_path)  # type: ignore[attr-defined]
             assert isinstance(permissions, Permissions)
 
@@ -326,6 +328,7 @@ class TestPermissionsReload:
             (temp_path / "tool_permissions.json").unlink()
 
             # Re-load should auto-bootstrap missing files and not raise
+            Permissions.clear_permissions_file_cache()
             permissions = Permissions(temp_path)  # type: ignore[attr-defined]
             assert isinstance(permissions, Permissions)
             # The loader should have recreated the missing file (copied defaults or stub)
@@ -360,6 +363,7 @@ class TestPermissionsReload:
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
             # Re-load returns a new instance; rebind the variable
+            Permissions.clear_permissions_file_cache()
             permissions = Permissions(temp_path)  # type: ignore[attr-defined]
             assert isinstance(permissions, Permissions)
 
@@ -694,6 +698,7 @@ class TestPermissionsIntegration:
             }
             (temp_path / "tool_permissions.json").write_text(json.dumps(updated_tool_perms))
 
+            Permissions.clear_permissions_file_cache()
             permissions = Permissions(temp_path)  # type: ignore[attr-defined]
             assert isinstance(permissions, Permissions)
 

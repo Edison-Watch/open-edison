@@ -7,6 +7,7 @@ Reads tool, resource, and prompt permission files and provides a singleton inter
 
 import json
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -158,6 +159,12 @@ class Permissions:
             )
 
     @classmethod
+    def clear_permissions_file_cache(cls) -> None:
+        """Clear the cache for the JSON permissions files"""
+        cls._load_permission_file.cache_clear()
+
+    @classmethod
+    @cache
     def _load_permission_file(
         cls,
         file_path: Path,
