@@ -23,6 +23,7 @@ from src.mcp_importer.importers import (
 )
 from src.mcp_importer.merge import MergePolicy, merge_servers
 from src.oauth_manager import get_oauth_manager
+from src.oauth_override import OpenEdisonOAuth
 
 
 class CLIENT(str, Enum):
@@ -211,7 +212,6 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
         try:
             # Import lazily to avoid import-time side effects
             from fastmcp import Client as FastMCPClient  # type: ignore
-            from fastmcp.client.auth import OAuth  # type: ignore
 
             # Debug info prior to starting OAuth
             print(
@@ -223,7 +223,7 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
                 f"client_name={server.oauth_client_name or 'Open Edison Setup'}",
             )
 
-            oauth = OAuth(
+            oauth = OpenEdisonOAuth(
                 mcp_url=remote_url,
                 scopes=server.oauth_scopes,
                 client_name=server.oauth_client_name or "Open Edison Setup",
