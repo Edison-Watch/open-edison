@@ -19,6 +19,7 @@ from src.mcp_importer.api import (
     save_imported_servers,
     verify_mcp_server,
 )
+from src.mcp_importer.parsers import deduplicate_by_name
 from src.oauth_manager import OAuthStatus, get_oauth_manager
 
 
@@ -52,6 +53,14 @@ def handle_mcp_source(  # noqa: C901
         return []
 
     configs = import_from(source)
+
+    # Filter out any "open-edison" configs
+    if "open-edison" in [config.name for config in configs]:
+        print(
+            "Found an 'open-edison' config. This is not allowed, so it will be excluded from the import."
+        )
+
+    configs = [config for config in configs if config.name != "open-edison"]
 
     print(f"Loaded {len(configs)} MCP server configuration from {source.name}!")
 
@@ -99,6 +108,7 @@ def handle_mcp_source(  # noqa: C901
                                 print(f"Skipping {config.name} per user choice.")
                                 continue
 
+            print(f"Verification successful for {config.name}.")
             verified_configs.append(config)
         else:
             print(
@@ -210,8 +220,9 @@ def suppress_loguru_output() -> Generator[None, None, None]:
 
 
 @suppress_loguru_output()
-def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C901
-    """Run the complete setup process."""
+def run(*, dry_run: bool = False, skip_oauth: bool = False) -> bool:  # noqa: C901
+    """Run the complete setup process.
+    Returns whether the setup was successful."""
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
 
@@ -223,13 +234,18 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
         configs.extend(handle_mcp_source(client, dry_run=dry_run, skip_oauth=skip_oauth))
 
     if len(configs) == 0:
-        print(
-            "No MCP servers found. Please set up an MCP client with some servers and run this setup again."
-        )
-        return
+        if not questionary.confirm(
+            "No MCP servers found. Would you like to continue without them?", default=False
+        ).ask():
+            print("Setup aborted. Please configure an MCP client and try again.")
+            return False
+        return True
+
+    # Deduplicate configs
+    configs = deduplicate_by_name(configs)
 
     if not confirm_configs(configs, dry_run=dry_run):
-        return
+        return False
 
     for client in mcp_clients:
         confirm_apply_configs(client, dry_run=dry_run)
@@ -240,22 +256,24 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
 
     show_manual_setup_screen()
 
-    # Restore loguru output after setup
-    log.add(sys.stdout, level="INFO")
+    return True
 
 
 # Triggered from cli.py
-def run_import_tui(args: argparse.Namespace, force: bool = False) -> None:
+def run_import_tui(args: argparse.Namespace, force: bool = False) -> bool:
     """Run the import TUI, if necessary."""
     # Find config dir, check if ".setup_tui_ran" exists
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
 
     setup_tui_ran_file = config_dir / ".setup_tui_ran"
+    success = True
     if not setup_tui_ran_file.exists() or force:
-        run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
+        success = run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)
 
     setup_tui_ran_file.touch()
+
+    return success
 
 
 def main(argv: list[str] | None = None) -> int:

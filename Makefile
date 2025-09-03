@@ -29,7 +29,7 @@ all: run ## Run the Open Edison MCP Proxy Server (default)
 .PHONY: run
 run: check_uv sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
-	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run python main.py
+	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run open-edison
 
 ########################################################
 # Check dependencies
@@ -158,8 +158,8 @@ docker_build: ## Build the Docker image
 
 docker_run: docker_build ## Run the Docker image
 	@echo "$(YELLOW)🔍Running Docker image and exposing ports 3000, 3001, and 50001...$(RESET)"
-	@docker run -e OPEN_EDISON_CONFIG_DIR=/app -p 3000:3000 -p 3001:3001 -p 50001:50001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest
-	@echo "$(GREEN)✅Docker image running. Visit http://localhost:3001 for the dashboard.$(RESET)"
+	@docker run -it -e OPEN_EDISON_CONFIG_DIR=/app -p 3000:3000 -p 3001:3001 -p 50001:50001 -v $(PWD)/config.json:/app/config.json $(DOCKER_IMAGE_NAME):latest 
+	@echo "$(GREEN)✅Docker image done running. $(RESET)"
 
 # Verify README curl | bash installer works on a clean Ubuntu base image
 .PHONY: install_curl_test

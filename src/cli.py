@@ -121,7 +121,6 @@ async def _run_server(args: Any) -> None:
 
     try:
         await proxy.start()
-        _ = await asyncio.Event().wait()
     except KeyboardInterrupt:
         log.info("Received shutdown signal")
 
@@ -137,7 +136,9 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         raise SystemExit(result_code)
 
     # Run import tui if necessary
-    run_import_tui(args, force=args.wizard_force)
+    tui_success = run_import_tui(args, force=args.wizard_force)
+    if not tui_success:
+        raise SystemExit(1)
 
     try:
         asyncio.run(_run_server(args))

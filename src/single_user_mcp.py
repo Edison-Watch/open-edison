@@ -321,12 +321,18 @@ class SingleUserMCP(FastMCP[Any]):
         log.info("✅ Single User MCP server initialized with composite proxy")
 
         # Invalidate and warm lists to ensure reload
+        log.debug("Reloading tool list...")
         _ = await self._tool_manager.list_tools()
+        log.debug("Reloading resource list...")
         _ = await self._resource_manager.list_resources()
+        log.debug("Reloading prompt list...")
         _ = await self._prompt_manager.list_prompts()
+        log.debug("Reloading complete")
 
         # Send notifications to clients about changed component lists
+        log.debug("Sending list changed notifications...")
         await self._send_list_changed_notifications()
+        log.debug("List changed notifications sent")
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

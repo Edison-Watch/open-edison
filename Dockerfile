@@ -65,4 +65,4 @@ COPY prompt_permissions.json ./prompt_permissions.json
 EXPOSE 3000 3001 50001
 
 # Start the server
-CMD ["uv", "run", "python", "main.py"]
+CMD ["uv", "run", "open-edison"]

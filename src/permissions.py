@@ -7,6 +7,7 @@ Reads tool, resource, and prompt permission files and provides a singleton inter
 
 import json
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -158,6 +159,12 @@ class Permissions:
             )
 
     @classmethod
+    def clear_permissions_file_cache(cls) -> None:
+        """Clear the cache for the JSON permissions files"""
+        cls._load_permission_file.cache_clear()
+
+    @classmethod
+    @cache
     def _load_permission_file(
         cls,
         file_path: Path,
@@ -171,7 +178,23 @@ class Permissions:
         metadata: PermissionsMetadata | None = None
 
         if not file_path.exists():
-            raise PermissionsError(f"Permissions file not found at {file_path}")
+            # Bootstrap missing permissions files on first run.
+            # Prefer copying repo/package defaults (next to src/), else create minimal stub.
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            repo_candidate = Path(__file__).parent.parent / file_path.name
+            if repo_candidate.exists():
+                file_path.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
+                log.info(f"Bootstrapped permissions file from defaults: {file_path}")
+            if not file_path.exists():
+                # Create minimal empty structure
+                try:
+                    file_path.write_text(json.dumps({"_metadata": {}}), encoding="utf-8")
+                    log.info(f"Created empty permissions file: {file_path}")
+                except Exception as e:
+                    raise PermissionsError(
+                        f"Unable to create permissions file at {file_path}: {e}", file_path
+                    ) from e
 
         with open(file_path) as f:
             data: dict[str, Any] = json.load(f)
