@@ -8,7 +8,8 @@ from typing import Any
 from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
 from fastmcp.client.auth.oauth import FileTokenStorage
-from loguru import logger as log
+import questionary
+from loguru import logger as log  # kept for non-TUI contexts; printing used in TUI flows
 
 from src.config import Config, MCPServerConfig, get_config_json_path
 from src.mcp_importer import paths as _paths
@@ -169,9 +170,9 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             and no_tokens
                             and not has_inline_headers
                         ):
-                            log.info(
-                                "Skipping verification for remote server '{}' pending OAuth",
-                                server.name,
+                            questionary.print(
+                                f"Skipping verification for remote server '{server.name}' pending OAuth",
+                                style="bold fg:ansiyellow",
                             )
                             return True
         except Exception:
@@ -249,16 +250,20 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                         return ping_succeeded
                 except TimeoutError:
                     if ping_succeeded:
-                        log.warning(
-                            f"Ping received from '{server.name}' but shutting down client timed out. Marking as success."
+                        questionary.print(
+                            f"Ping received from '{server.name}' but shutdown timed out (treating as success)",
+                            style="bold fg:ansiyellow",
                         )
                     else:
-                        log.error(
-                            f"MCP remote verification timed out (more than {connection_timeout}s) for '{server.name}', marking as failure."
+                        questionary.print(
+                            f"Verification timed out (> {connection_timeout}s) for '{server.name}'",
+                            style="bold fg:ansired",
                         )
                     return ping_succeeded
                 except Exception as e:  # noqa: BLE001
-                    log.error("MCP remote verification failed for '{}': {}", server.name, e)
+                    questionary.print(
+                        f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
+                    )
                     return False
 
         # Local/stdio servers: mount via proxy and perform a single light operation (tools only)
@@ -286,7 +291,9 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             await asyncio.wait_for(_list_tools_only(), timeout=30.0)
             return True
         except Exception as e:
-            log.error("MCP verification failed for '{}': {}", server.name, e)
+            questionary.print(
+                f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
+            )
             return False
         finally:
             for obj in (host_local, proxy_local):

@@ -2,7 +2,9 @@ import argparse
 import asyncio
 
 import questionary
+from loguru import logger as log
 
+import src.oauth_manager as oauth_mod
 from src.config import MCPServerConfig
 from src.mcp_importer.api import (
     CLIENT,
@@ -170,6 +172,35 @@ def show_manual_setup_screen() -> None:
 
 def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:
     """Run the complete setup process."""
+    # Suppress loguru output for a cleaner TUI experience
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        log.remove()
+
+    # Route oauth_manager's log calls to questionary for TUI output
+    class _TuiLogger:
+        def _fmt(self, msg: object, *args: object) -> str:
+            try:
+                if isinstance(msg, str) and args:
+                    return msg.format(*args)
+            except Exception:
+                pass
+            return str(msg)
+
+        def info(self, msg: object, *args: object, **kwargs: object) -> None:
+            questionary.print(self._fmt(msg, *args), style="fg:ansiblue")
+
+        def debug(self, msg: object, *args: object, **kwargs: object) -> None:
+            questionary.print(self._fmt(msg, *args), style="fg:ansiblack")
+
+        def warning(self, msg: object, *args: object, **kwargs: object) -> None:
+            questionary.print(self._fmt(msg, *args), style="bold fg:ansiyellow")
+
+        def error(self, msg: object, *args: object, **kwargs: object) -> None:
+            questionary.print(self._fmt(msg, *args), style="bold fg:ansired")
+
+    oauth_mod.log = _TuiLogger()  # type: ignore[attr-defined]
     show_welcome_screen(dry_run=dry_run)
     # Additional setup steps will be added here
 

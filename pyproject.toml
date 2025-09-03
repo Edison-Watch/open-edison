@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.53"
+version = "0.1.54"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
