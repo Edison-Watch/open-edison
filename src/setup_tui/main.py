@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import sys
 
 import questionary
 from loguru import logger as log
@@ -228,6 +229,9 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> None:  # noqa: C9
         save_imported_servers(configs, dry_run=dry_run)
 
     show_manual_setup_screen()
+
+    # Restore loguru output after setup
+    log.add(sys.stdout, level="INFO")
 
 
 def main(argv: list[str] | None = None) -> int:
