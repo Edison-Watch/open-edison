@@ -222,6 +222,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                                     result = obj.shutdown()  # type: ignore[attr-defined]
                                     await asyncio.wait_for(result, timeout=2.0)  # type: ignore[func-returns-value]
                 # Otherwise, avoid triggering OAuth flows during verification
+                ping_succeeded = False
                 try:
                     if oauth_info is None:
                         oauth_info = await get_oauth_manager().check_oauth_requirement(
@@ -243,13 +244,19 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             log.debug(f"Connection established to '{server.name}'; pinging...")
                             await asyncio.wait_for(client.ping(), timeout=connection_timeout)
                             log.info(f"Ping received from '{server.name}'; shutting down client")
+                            ping_succeeded = True
                         log.debug(f"Client '{server.name}' shut down")
-                        return True
+                        return ping_succeeded
                 except TimeoutError:
-                    log.error(
-                        f"MCP remote verification timed out (more than {connection_timeout}s) for '{server.name}'"
-                    )
-                    return False
+                    if ping_succeeded:
+                        log.warning(
+                            f"Ping received from '{server.name}' but shutting down client timed out. Marking as success."
+                        )
+                    else:
+                        log.error(
+                            f"MCP remote verification timed out (more than {connection_timeout}s) for '{server.name}', marking as failure."
+                        )
+                    return ping_succeeded
                 except Exception as e:  # noqa: BLE001
                     log.error("MCP remote verification failed for '{}': {}", server.name, e)
                     return False
