@@ -147,7 +147,7 @@ def show_manual_setup_screen() -> None:
     JSON file and add the following configuration:
     """
 
-    json_snippet = """{
+    json_snippet = """\t{
       "mcpServers": {
         "open-edison": {
           "command": "npx",
