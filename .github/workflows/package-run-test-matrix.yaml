@@ -106,9 +106,6 @@ jobs:
           cp prompt_permissions.json test_config/
           touch test_config/.setup_tui_ran
 
-          export UV_PROJECT="$PWD"
-          export UV_FIND_LINKS="$PWD/dist"
-
       - name: Curl installer run test
         shell: bash
         run: |
@@ -121,6 +118,10 @@ jobs:
             REPO="${{ github.event.pull_request.head.repo.full_name }}"; REF="${{ github.event.pull_request.head.ref }}"
           fi
           echo "Using repo $REPO @ $REF"
+
+          export UV_PROJECT=${{ github.workspace }}
+          export UV_FIND_LINKS=${{ github.workspace }}/dist
+
           curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/curl_pipe_bash.sh" | bash -s -- --config-dir test_config &
           echo $! > server.pid
           # wait for port 3001 to be up
