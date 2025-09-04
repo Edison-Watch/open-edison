@@ -12,7 +12,7 @@ jobs:
     name: pypi package run test (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
@@ -74,7 +74,7 @@ jobs:
     name: curl|bash installer run test(${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
@@ -106,9 +106,6 @@ jobs:
           cp prompt_permissions.json test_config/
           touch test_config/.setup_tui_ran
 
-          export UV_PROJECT="$PWD"
-          export UV_FIND_LINKS="$PWD/dist"
-
       - name: Curl installer run test
         shell: bash
         run: |
@@ -121,6 +118,10 @@ jobs:
             REPO="${{ github.event.pull_request.head.repo.full_name }}"; REF="${{ github.event.pull_request.head.ref }}"
           fi
           echo "Using repo $REPO @ $REF"
+
+          export UV_PROJECT=${{ github.workspace }}
+          export UV_FIND_LINKS=${{ github.workspace }}/dist
+
           curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/curl_pipe_bash.sh" | bash -s -- --config-dir test_config &
           echo $! > server.pid
           # wait for port 3001 to be up
@@ -141,7 +142,7 @@ jobs:
     name: clone & make run test (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [macos-14, macos-15, ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:

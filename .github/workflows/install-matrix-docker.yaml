@@ -47,9 +47,12 @@ jobs:
           colima start --cpu 2 --memory 4 --disk 10
       - name: Build image
         run: docker build -t open-edison:ci .
+      - name: Prepare config
+        run: |
+          touch .setup_tui_ran
       - name: Run container
         run: |
-          docker run -d --name edison-ci -e OPEN_EDISON_CONFIG_DIR=/app -p 3001:3001 -v ${{ github.workspace }}/config.json:/app/config.json open-edison:ci
+          docker run -d --name edison-ci -e OPEN_EDISON_CONFIG_DIR=/app -p 3001:3001 -v ${{ github.workspace }}/config.json:/app/config.json -v ${{ github.workspace }}/.setup_tui_ran:/app/.setup_tui_ran open-edison:ci
           for i in {1..60}; do if curl -sf http://localhost:3001/health >/dev/null; then echo ok; break; fi; sleep 1; done
       - name: Health check
         run: curl -sf http://localhost:3001/health | tee /dev/stderr

@@ -145,40 +145,36 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
 
         # If this is a remote server, consult OAuth requirement first. Only skip
         # verification when OAuth is actually required and no tokens are present.
-        try:
-            if server.is_remote_server():
-                remote_url: str | None = server.get_remote_url()
-                if remote_url:
-                    oauth_info = await get_oauth_manager().check_oauth_requirement(
-                        server.name, remote_url
+        if server.is_remote_server():
+            remote_url: str | None = server.get_remote_url()
+            if remote_url:
+                oauth_info = await get_oauth_manager().check_oauth_requirement(
+                    server.name, remote_url
+                )
+                if oauth_info.status != OAuthStatus.NOT_REQUIRED:
+                    # Token presence check
+                    storage = FileTokenStorage(
+                        server_url=remote_url, cache_dir=get_oauth_manager().cache_dir
                     )
-                    if oauth_info.status != OAuthStatus.NOT_REQUIRED:
-                        # Token presence check
-                        storage = FileTokenStorage(
-                            server_url=remote_url, cache_dir=get_oauth_manager().cache_dir
+                    tokens = await storage.get_tokens()
+                    no_tokens: bool = not tokens or (
+                        not getattr(tokens, "access_token", None)
+                        and not getattr(tokens, "refresh_token", None)
+                    )
+                    # Detect if inline headers are present in args (translated from config)
+                    has_inline_headers: bool = any(
+                        (a == "--header" or a.startswith("--header")) for a in server.args
+                    )
+                    if (
+                        oauth_info.status == OAuthStatus.NEEDS_AUTH
+                        and no_tokens
+                        and not has_inline_headers
+                    ):
+                        questionary.print(
+                            f"Skipping verification for remote server '{server.name}' pending OAuth",
+                            style="bold fg:ansiyellow",
                         )
-                        tokens = await storage.get_tokens()
-                        no_tokens: bool = not tokens or (
-                            not getattr(tokens, "access_token", None)
-                            and not getattr(tokens, "refresh_token", None)
-                        )
-                        # Detect if inline headers are present in args (translated from config)
-                        has_inline_headers: bool = any(
-                            (a == "--header" or a.startswith("--header")) for a in server.args
-                        )
-                        if (
-                            oauth_info.status == OAuthStatus.NEEDS_AUTH
-                            and no_tokens
-                            and not has_inline_headers
-                        ):
-                            questionary.print(
-                                f"Skipping verification for remote server '{server.name}' pending OAuth",
-                                style="bold fg:ansiyellow",
-                            )
-                            return True
-        except Exception:
-            # If token inspection fails, continue with normal verification path
-            pass
+                        return True
 
         # Remote servers
         if server.is_remote_server():
@@ -204,15 +200,15 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                     host_remote: FastMCP[Any] | None = None
                     try:
                         # TODO: In debug mode, do not suppress child process output.
-                        with suppress_fds(suppress_stdout=False, suppress_stderr=True):
+                        with suppress_fds(suppress_stdout=True, suppress_stderr=True):
                             proxy_remote = FastMCP.as_proxy(backend_cfg_remote)
                             host_remote = FastMCP(name=f"open-edison-verify-host-{server.name}")
                             host_remote.mount(proxy_remote, prefix=server.name)
 
-                        async def _list_tools_only() -> Any:
-                            return await host_remote._tool_manager.list_tools()  # type: ignore[attr-defined]
+                            async def _list_tools_only() -> Any:
+                                return await host_remote._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-                        await asyncio.wait_for(_list_tools_only(), timeout=10.0)
+                            await asyncio.wait_for(_list_tools_only(), timeout=10.0)
                         return True
                     except Exception as e:
                         log.error(
@@ -291,7 +287,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         try:
             # TODO: In debug mode, do not suppress child process output.
             log.info("Checking properties of '{}'...", server.name)
-            with suppress_fds(suppress_stdout=False, suppress_stderr=True):
+            with suppress_fds(suppress_stdout=True, suppress_stderr=True):
                 proxy_local = FastMCP.as_proxy(backend_cfg_local)
                 host_local = FastMCP(name=f"open-edison-verify-host-{server.name}")
                 host_local.mount(proxy_local, prefix=server.name)

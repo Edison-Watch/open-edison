@@ -6,6 +6,7 @@ See README for usage and configuration details.
 
 import asyncio
 import json
+import signal
 import traceback
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
@@ -38,6 +39,7 @@ from src.middleware.session_tracking import (
 )
 from src.oauth_manager import OAuthStatus, get_oauth_manager
 from src.oauth_override import OpenEdisonOAuth
+from src.permissions import Permissions
 from src.single_user_mcp import SingleUserMCP
 from src.telemetry import initialize_telemetry, set_servers_installed
 
@@ -277,6 +279,12 @@ class OpenEdisonProxy:
                 # Clear cache for the config file, if it was config.json
                 if name == "config.json":
                     clear_json_file_cache()
+                elif name in (
+                    "tool_permissions.json",
+                    "resource_permissions.json",
+                    "prompt_permissions.json",
+                ):
+                    Permissions.clear_permissions_file_cache()
 
                 return {"status": "ok"}
             except Exception as e:  # noqa: BLE001
@@ -398,6 +406,7 @@ class OpenEdisonProxy:
             host=self.host,
             port=self.port + 1,
             log_level=Config().logging.level.lower(),
+            timeout_graceful_shutdown=0,
         )
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
@@ -409,13 +418,27 @@ class OpenEdisonProxy:
             host=self.host,
             port=self.port,
             log_level=Config().logging.level.lower(),
+            timeout_graceful_shutdown=0,
         )
         fastmcp_server = uvicorn.Server(fastmcp_config)
         servers_to_run.append(fastmcp_server.serve())
 
         # Run both servers concurrently
         log.info("🚀 Starting both FastAPI and FastMCP servers...")
-        _ = await asyncio.gather(*servers_to_run)
+        loop = asyncio.get_running_loop()
+
+        def _trigger_shutdown(signame: str) -> None:
+            log.info(f"Received {signame}. Forcing shutdown of all servers...")
+            for srv in (fastapi_server, fastmcp_server):
+                with suppress(Exception):
+                    srv.force_exit = True  # type: ignore[attr-defined] # noqa
+                    srv.should_exit = True  # type: ignore[attr-defined] # noqa
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with suppress(Exception):
+                loop.add_signal_handler(sig, _trigger_shutdown, sig.name)
+
+        await asyncio.gather(*servers_to_run, return_exceptions=False)
 
     def _register_routes(self, app: FastAPI) -> None:
         """Register all routes for the FastAPI app"""

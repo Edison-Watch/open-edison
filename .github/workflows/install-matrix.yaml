@@ -70,6 +70,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: make setup
         run: make setup
+
+      - name: Prepare config
+        run: |
+          mkdir -p dev_config_dir
+          touch dev_config_dir/.setup_tui_ran
+
       - name: Start server
         run: |
           set -euxo pipefail
@@ -79,8 +85,10 @@ jobs:
           for i in {1..60}; do
             if curl -sf http://localhost:3001/health >/dev/null; then
               echo "server healthy"; break; fi; sleep 1; done
-      - name: Health check
-        run: curl -sf http://localhost:3001/health | tee /dev/stderr
+
+          # Health check
+          curl -sf http://localhost:3001/health
+
       - name: Stop server
         if: always()
         run: |
