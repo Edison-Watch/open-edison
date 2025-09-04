@@ -104,10 +104,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def _run_server(args: Any) -> None:
-    # Resolve config dir and expose via env for the rest of the app
-    config_dir_arg = getattr(args, "config_dir", None)
-    if config_dir_arg is not None:
-        os.environ["OPEN_EDISON_CONFIG_DIR"] = str(Path(config_dir_arg).expanduser().resolve())
     config_dir = get_config_dir()
 
     # Load config after setting env override
@@ -127,6 +123,11 @@ async def _run_server(args: Any) -> None:
 
 def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
     args = _parse_args(argv)
+
+    # Resolve config dir and expose via env for the rest of the app
+    config_dir_arg = getattr(args, "config_dir", None)
+    if config_dir_arg is not None:
+        os.environ["OPEN_EDISON_CONFIG_DIR"] = str(Path(config_dir_arg).expanduser().resolve())
 
     if args.command is None:
         args.command = "run"
