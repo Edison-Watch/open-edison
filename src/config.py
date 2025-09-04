@@ -135,8 +135,8 @@ class MCPServerConfig:
         if self.command != "npx" or "mcp-remote" not in self.args:
             return None
         try:
-            idx: int = self.args.index("mcp-remote")
-            for candidate in self.args[idx + 1 :]:
+            # idx: int = self.args.index("mcp-remote")
+            for candidate in self.args[:]:
                 if candidate.startswith(("https://", "http://")):
                     return candidate
             return None

@@ -12,7 +12,7 @@ from src.middleware.data_access_tracker import (  # type: ignore[reportMissingTy
     DataAccessTracker,
     SecurityError,
 )
-from src.permissions import Permissions, PermissionsError  # type: ignore[reportMissingTypeStubs]
+from src.permissions import Permissions  # type: ignore[reportMissingTypeStubs]
 from tests.test_template import TestTemplate  # type: ignore[reportMissingTypeStubs]
 
 
@@ -50,7 +50,7 @@ class TestDataAccessTracker(TestTemplate):
         """Test tool that doesn't exist"""
         tracker = DataAccessTracker()
 
-        with pytest.raises(PermissionsError, match="not found in permissions"):
+        with pytest.raises(SecurityError):
             tracker.add_tool_call("noserver_notool")
 
     def test_external_communication_detection(self):
@@ -99,8 +99,8 @@ def test_namespace_based_classification():
     # Test that unknown tools properly raise ValueError
     tracker = DataAccessTracker()
 
-    # Test unknown namespaced tool - should raise PermissionsError
-    with pytest.raises(PermissionsError, match="not found in permissions"):
+    # Unknown namespaced tool is blocked at call time
+    with pytest.raises(SecurityError):
         tracker.add_tool_call("unknown_server/some_tool")
 
     # Test that real tools work correctly

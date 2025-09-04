@@ -5,7 +5,6 @@ Main entry point for running the Open Edison MCP proxy server.
 
 import asyncio
 import sys
-import traceback
 
 from loguru import logger as log
 
@@ -36,5 +35,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log.info("👋 Open Edison shutting down...")
     except Exception as e:
-        log.error(f"❌ Fatal error: {e}, traceback: {traceback.format_exc()}")
+        log.exception(f"❌ Fatal error: {e}")
         sys.exit(1)

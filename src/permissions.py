@@ -226,43 +226,86 @@ class Permissions:
     def get_tool_permission(self, tool_name: str) -> ToolPermission:
         """Get permission for a specific tool"""
         if tool_name not in self.tool_permissions:
-            raise PermissionsError(f"Tool '{tool_name}' not found in permissions")
+            log.warning(
+                f"Tool '{tool_name}' not found in permissions; returning enabled full-trifecta default"
+            )
+            # Disabled but fully data-using to be conservatively classified if inspected
+            return ToolPermission(
+                enabled=True,
+                write_operation=True,
+                read_private_data=True,
+                read_untrusted_public_data=True,
+                acl="SECRET",
+            )
         return self.tool_permissions[tool_name]
 
     def get_resource_permission(self, resource_name: str) -> ResourcePermission:
         """Get permission for a specific resource"""
         if resource_name not in self.resource_permissions:
-            raise PermissionsError(f"Resource '{resource_name}' not found in permissions")
+            log.warning(
+                f"Resource '{resource_name}' not found in permissions; returning enabled full-trifecta default"
+            )
+            return ResourcePermission(
+                enabled=True,
+                write_operation=True,
+                read_private_data=True,
+                read_untrusted_public_data=True,
+            )
         return self.resource_permissions[resource_name]
 
     def get_prompt_permission(self, prompt_name: str) -> PromptPermission:
         """Get permission for a specific prompt"""
         if prompt_name not in self.prompt_permissions:
-            raise PermissionsError(f"Prompt '{prompt_name}' not found in permissions")
+            log.warning(
+                f"Prompt '{prompt_name}' not found in permissions; returning enabled full-trifecta default"
+            )
+            return PromptPermission(
+                enabled=True,
+                write_operation=True,
+                read_private_data=True,
+                read_untrusted_public_data=True,
+                acl="SECRET",
+            )
         return self.prompt_permissions[prompt_name]
 
     def is_tool_enabled(self, tool_name: str) -> bool:
         """Check if a tool is enabled
         Also checks if the server is enabled"""
         permission = self.get_tool_permission(tool_name)
-        server_name = self.server_name_from_tool_name(tool_name)
-        server_enabled = self.is_server_enabled(server_name)
+        try:
+            server_name = self.server_name_from_tool_name(tool_name)
+            server_enabled = self.is_server_enabled(server_name)
+        except PermissionsError:
+            log.warning(f"Server resolution failed for tool '{tool_name}'; treating as disabled")
+            server_enabled = False
         return permission.enabled and server_enabled
 
     def is_resource_enabled(self, resource_name: str) -> bool:
         """Check if a resource is enabled
         Also checks if the server is enabled"""
         permission = self.get_resource_permission(resource_name)
-        server_name = self.server_name_from_tool_name(resource_name)
-        server_enabled = self.is_server_enabled(server_name)
+        try:
+            server_name = self.server_name_from_tool_name(resource_name)
+            server_enabled = self.is_server_enabled(server_name)
+        except PermissionsError:
+            log.warning(
+                f"Server resolution failed for resource '{resource_name}'; treating as disabled"
+            )
+            server_enabled = False
         return permission.enabled and server_enabled
 
     def is_prompt_enabled(self, prompt_name: str) -> bool:
         """Check if a prompt is enabled
         Also checks if the server is enabled"""
         permission = self.get_prompt_permission(prompt_name)
-        server_name = self.server_name_from_tool_name(prompt_name)
-        server_enabled = self.is_server_enabled(server_name)
+        try:
+            server_name = self.server_name_from_tool_name(prompt_name)
+            server_enabled = self.is_server_enabled(server_name)
+        except PermissionsError:
+            log.warning(
+                f"Server resolution failed for prompt '{prompt_name}'; treating as disabled"
+            )
+            server_enabled = False
         return permission.enabled and server_enabled
 
     @staticmethod
