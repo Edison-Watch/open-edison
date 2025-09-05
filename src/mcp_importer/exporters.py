@@ -300,7 +300,7 @@ def export_to_vscode(
 
     # Build the minimal config
     new_config: dict[str, Any] = {
-        "mcpServers": _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+        "servers": _build_open_edison_server(name=server_name, url=url, api_key=api_key)
     }
 
     # If already configured exactly as desired and not forcing, no-op
