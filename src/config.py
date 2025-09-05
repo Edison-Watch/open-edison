@@ -110,21 +110,21 @@ class MCPServerConfig:
         """
         # TODO find out if having the remote_server functionality is necessary, and if so how we can make it interact well with servers who don't like the fastmcp networking stack.
         return False
-        if self.command != "npx":
-            return False
+        # if self.command != "npx":
+        #     return False
 
-        # Be tolerant of npx flags by scanning for 'mcp-remote' and the subsequent HTTPS URL
-        try:
-            if "mcp-remote" not in self.args:
-                return False
-            idx: int = self.args.index("mcp-remote")
-            # Look for first https?:// argument after 'mcp-remote'
-            for candidate in self.args[idx + 1 :]:
-                if candidate.startswith(("https://", "http://")):
-                    return candidate.startswith("https://")
-            return False
-        except Exception:
-            return False
+        # # Be tolerant of npx flags by scanning for 'mcp-remote' and the subsequent HTTPS URL
+        # try:
+        #     if "mcp-remote" not in self.args:
+        #         return False
+        #     idx: int = self.args.index("mcp-remote")
+        #     # Look for first https?:// argument after 'mcp-remote'
+        #     for candidate in self.args[idx + 1 :]:
+        #         if candidate.startswith(("https://", "http://")):
+        #             return candidate.startswith("https://")
+        #     return False
+        # except Exception:
+        #     return False
 
     def get_remote_url(self) -> str | None:
         """
@@ -135,17 +135,17 @@ class MCPServerConfig:
         """
         # TODO see above
         return None
-        # Reuse the same tolerant parsing as is_remote_server
-        if self.command != "npx" or "mcp-remote" not in self.args:
-            return None
-        try:
-            # idx: int = self.args.index("mcp-remote")
-            for candidate in self.args[:]:
-                if candidate.startswith(("https://", "http://")):
-                    return candidate
-            return None
-        except Exception:
-            return None
+        # # Reuse the same tolerant parsing as is_remote_server
+        # if self.command != "npx" or "mcp-remote" not in self.args:
+        #     return None
+        # try:
+        #     # idx: int = self.args.index("mcp-remote")
+        #     for candidate in self.args[:]:
+        #         if candidate.startswith(("https://", "http://")):
+        #             return candidate
+        #     return None
+        # except Exception:
+        #     return None
 
 
 @dataclass
