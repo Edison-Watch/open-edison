@@ -132,16 +132,16 @@ def confirm_configs(configs: list[MCPServerConfig], *, dry_run: bool = False) ->
 
 def confirm_apply_configs(client: CLIENT, *, dry_run: bool = False) -> None:
     if not questionary.confirm(
-        f"We have detected that you have {client.name} installed. Would you like to connect it to open-edison?",
+        f"Would you like to set up Open Edison for {client.name}? (This will modify your MCP configuration. We will make a back up of your current one if you would like to revert.)",
         default=True,
     ).ask():
         return
 
-    export_edison_to(client, dry_run=dry_run)
+    result = export_edison_to(client, dry_run=dry_run)
     if dry_run:
         print(f"[dry-run] Export prepared for {client.name}; no changes written.")
     else:
-        print(f"Successfully set up Open Edison for {client.name}!")
+        print(f"Successfully set up Open Edison for {client.name}! Your previous MCP configuration has been backed up at {result.backup_path}")
 
 
 def show_manual_setup_screen() -> None:
