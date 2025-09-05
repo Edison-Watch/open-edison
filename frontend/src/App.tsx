@@ -761,6 +761,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [apiKeyVisible, setApiKeyVisible] = useState(false)
     const [apiKeyInput, setApiKeyInput] = useState<string>('')
     const [savingKey, setSavingKey] = useState(false)
+    const [backendApiKeyVisible, setBackendApiKeyVisible] = useState(false)
+    const [backendApiKeyInput, setBackendApiKeyInput] = useState<string>('')
+    const [savingBackendKey, setSavingBackendKey] = useState(false)
 
     // Persist view mode across reloads
     useEffect(() => {
@@ -777,6 +780,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         const k = (config as any)?.['edison-watch-api-key'] || ''
         setApiKeyInput(k)
     }, [config])
+    useEffect(() => {
+        const beKey = config?.server?.api_key || ''
+        setBackendApiKeyInput(beKey)
+    }, [config])
     // Baselines for Save only changes
     const [origConfig, setOrigConfig] = useState<ConfigFile | null>(null)
     const [origToolPerms, setOrigToolPerms] = useState<ToolPerms | null>(null)
@@ -789,14 +796,14 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         console.log('🔄 Autosave useEffect triggered')
         console.log('🔄 toolPerms:', toolPerms)
         console.log('🔄 origToolPerms:', origToolPerms)
-        
+
         if (toolPerms && origToolPerms) {
             const currentStr = JSON.stringify(toolPerms)
             const origStr = JSON.stringify(origToolPerms)
             console.log('🔄 Current JSON:', currentStr)
             console.log('🔄 Original JSON:', origStr)
             console.log('🔄 Are they different?', currentStr !== origStr)
-            
+
             if (currentStr !== origStr) {
                 console.log('🔄 Tool permissions changed, triggering autosave')
                 // Add a small delay to ensure state is fully updated
@@ -808,13 +815,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             console.log('🔄 Missing data, skipping autosave')
         }
     }, [toolPerms, origToolPerms])
-    
+
     useEffect(() => {
         if (resourcePerms && origResourcePerms && JSON.stringify(resourcePerms) !== JSON.stringify(origResourcePerms)) {
             debouncedAutoSave()
         }
     }, [resourcePerms, origResourcePerms])
-    
+
     useEffect(() => {
         if (promptPerms && origPromptPerms && JSON.stringify(promptPerms) !== JSON.stringify(origPromptPerms)) {
             debouncedAutoSave()
@@ -1298,7 +1305,14 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             const externalKey = (config as any)?.['edison-watch-api-key'] || ''
-            if (externalKey) headers['X-API-KEY'] = externalKey
+            if (!externalKey || externalKey === 'change-me') {
+                setToast({
+                    message: 'Autoconfig requires an Edison Watch API key. Enter it in Configuration and try again.',
+                    type: 'error'
+                })
+                return
+            }
+            headers['X-API-KEY'] = externalKey
 
             const body = {
                 server: serverName,
@@ -1310,7 +1324,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const resp = await fetch(AUTOCONFIG_URL, { method: 'POST', headers, body: JSON.stringify(body), mode: 'cors' })
             if (!resp.ok) {
                 const txt = await resp.text().catch(() => '')
-                setToast({ message: `Autoconfig failed (${resp.status})${txt ? ` - ${txt}` : ''}`, type: 'error' })
+                const hint = resp.status === 401
+                    ? 'Autoconfig unauthorized. Check your Edison Watch API key.'
+                    : ''
+                setToast({
+                    message: `Autoconfig failed (${resp.status})${hint ? ` - ${hint}` : (txt ? ` - ${txt}` : '')}`,
+                    type: 'error'
+                })
                 return
             }
             let payload: any = null
@@ -1385,6 +1405,27 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setToast({ message: 'Failed to save API key', type: 'error' })
         } finally {
             setSavingKey(false)
+        }
+    }
+
+    const saveBackendApiKey = async () => {
+        if (!config) return
+        setSavingBackendKey(true)
+        try {
+            const nextCfg: any = { ...config, server: { ...config.server, api_key: backendApiKeyInput } }
+            const resp = await fetch('/__save_json__', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: 'config.json', content: JSON.stringify(nextCfg, null, 4) })
+            })
+            if (!resp.ok) throw new Error('Save failed')
+            setConfig(nextCfg)
+            setOrigConfig(nextCfg)
+            setToast({ message: 'Open Edison API key saved', type: 'success' })
+        } catch (e) {
+            setToast({ message: 'Failed to save Open Edison API key', type: 'error' })
+        } finally {
+            setSavingBackendKey(false)
         }
     }
 
@@ -1647,15 +1688,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         setData((prev: any) => {
                                                             // Ensure we preserve all existing flags and only update the enabled property
                                                             const currentItem = prev[groupName]?.[itemName] || {}
-                                                            const newData = { 
-                                                                ...prev, 
-                                                                [groupName]: { 
-                                                                    ...prev[groupName], 
-                                                                    [itemName]: { 
+                                                            const newData = {
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: {
                                                                         ...currentItem,
-                                                                        enabled: v 
-                                                                    } 
-                                                                } 
+                                                                        enabled: v
+                                                                    }
+                                                                }
                                                             }
                                                             console.log(`🔄 New data for ${groupName}.${itemName}:`, newData[groupName][itemName])
                                                             return newData
@@ -1672,15 +1713,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         setData((prev: any) => {
                                                             // Ensure we preserve all existing flags and only update the write_operation property
                                                             const currentItem = prev[groupName]?.[itemName] || {}
-                                                            return { 
-                                                                ...prev, 
-                                                                [groupName]: { 
-                                                                    ...prev[groupName], 
-                                                                    [itemName]: { 
+                                                            return {
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: {
                                                                         ...currentItem,
-                                                                        write_operation: e.target.checked 
-                                                                    } 
-                                                                } 
+                                                                        write_operation: e.target.checked
+                                                                    }
+                                                                }
                                                             }
                                                         })
                                                     }} />
@@ -1692,15 +1733,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         setData((prev: any) => {
                                                             // Ensure we preserve all existing flags and only update the read_private_data property
                                                             const currentItem = prev[groupName]?.[itemName] || {}
-                                                            return { 
-                                                                ...prev, 
-                                                                [groupName]: { 
-                                                                    ...prev[groupName], 
-                                                                    [itemName]: { 
+                                                            return {
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: {
                                                                         ...currentItem,
-                                                                        read_private_data: e.target.checked 
-                                                                    } 
-                                                                } 
+                                                                        read_private_data: e.target.checked
+                                                                    }
+                                                                }
                                                             }
                                                         })
                                                     }} />
@@ -1712,15 +1753,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                         setData((prev: any) => {
                                                             // Ensure we preserve all existing flags and only update the read_untrusted_public_data property
                                                             const currentItem = prev[groupName]?.[itemName] || {}
-                                                            return { 
-                                                                ...prev, 
-                                                                [groupName]: { 
-                                                                    ...prev[groupName], 
-                                                                    [itemName]: { 
+                                                            return {
+                                                                ...prev,
+                                                                [groupName]: {
+                                                                    ...prev[groupName],
+                                                                    [itemName]: {
                                                                         ...currentItem,
-                                                                        read_untrusted_public_data: e.target.checked 
-                                                                    } 
-                                                                } 
+                                                                        read_untrusted_public_data: e.target.checked
+                                                                    }
+                                                                }
                                                             }
                                                         })
                                                     }} />
@@ -1777,15 +1818,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     setData((prev: any) => {
                                                         // Ensure we preserve all existing flags and only update the enabled property
                                                         const currentItem = prev[groupName]?.[itemName] || {}
-                                                        const newData = { 
-                                                            ...prev, 
-                                                            [groupName]: { 
-                                                                ...prev[groupName], 
-                                                                [itemName]: { 
+                                                        const newData = {
+                                                            ...prev,
+                                                            [groupName]: {
+                                                                ...prev[groupName],
+                                                                [itemName]: {
                                                                     ...currentItem,
-                                                                    enabled: v 
-                                                                } 
-                                                            } 
+                                                                    enabled: v
+                                                                }
+                                                            }
                                                         }
                                                         console.log(`🔄 New data for ${groupName}.${itemName} (non-collapsible):`, newData[groupName][itemName])
                                                         return newData
@@ -1802,15 +1843,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     setData((prev: any) => {
                                                         // Ensure we preserve all existing flags and only update the write_operation property
                                                         const currentItem = prev[groupName]?.[itemName] || {}
-                                                        return { 
-                                                            ...prev, 
-                                                            [groupName]: { 
-                                                                ...prev[groupName], 
-                                                                [itemName]: { 
+                                                        return {
+                                                            ...prev,
+                                                            [groupName]: {
+                                                                ...prev[groupName],
+                                                                [itemName]: {
                                                                     ...currentItem,
-                                                                    write_operation: e.target.checked 
-                                                                } 
-                                                            } 
+                                                                    write_operation: e.target.checked
+                                                                }
+                                                            }
                                                         }
                                                     })
                                                 }} />
@@ -1822,15 +1863,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     setData((prev: any) => {
                                                         // Ensure we preserve all existing flags and only update the read_private_data property
                                                         const currentItem = prev[groupName]?.[itemName] || {}
-                                                        return { 
-                                                            ...prev, 
-                                                            [groupName]: { 
-                                                                ...prev[groupName], 
-                                                                [itemName]: { 
+                                                        return {
+                                                            ...prev,
+                                                            [groupName]: {
+                                                                ...prev[groupName],
+                                                                [itemName]: {
                                                                     ...currentItem,
-                                                                    read_private_data: e.target.checked 
-                                                                } 
-                                                            } 
+                                                                    read_private_data: e.target.checked
+                                                                }
+                                                            }
                                                         }
                                                     })
                                                 }} />
@@ -1842,15 +1883,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     setData((prev: any) => {
                                                         // Ensure we preserve all existing flags and only update the read_untrusted_public_data property
                                                         const currentItem = prev[groupName]?.[itemName] || {}
-                                                        return { 
-                                                            ...prev, 
-                                                            [groupName]: { 
-                                                                ...prev[groupName], 
-                                                                [itemName]: { 
+                                                        return {
+                                                            ...prev,
+                                                            [groupName]: {
+                                                                ...prev[groupName],
+                                                                [itemName]: {
                                                                     ...currentItem,
-                                                                    read_untrusted_public_data: e.target.checked 
-                                                                } 
-                                                            } 
+                                                                    read_untrusted_public_data: e.target.checked
+                                                                }
+                                                            }
                                                         }
                                                     })
                                                 }} />
@@ -2148,6 +2189,22 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         )}
                     </>
                 )}
+                {/* Open Edison server API Key controls */}
+                <div className="mt-3 border border-app-border rounded p-2 bg-app-bg/50">
+                    <div className="text-xs text-app-muted mb-1">Open Edison server API key</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            type={backendApiKeyVisible ? 'text' : 'password'}
+                            className="button !py-1.5 !px-2 w-[260px]"
+                            placeholder="Enter server API key"
+                            value={backendApiKeyInput}
+                            onChange={(e) => setBackendApiKeyInput(e.target.value)}
+                        />
+                        <button className="button" onClick={() => setBackendApiKeyVisible(v => !v)}>{backendApiKeyVisible ? 'Hide' : 'Show'}</button>
+                        <button className="button" disabled={savingBackendKey} onClick={saveBackendApiKey}>{savingBackendKey ? 'Saving…' : 'Save key'}</button>
+                    </div>
+                </div>
+
                 {/* Edison Watch API Key controls at bottom */}
                 <div className="mt-3 border border-app-border rounded p-2 bg-app-bg/50">
                     <div className="text-xs text-app-muted mb-1">Edison Watch API key</div>

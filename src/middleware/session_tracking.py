@@ -252,7 +252,8 @@ class SessionTrackingMiddleware(Middleware):
         except Exception:
             log.exception("MCP list_tools failed")
             raise
-        log.trace(f"🔍 on_list_tools response: {response}")
+        log.debug("🔍 listed raw tools.")
+        log.trace(f"🔍 on_list_tools response: length {len(response)}")
 
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
@@ -381,7 +382,7 @@ class SessionTrackingMiddleware(Middleware):
         except Exception:
             log.exception("MCP list_resources failed")
             raise
-        log.trace(f"🔍 on_list_resources response: {response}")
+        log.trace(f"🔍 on_list_resources response: length {len(response)}")
 
         session_id = current_session_id_ctxvar.get()
         if session_id is None:
@@ -493,7 +494,7 @@ class SessionTrackingMiddleware(Middleware):
         except Exception:
             log.exception("MCP list_prompts failed")
             raise
-        log.debug(f"🔍 on_list_prompts response: {response}")
+        log.debug(f"🔍 on_list_prompts response: length {len(response)}")
 
         session_id = current_session_id_ctxvar.get()
         if session_id is None:

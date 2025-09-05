@@ -141,6 +141,7 @@ class SingleUserMCP(FastMCP[Any]):
         remote_url = server_config.get_remote_url()
         oauth_info = await oauth_manager.check_oauth_requirement(server_name, remote_url)
 
+        client_timeout = 10
         # Create proxy based on server type to avoid union type issues
         if server_config.is_remote_server():
             # Handle remote servers (with or without OAuth)
@@ -157,18 +158,22 @@ class SingleUserMCP(FastMCP[Any]):
                     server_config.oauth_client_name,
                 )
                 if oauth_auth:
-                    client = FastMCPClient(remote_url, auth=oauth_auth)
+                    client = FastMCPClient(
+                        remote_url,
+                        auth=oauth_auth,
+                        timeout=client_timeout,
+                    )
                     log.info(
                         f"🔐 Created remote client with OAuth authentication for {server_name}"
                     )
                 else:
-                    client = FastMCPClient(remote_url)
+                    client = FastMCPClient(remote_url, timeout=client_timeout)
                     log.warning(
                         f"⚠️ OAuth auth creation failed, using unauthenticated client for {server_name}"
                     )
             else:
                 # Remote server without OAuth or needs auth
-                client = FastMCPClient(remote_url)
+                client = FastMCPClient(remote_url, timeout=client_timeout)
                 log.info(f"🌐 Created remote client for {server_name}")
 
             # Log OAuth status warnings
@@ -297,8 +302,12 @@ class SingleUserMCP(FastMCP[Any]):
         except Exception as e:
             log.warning(f"Error sending unmount notifications: {e}")
 
-    async def initialize(self) -> None:
-        """Initialize the FastMCP server using unified composite proxy approach."""
+    async def initialize(self, rewarm_caches: bool = False) -> None:
+        """Initialize the FastMCP server using unified composite proxy approach.
+
+        Args:
+            rewarm_caches: Whether to rewarm the caches after unmounting and remounting servers
+        """
         log.info("Initializing Single User MCP server with composite proxy")
         log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
 
@@ -320,19 +329,20 @@ class SingleUserMCP(FastMCP[Any]):
 
         log.info("✅ Single User MCP server initialized with composite proxy")
 
-        # Invalidate and warm lists to ensure reload
-        log.debug("Reloading tool list...")
-        _ = await self._tool_manager.list_tools()
-        log.debug("Reloading resource list...")
-        _ = await self._resource_manager.list_resources()
-        log.debug("Reloading prompt list...")
-        _ = await self._prompt_manager.list_prompts()
-        log.debug("Reloading complete")
+        if rewarm_caches:
+            # Invalidate and warm lists to ensure reload
+            log.debug("Reloading tool list...")
+            _ = await self._tool_manager.list_tools()
+            log.debug("Reloading resource list...")
+            _ = await self._resource_manager.list_resources()
+            log.debug("Reloading prompt list...")
+            _ = await self._prompt_manager.list_prompts()
+            log.debug("Reloading complete")
 
-        # Send notifications to clients about changed component lists
-        log.debug("Sending list changed notifications...")
-        await self._send_list_changed_notifications()
-        log.debug("List changed notifications sent")
+            # Send notifications to clients about changed component lists
+            log.debug("Sending list changed notifications...")
+            await self._send_list_changed_notifications()
+            log.debug("List changed notifications sent")
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

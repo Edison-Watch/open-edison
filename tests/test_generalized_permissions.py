@@ -11,10 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from src.middleware.data_access_tracker import DataAccessTracker  # type: ignore
+from src.middleware.data_access_tracker import DataAccessTracker, SecurityError  # type: ignore
 from src.permissions import (  # type: ignore
     Permissions,
-    PermissionsError,
     ToolPermission,
 )
 
@@ -28,36 +27,34 @@ def _force_repo_config(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestResourcePermissions:
     """Test resource access permission framework."""
 
-    def test_unknown_resource_raises_error(self):
-        """Test that unknown resource schemes raise ValueError."""
+    def test_unknown_resource_is_blocked(self):
+        """Unknown resources are treated as disabled and blocked at access time."""
         tracker = DataAccessTracker()
 
-        # Since config is empty, permissions lookup raises PermissionsError
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_resource_access("file:/home/user/config.json")
 
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_resource_access("http://example.com/data.json")
 
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_resource_access("database:user_table")
 
 
 class TestPromptPermissions:
     """Test prompt access permission framework."""
 
-    def test_unknown_prompt_raises_error(self):
-        """Test that unknown prompt types raise ValueError."""
+    def test_unknown_prompt_is_blocked(self):
+        """Unknown prompts are treated as disabled and blocked at access time."""
         tracker = DataAccessTracker()
 
-        # Since config is empty, permissions lookup raises PermissionsError
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_prompt_access("system")
 
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_prompt_access("external_prompt")
 
-        with pytest.raises(PermissionsError):
+        with pytest.raises(SecurityError):
             tracker.add_prompt_access("template:system_message")
 
 
@@ -135,11 +132,11 @@ class TestPermissionConfigIntegration:
             assert tp.read_private_data is True
             assert tp.write_operation is False
 
-            # Unknown resource/prompt raise PermissionsError
-            with pytest.raises(PermissionsError):
-                perms.get_resource_permission("file:/test.txt")
-            with pytest.raises(PermissionsError):
-                perms.get_prompt_permission("system")
+            # Unknown resource/prompt return enabled full-trifecta defaults
+            res_default = perms.get_resource_permission("file:/test.txt")
+            assert res_default.enabled is True
+            pr_default = perms.get_prompt_permission("system")
+            assert pr_default.enabled is True
 
 
 if __name__ == "__main__":

@@ -235,7 +235,7 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> bool:  # noqa: C9
 
     if len(configs) == 0:
         if not questionary.confirm(
-            "No MCP servers found. Would you like to continue without them?", default=False
+            "No MCP servers found. Would you like to continue without them?", default=True
         ).ask():
             print("Setup aborted. Please configure an MCP client and try again.")
             return False

@@ -392,9 +392,13 @@ class TestPermissionsAccessors:
         assert tool1_perm is not None
         assert tool1_perm.enabled is True
 
-        # Test non-existing tool
-        with pytest.raises(PermissionsError):
-            permissions.get_tool_permission("nonexistent")
+        # Test non-existing tool returns enabled full-trifecta default
+        toolx_perm = permissions.get_tool_permission("nonexistent")
+        assert isinstance(toolx_perm, ToolPermission)
+        assert toolx_perm.enabled is True
+        assert toolx_perm.write_operation is True
+        assert toolx_perm.read_private_data is True
+        assert toolx_perm.read_untrusted_public_data is True
 
     def test_get_resource_permission(self):
         """Test getting resource permissions."""
@@ -412,9 +416,13 @@ class TestPermissionsAccessors:
         assert resource1_perm is not None
         assert resource1_perm.enabled is True
 
-        # Test non-existing resource
-        with pytest.raises(PermissionsError):
-            permissions.get_resource_permission("nonexistent")
+        # Test non-existing resource returns enabled full-trifecta default
+        resx_perm = permissions.get_resource_permission("nonexistent")
+        assert isinstance(resx_perm, ResourcePermission)
+        assert resx_perm.enabled is True
+        assert resx_perm.write_operation is True
+        assert resx_perm.read_private_data is True
+        assert resx_perm.read_untrusted_public_data is True
 
     def test_get_prompt_permission(self):
         """Test getting prompt permissions."""
@@ -432,9 +440,13 @@ class TestPermissionsAccessors:
         assert prompt1_perm is not None
         assert prompt1_perm.enabled is True
 
-        # Test non-existing prompt
-        with pytest.raises(PermissionsError):
-            permissions.get_prompt_permission("nonexistent")
+        # Test non-existing prompt returns enabled full-trifecta default
+        prx_perm = permissions.get_prompt_permission("nonexistent")
+        assert isinstance(prx_perm, PromptPermission)
+        assert prx_perm.enabled is True
+        assert prx_perm.write_operation is True
+        assert prx_perm.read_private_data is True
+        assert prx_perm.read_untrusted_public_data is True
 
     def test_is_tool_enabled(self):
         """Test checking if tools are enabled."""
@@ -451,8 +463,7 @@ class TestPermissionsAccessors:
         assert permissions.is_tool_enabled("builtin_enabled_tool") is True
         assert permissions.is_tool_enabled("builtin_disabled_tool") is False
         assert permissions.is_tool_enabled("builtin_no_enabled_field") is False
-        with pytest.raises(PermissionsError):
-            permissions.is_tool_enabled("nonexistent")
+        assert permissions.is_tool_enabled("nonexistent") is False
 
     def test_is_resource_enabled(self):
         """Test checking if resources are enabled."""
@@ -469,8 +480,7 @@ class TestPermissionsAccessors:
         assert permissions.is_resource_enabled("builtin_enabled_resource") is True
         assert permissions.is_resource_enabled("builtin_disabled_resource") is False
         assert permissions.is_resource_enabled("builtin_no_enabled_field") is False
-        with pytest.raises(PermissionsError):
-            permissions.is_resource_enabled("nonexistent")
+        assert permissions.is_resource_enabled("nonexistent") is False
 
     def test_is_prompt_enabled(self):
         """Test checking if prompts are enabled."""
@@ -487,8 +497,7 @@ class TestPermissionsAccessors:
         assert permissions.is_prompt_enabled("builtin_enabled_prompt") is True
         assert permissions.is_prompt_enabled("builtin_disabled_prompt") is False
         assert permissions.is_prompt_enabled("builtin_no_enabled_field") is False
-        with pytest.raises(PermissionsError):
-            permissions.is_prompt_enabled("nonexistent")
+        assert permissions.is_prompt_enabled("nonexistent") is False
 
     def test_get_all_methods(self):
         """Test getting all permissions of each type."""

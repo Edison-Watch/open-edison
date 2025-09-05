@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.middleware.data_access_tracker import DataAccessTracker
-from src.permissions import PermissionsError
+from src.middleware.data_access_tracker import DataAccessTracker, SecurityError
 
 
 @pytest.fixture(autouse=True)  # noqa
@@ -66,12 +65,12 @@ def test_write_file_permission():
     assert not tracker.has_untrusted_content_exposure
 
 
-def test_unknown_tool_raises_error():
-    """Test that unknown tools raise ValueError instead of defaulting to safe."""
+def test_unknown_tool_is_blocked():
+    """Unknown tools are treated as disabled and blocked at call time."""
     tracker = DataAccessTracker()
 
-    # Unknown tool should raise ValueError
-    with pytest.raises(PermissionsError, match="not found in permissions"):
+    # Unknown tool should be blocked with SecurityError (not lookup error)
+    with pytest.raises(SecurityError):
         tracker.add_tool_call("unknown_dangerous_tool")
 
 

@@ -590,7 +590,7 @@ class OpenEdisonProxy:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
             # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize()
+            await self.single_user_mcp.initialize(rewarm_caches=True)
 
             # Summarize final mounted servers
             try:
