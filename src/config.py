@@ -108,6 +108,8 @@ class MCPServerConfig:
         Remote servers use mcp-remote with HTTPS URLs and may require OAuth.
         Local servers run as child processes and don't need OAuth.
         """
+        # TODO find out if having the remote_server functionality is necessary, and if so how we can make it interact well with servers who don't like the fastmcp networking stack.
+        return False
         if self.command != "npx":
             return False
 
@@ -131,6 +133,8 @@ class MCPServerConfig:
         Returns:
             The HTTPS URL if this is a remote server, None otherwise
         """
+        # TODO see above
+        return None
         # Reuse the same tolerant parsing as is_remote_server
         if self.command != "npx" or "mcp-remote" not in self.args:
             return None
