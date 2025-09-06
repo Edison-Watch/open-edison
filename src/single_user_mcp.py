@@ -287,24 +287,6 @@ class SingleUserMCP(FastMCP[Any]):
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
 
-    async def _send_list_changed_notifications(self) -> None:
-        """Send notifications to clients about changed component lists."""
-        try:
-            try:
-                context = get_context()
-                # Queue notifications for all component types since we don't know
-                # what types of components the unmounted server provided
-                context._queue_tool_list_changed()  # type: ignore
-                context._queue_resource_list_changed()  # type: ignore
-                context._queue_prompt_list_changed()  # type: ignore
-                log.debug("Queued component list change notifications")
-            except RuntimeError:
-                # No active context - notifications will be sent when context becomes available
-                log.debug("No active context for notifications")
-
-        except Exception as e:
-            log.warning(f"Error sending unmount notifications: {e}")
-
     async def list_servers_components_parallel(self) -> None:
         """Reload all servers' components in parallel."""
 
