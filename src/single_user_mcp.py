@@ -11,7 +11,6 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
-from fastmcp.server.dependencies import get_context
 from loguru import logger as log
 
 from src.config import Config, MCPServerConfig
