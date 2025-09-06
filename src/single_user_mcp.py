@@ -5,11 +5,12 @@ FastMCP instance for the single-user Open Edison setup.
 Handles MCP protocol communication with running servers using a unified composite proxy.
 """
 
+import asyncio
+import time
 from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
-from fastmcp.server.dependencies import get_context
 from loguru import logger as log
 
 from src.config import Config, MCPServerConfig
@@ -245,7 +246,7 @@ class SingleUserMCP(FastMCP[Any]):
             log.error(f"❌ Failed to mount server {server_name}: {e}")
             return False
 
-    async def unmount(self, server_name: str) -> bool:
+    async def unmount(self, server_name: str, rewarm_caches: bool = False) -> bool:
         """
         Unmount a previously mounted server by name.
 
@@ -277,30 +278,47 @@ class SingleUserMCP(FastMCP[Any]):
             mounted_list[:] = new_list
 
         # Invalidate and warm lists to ensure reload
-        _ = await self._tool_manager.list_tools()
-        _ = await self._resource_manager.list_resources()
-        _ = await self._prompt_manager.list_prompts()
+        if rewarm_caches:
+            _ = await self._tool_manager.list_tools()
+            _ = await self._resource_manager.list_resources()
+            _ = await self._prompt_manager.list_prompts()
 
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
 
-    async def _send_list_changed_notifications(self) -> None:
-        """Send notifications to clients about changed component lists."""
-        try:
-            try:
-                context = get_context()
-                # Queue notifications for all component types since we don't know
-                # what types of components the unmounted server provided
-                context._queue_tool_list_changed()  # type: ignore
-                context._queue_resource_list_changed()  # type: ignore
-                context._queue_prompt_list_changed()  # type: ignore
-                log.debug("Queued component list change notifications")
-            except RuntimeError:
-                # No active context - notifications will be sent when context becomes available
-                log.debug("No active context for notifications")
+    async def list_servers_components_parallel(self) -> None:
+        """Reload all servers' components in parallel."""
 
-        except Exception as e:
-            log.warning(f"Error sending unmount notifications: {e}")
+        # Reload a server's components in parallel
+        async def list_server_components(server: Any) -> None:
+            log.debug(f"Reloading all components for server {server.prefix} in parallel...")
+            server_time = time.perf_counter()
+
+            # await server.server._list_tools()
+            # Run all three list operations in parallel
+            await asyncio.gather(
+                server.server._list_tools(),
+                server.server._list_resources(),
+                server.server._list_prompts(),
+                return_exceptions=True,
+            )
+            log.debug("Reloading complete")
+            log.debug(
+                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time} seconds"
+            )
+
+        # Execute all server reloads in parallel
+        list_tasks = [
+            list_server_components(server)
+            for server in self._tool_manager._mounted_servers  # type: ignore
+        ]
+
+        log.debug(f"Starting reload for {len(list_tasks)} servers in parallel")
+        start_time = time.perf_counter()
+        if list_tasks:
+            await asyncio.gather(*list_tasks)
+        end_time = time.perf_counter()
+        log.debug(f"Time taken to reload all servers: {end_time - start_time} seconds")
 
     async def initialize(self, rewarm_caches: bool = False) -> None:
         """Initialize the FastMCP server using unified composite proxy approach.
@@ -319,7 +337,7 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Unmount all servers
         for server_name in list(mounted_servers.keys()):
-            await self.unmount(server_name)
+            await self.unmount(server_name, rewarm_caches=False)
 
         # Create composite proxy for all real servers
         success = await self.create_composite_proxy(enabled_servers)
@@ -327,22 +345,10 @@ class SingleUserMCP(FastMCP[Any]):
             log.error("Failed to create composite proxy")
             return
 
-        log.info("✅ Single User MCP server initialized with composite proxy")
-
         if rewarm_caches:
-            # Invalidate and warm lists to ensure reload
-            log.debug("Reloading tool list...")
-            _ = await self._tool_manager.list_tools()
-            log.debug("Reloading resource list...")
-            _ = await self._resource_manager.list_resources()
-            log.debug("Reloading prompt list...")
-            _ = await self._prompt_manager.list_prompts()
-            log.debug("Reloading complete")
+            await self.list_servers_components_parallel()
 
-            # Send notifications to clients about changed component lists
-            log.debug("Sending list changed notifications...")
-            await self._send_list_changed_notifications()
-            log.debug("List changed notifications sent")
+        log.info("✅ Single User MCP server initialized with composite proxy")
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """
