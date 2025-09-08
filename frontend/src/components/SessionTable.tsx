@@ -68,7 +68,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
         <tbody>
           {sessions.map((s) => {
             const isOpen = openId === s.session_id
-            const firstTs = s.tool_calls[0]?.timestamp
+            const firstTs = s.created_at || s.tool_calls[0]?.timestamp
             const sec = getSecurityFlags(s.data_access_summary as any)
             return (
               <React.Fragment key={s.session_id}>

@@ -668,14 +668,29 @@ class OpenEdisonProxy:
                 )
 
                 sessions: list[dict[str, Any]] = []
+                has_warned_about_missing_created_at = False
                 for row_model in results:
                     row = cast(Any, row_model)
                     tool_calls_val = row.tool_calls
                     data_access_summary_val = row.data_access_summary
+                    created_at_val = None
+                    if isinstance(data_access_summary_val, dict):
+                        created_at_val = data_access_summary_val.get("created_at")  # type: ignore[assignment]
+                    if (
+                        created_at_val is None
+                        and isinstance(tool_calls_val, list)
+                        and tool_calls_val
+                        and not has_warned_about_missing_created_at
+                    ):
+                        has_warned_about_missing_created_at = True
+                        log.warning(
+                            "created_at is missing, will have sessions with unknown timestamps"
+                        )
                     sessions.append(
                         {
                             "session_id": row.session_id,
                             "correlation_id": row.correlation_id,
+                            "created_at": created_at_val,
                             "tool_calls": tool_calls_val
                             if isinstance(tool_calls_val, list)
                             else [],
