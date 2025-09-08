@@ -126,7 +126,7 @@ from pathlib import Path
 import uvicorn       # Third party
 from fastapi import FastAPI
 
-from src.config import config  # Local imports
+from src.config import Config  # Project imports at top-level
 ```
 
 ### Naming Conventions

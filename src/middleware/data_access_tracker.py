@@ -14,10 +14,12 @@ names (with server-name/path prefixes) to their security classifications:
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from loguru import logger as log
 
 from src import events
+from src.config import Config
 from src.permissions import (
     ACL_RANK,
     Permissions,
@@ -108,6 +110,45 @@ class DataAccessTracker:
             self.has_external_communication = True
             log.info(f"✍️ Write operation detected via {source_type}: {name}")
             record_write_operation(source_type, name)
+
+    @staticmethod
+    def _server_name_from_resource_uri(resource_uri: str) -> str:
+        """Extract the mounted server name from a FastMCP-prefixed resource URI.
+
+        FastMCP prefixes resources by inserting the mount prefix as the authority
+        (e.g., scheme://prefix/...) or as the first path segment. We try both and
+        fall back to "builtin" (local server) if no known prefix is found.
+        """
+        try:
+            server_names = {s.name for s in Config().mcp_servers}
+
+            parsed = urlparse(resource_uri)
+            # Primary: authority/netloc holds the prefix in typical FastMCP URIs
+            if parsed.netloc and parsed.netloc in server_names:
+                return parsed.netloc
+
+            # Secondary: first path segment may hold the prefix
+            path = parsed.path or ""
+            if path.startswith("/"):
+                path = path[1:]
+            first_segment = path.split("/", 1)[0] if path else ""
+            if first_segment and first_segment in server_names:
+                return first_segment
+        except Exception:
+            pass
+        return "builtin"
+
+    @staticmethod
+    def _server_name_from_prompt_name(prompt_name: str) -> str:
+        """Extract mounted server name from a prompt name using FastMCP prefixing.
+
+        Prompts are exposed with prefixed names (similar to tools), e.g. "prefix_name".
+        We leverage existing logic for tools to determine the server name.
+        """
+        try:
+            return Permissions.server_name_from_tool_name(prompt_name)
+        except Exception:
+            return "builtin"
 
     def add_tool_call(self, tool_name: str):
         """
@@ -222,8 +263,10 @@ class DataAccessTracker:
         perms = Permissions()
         permissions = perms.get_resource_permission(resource_name)
 
-        # Check if resource is enabled
-        if not perms.is_resource_enabled(resource_name):
+        # Check if resource is enabled and server is enabled via resource-specific resolution
+        server_name = self._server_name_from_resource_uri(resource_name)
+        server_enabled = Permissions.is_server_enabled(server_name)
+        if not (permissions.enabled and server_enabled):
             log.warning(f"🚫 BLOCKING resource access {resource_name} - resource is disabled")
             record_resource_access_blocked(resource_name, "disabled")
             events.fire_and_forget(
@@ -284,8 +327,10 @@ class DataAccessTracker:
         perms = Permissions()
         permissions = perms.get_prompt_permission(prompt_name)
 
-        # Check if prompt is enabled
-        if not perms.is_prompt_enabled(prompt_name):
+        # Check if prompt is enabled and server is enabled via prompt-specific resolution
+        server_name = self._server_name_from_prompt_name(prompt_name)
+        server_enabled = Permissions.is_server_enabled(server_name)
+        if not (permissions.enabled and server_enabled):
             log.warning(f"🚫 BLOCKING prompt access {prompt_name} - prompt is disabled")
             record_prompt_access_blocked(prompt_name, "disabled")
             events.fire_and_forget(

@@ -21,9 +21,9 @@ export function App(): React.JSX.Element {
     const sessions = useMemo(() => (data?.sessions ?? []) as Session[], [data])
     const uiSessions: UISession[] = useMemo(() => {
         return (data?.sessions ?? []).map((s) => {
-            const firstTs = s.tool_calls[0]?.timestamp
-            const ts = firstTs ? Date.parse(firstTs) : 0
-            const day = firstTs ? new Date(ts).toISOString().slice(0, 10) : ''
+            const iso = s.created_at || s.tool_calls[0]?.timestamp
+            const ts = iso ? Date.parse(iso) : 0
+            const day = iso && !Number.isNaN(ts) ? new Date(ts).toISOString().slice(0, 10) : ''
             return { ...s, ts, day }
         })
     }, [data])

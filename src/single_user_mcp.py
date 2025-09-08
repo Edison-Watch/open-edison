@@ -511,7 +511,7 @@ class SingleUserMCP(FastMCP[Any]):
     def _setup_demo_resources(self) -> None:
         """Set up built-in demo resources for testing."""
 
-        @self.resource("config://app")  # noqa
+        @self.resource("info://builtin/app")  # noqa
         def builtin_get_app_config() -> dict[str, Any]:
             """Get application configuration."""
             return {
@@ -520,7 +520,7 @@ class SingleUserMCP(FastMCP[Any]):
                 "total_mounted": len(mounted_servers),
             }
 
-        log.info("✅ Added built-in demo resources: config://app")
+        log.info("✅ Added built-in demo resources: info://builtin/app")
 
     def _setup_demo_prompts(self) -> None:
         """Set up built-in demo prompts for testing."""

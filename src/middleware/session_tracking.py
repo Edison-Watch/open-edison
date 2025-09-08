@@ -5,6 +5,7 @@ This middleware tracks tool usage patterns across all mounted tool calls,
 providing session-level statistics accessible via contextvar.
 """
 
+import time
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -141,7 +142,8 @@ def get_session_from_db(session_id: str) -> MCPSession:
                 session_id=session_id,
                 correlation_id=str(uuid.uuid4()),
                 tool_calls=[],  # type: ignore
-                data_access_summary={},  # type: ignore
+                # Store session creation timestamp inside the summary to avoid schema changes
+                data_access_summary={"created_at": datetime.now().isoformat()},  # type: ignore
             )
             db_session.add(new_session_model)
             db_session.commit()
@@ -193,6 +195,41 @@ def get_session_from_db(session_id: str) -> MCPSession:
             tool_calls=tool_calls,
             data_access_tracker=data_access_tracker,
         )
+
+
+def _persist_session_to_db(session: MCPSession) -> None:
+    """Serialize and persist the given session to the SQLite database."""
+    with create_db_session() as db_session:
+        db_session_model = db_session.execute(
+            select(MCPSessionModel).where(MCPSessionModel.session_id == session.session_id)
+        ).scalar_one()
+
+        tool_calls_dict = [
+            {
+                "id": tc.id,
+                "tool_name": tc.tool_name,
+                "parameters": tc.parameters,
+                "timestamp": tc.timestamp.isoformat(),
+                "duration_ms": tc.duration_ms,
+                "status": tc.status,
+                "result": tc.result,
+            }
+            for tc in session.tool_calls
+        ]
+        db_session_model.tool_calls = tool_calls_dict  # type: ignore
+        # Merge existing summary with tracker dict so we preserve created_at and other keys
+        existing_summary: dict[str, Any] = {}
+        try:
+            if isinstance(db_session_model.data_access_summary, dict):  # type: ignore
+                existing_summary = dict(db_session_model.data_access_summary)  # type: ignore
+        except Exception:
+            existing_summary = {}
+        updates: dict[str, Any] = (
+            session.data_access_tracker.to_dict() if session.data_access_tracker is not None else {}
+        )
+        merged = {**existing_summary, **updates}
+        db_session_model.data_access_summary = merged  # type: ignore
+        db_session.commit()
 
 
 class SessionTrackingMiddleware(Middleware):
@@ -357,36 +394,27 @@ class SessionTrackingMiddleware(Middleware):
         # Telemetry: record tool call
         record_tool_call(context.message.name)
 
-        # Update database session
-        with create_db_session() as db_session:
-            db_session_model = db_session.execute(
-                select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
-            ).scalar_one()
-
-            # Convert tool calls to dict format for JSON storage
-            tool_calls_dict = [
-                {
-                    "id": tc.id,
-                    "tool_name": tc.tool_name,
-                    "parameters": tc.parameters,
-                    "timestamp": tc.timestamp.isoformat(),
-                    "duration_ms": tc.duration_ms,
-                    "status": tc.status,
-                    "result": tc.result,
-                }
-                for tc in session.tool_calls
-            ]
-            # Update the tool_calls for this session
-            db_session_model.tool_calls = tool_calls_dict  # type: ignore
-            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
-
-            db_session.commit()
+        # Persist the pending call immediately so it appears in UI
+        _persist_session_to_db(session)
 
         log.trace(f"Tool call {context.message.name} added to session {session_id}")
 
+        # Execute tool and update status/duration based on outcome
+        start_time = time.perf_counter()
         try:
-            return await call_next(context)  # type: ignore
+            result = await call_next(context)  # type: ignore
+            new_tool_call.status = "ok"
+            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            _persist_session_to_db(session)
+
+            return result
         except ToolError as e:
+            new_tool_call.status = "error"
+            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            _persist_session_to_db(session)
+
             # Convert tool errors to a concise ToolResult rather than bubbling a stack trace
             log.warning(f"Tool failed: {context.message.name}: {e}")
             return ToolResult(
@@ -398,6 +426,12 @@ class SessionTrackingMiddleware(Middleware):
                 ],
                 structured_content=None,
             )
+        except Exception:
+            new_tool_call.status = "error"
+            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            _persist_session_to_db(session)
+            raise
 
     # Hooks for Resources
     async def on_list_resources(  # noqa
@@ -504,7 +538,16 @@ class SessionTrackingMiddleware(Middleware):
                 select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
             ).scalar_one()
 
-            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
+            # Use helper to preserve created_at and merge updates
+            existing_summary: dict[str, Any] = {}
+            try:
+                if isinstance(db_session_model.data_access_summary, dict):  # type: ignore
+                    existing_summary = dict(db_session_model.data_access_summary)  # type: ignore
+            except Exception:
+                existing_summary = {}
+            updates: dict[str, Any] = session.data_access_tracker.to_dict()
+            merged: dict[str, Any] = {**existing_summary, **updates}
+            db_session_model.data_access_summary = merged  # type: ignore
             db_session.commit()
 
         log.trace(f"Resource access {resource_name} added to session {session_id}")
@@ -616,7 +659,15 @@ class SessionTrackingMiddleware(Middleware):
                 select(MCPSessionModel).where(MCPSessionModel.session_id == session_id)
             ).scalar_one()
 
-            db_session_model.data_access_summary = session.data_access_tracker.to_dict()  # type: ignore
+            existing_summary = {}
+            try:
+                if isinstance(db_session_model.data_access_summary, dict):  # type: ignore
+                    existing_summary = dict(db_session_model.data_access_summary)  # type: ignore
+            except Exception:
+                existing_summary = {}
+            updates: dict[str, Any] = session.data_access_tracker.to_dict()
+            merged: dict[str, Any] = {**existing_summary, **updates}
+            db_session_model.data_access_summary = merged  # type: ignore
             db_session.commit()
 
         log.trace(f"Prompt access {prompt_name} added to session {session_id}")

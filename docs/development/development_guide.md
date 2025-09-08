@@ -360,7 +360,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from loguru import logger as log
 
-# Local imports
+# Project imports (top-level; avoid local-in-function imports)
 from src.config import Config
 from src.single_user_mcp import SingleUserMCP
 ```

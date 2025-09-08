@@ -11,6 +11,7 @@ export type ToolCall = {
 export type Session = {
   session_id: string
   correlation_id: string
+  created_at?: string | null
   tool_calls: ToolCall[]
   data_access_summary: Record<string, unknown>
 }
@@ -26,7 +27,7 @@ export type PermissionFlags = {
   description?: string
 }
 
-export type OAuthStatus = 
+export type OAuthStatus =
   | 'unknown'
   | 'not_required'
   | 'needs_auth'
