@@ -33,6 +33,9 @@ from pydantic import BaseModel, Field
 from src import events
 from src.config import Config, MCPServerConfig, clear_json_file_cache, get_config_json_path
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
+from src.mcp_stdio_capture import (
+    install_stdio_client_stderr_capture as _install_stdio_capture,
+)
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
@@ -46,6 +49,9 @@ from src.telemetry import initialize_telemetry, set_servers_installed
 # Module-level dependency singletons
 _security = HTTPBearer()
 _auth_dependency = Depends(_security)
+
+
+_install_stdio_capture()
 
 
 class OpenEdisonProxy:

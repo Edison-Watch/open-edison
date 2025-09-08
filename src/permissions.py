@@ -53,6 +53,9 @@ class ResourcePermission:
     write_operation: bool = False
     read_private_data: bool = False
     read_untrusted_public_data: bool = False
+    acl: str = "PUBLIC"
+    # Optional metadata fields (ignored by enforcement but accepted from JSON)
+    description: str | None = None
 
 
 @dataclass

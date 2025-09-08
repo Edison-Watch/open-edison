@@ -16,6 +16,7 @@ from typing import Any, cast
 
 import mcp.types as mt
 from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
@@ -235,6 +236,14 @@ class SessionTrackingMiddleware(Middleware):
 
         try:
             return await call_next(context)  # type: ignore
+        except SecurityError as e:
+            # Avoid noisy tracebacks for expected security blocks
+            log.warning(f"MCP request blocked by security policy: {e}")
+            raise
+        except ToolError as e:
+            # Upstream tool failed; avoid noisy traceback here. Specific handlers may format a response.
+            log.warning(f"MCP tool error: {e}")
+            raise
         except Exception:
             log.exception("MCP request handling failed")
             raise
@@ -331,7 +340,16 @@ class SessionTrackingMiddleware(Middleware):
                 session_id, "tool", context.message.name, timeout_s=30.0
             )
             if not approved:
-                raise
+                # Return formatted SecurityError message (includes ASCII art)
+                return ToolResult(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": str(e),
+                        }
+                    ],
+                    structured_content=None,
+                )
             # Approved: apply effects and proceed
             session.data_access_tracker.apply_effects_after_manual_approval(
                 "tool", context.message.name
@@ -366,7 +384,20 @@ class SessionTrackingMiddleware(Middleware):
 
         log.trace(f"Tool call {context.message.name} added to session {session_id}")
 
-        return await call_next(context)  # type: ignore
+        try:
+            return await call_next(context)  # type: ignore
+        except ToolError as e:
+            # Convert tool errors to a concise ToolResult rather than bubbling a stack trace
+            log.warning(f"Tool failed: {context.message.name}: {e}")
+            return ToolResult(
+                content=[
+                    {
+                        "type": "text",
+                        "text": (f"Tool '{context.message.name}' failed: {str(e)}"),
+                    }
+                ],
+                structured_content=None,
+            )
 
     # Hooks for Resources
     async def on_list_resources(  # noqa
@@ -458,7 +489,10 @@ class SessionTrackingMiddleware(Middleware):
                 session_id, "resource", resource_name, timeout_s=30.0
             )
             if not approved:
-                raise
+                return {
+                    "type": "text",
+                    "text": str(e),
+                }
             session.data_access_tracker.apply_effects_after_manual_approval(
                 "resource", resource_name
             )
@@ -569,7 +603,10 @@ class SessionTrackingMiddleware(Middleware):
                 session_id, "prompt", prompt_name, timeout_s=30.0
             )
             if not approved:
-                raise
+                return {
+                    "type": "text",
+                    "text": str(e),
+                }
             session.data_access_tracker.apply_effects_after_manual_approval("prompt", prompt_name)
         record_prompt_used(prompt_name)
 

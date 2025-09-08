@@ -197,7 +197,7 @@ class SingleUserMCP(FastMCP[Any]):
 
         else:
             # Local server - create proxy directly from config (avoids union type issue)
-            log.info(f"🔧 Creating local process proxy for {server_name}")
+            log.debug(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
         super().mount(proxy, prefix=server_name)
