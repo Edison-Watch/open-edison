@@ -95,46 +95,6 @@ class SingleUserMCP(FastMCP[Any]):
 
         return {"mcpServers": mcp_servers}
 
-    async def create_composite_proxy(self, enabled_servers: list[MCPServerConfig]) -> bool:
-        """
-        Create a unified composite proxy for all enabled MCP servers.
-
-        This replaces individual server mounting with a single FastMCP composite proxy
-        that handles all configured servers with automatic namespacing.
-
-        Args:
-            enabled_servers: List of enabled MCP server configurations
-
-        Returns:
-            True if composite proxy was created successfully, False otherwise
-        """
-        if not enabled_servers:
-            log.info("No real servers to mount in composite proxy")
-            return True
-
-        oauth_manager = get_oauth_manager()
-
-        for server_config in enabled_servers:
-            server_name = server_config.name
-
-            # Skip if this server would produce an empty config (e.g., misconfigured)
-            fastmcp_config = self._convert_to_fastmcp_config([server_config])
-            if not fastmcp_config.get("mcpServers"):
-                log.warning(f"Skipping server '{server_name}' due to empty MCP config")
-                continue
-
-            try:
-                await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            except Exception as e:
-                log.error(f"❌ Failed to mount server {server_name}: {e}")
-                # Continue with other servers even if one fails
-                continue
-
-        log.info(
-            f"✅ Created composite proxy with {len(enabled_servers)} servers ({mounted_servers.keys()})"
-        )
-        return True
-
     async def _mount_single_server(
         self,
         server_config: MCPServerConfig,
@@ -421,12 +381,6 @@ class SingleUserMCP(FastMCP[Any]):
         # Mount those servers
         for server_name in servers_to_mount:
             await self.mount_server(server_name)
-
-        ## Create composite proxy for all real servers
-        # success = await self.create_composite_proxy(enabled_servers)
-        # if not success:
-        #    log.error("Failed to create composite proxy")
-        #    return
 
         if rewarm_caches:
             await self.list_all_servers_components_parallel()

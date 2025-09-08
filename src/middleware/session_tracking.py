@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import mcp.types as mt
-from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.exceptions import ToolError
+from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import FunctionResource
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext

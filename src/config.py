@@ -169,7 +169,7 @@ def load_json_file(path: Path) -> dict[str, Any]:
 
 
 def clear_json_file_cache() -> None:
-    """Clear the cache for the given JSON file path"""
+    """Clear the cache for the JSON file loading"""
     load_json_file.cache_clear()
 
 

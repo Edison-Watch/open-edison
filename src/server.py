@@ -552,12 +552,8 @@ class OpenEdisonProxy:
         warms the lists to ensure subsequent list calls reflect current state.
         """
         try:
-            # TODO change to clear config-file loading caches instead.
-            # mcp = self.single_user_mcp
-            # Warm managers so any internal caches are refreshed
-            # await mcp._tool_manager.list_tools()  # type: ignore[attr-defined]
-            # await mcp._resource_manager.list_resources()  # type: ignore[attr-defined]
-            # await mcp._prompt_manager.list_prompts()  # type: ignore[attr-defined]
+            clear_json_file_cache()
+            Permissions.clear_permissions_file_cache()
             return {"status": "ok"}
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to process permissions-changed: {e}")

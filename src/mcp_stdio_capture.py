@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -5,7 +6,6 @@ from contextlib import asynccontextmanager, suppress
 from typing import TextIO
 
 import anyio
-import asyncio
 from anyio import to_thread
 from loguru import logger as log
 
@@ -14,22 +14,7 @@ _ACTIVE_PIPES: set[tuple[TextIO, TextIO]] = set()
 _shutting_down: bool = False
 
 
-def shutdown_stdio_client_stderr_capture() -> None:
-    """Force-close all active stderr capture pipes to unblock readers."""
-    global _shutting_down
-    _shutting_down = True
-    # Close a snapshot to avoid mutation during iteration
-    for read_fp, write_fp in list(_ACTIVE_PIPES):
-        with suppress(Exception):
-            write_fp.close()
-        with suppress(Exception):
-            read_fp.close()
-        with suppress(Exception):
-            _ACTIVE_PIPES.discard((read_fp, write_fp))
-    log.debug("stdio capture: forced close of active stderr pipes")
-
-
-def install_stdio_client_stderr_capture() -> None:
+def install_stdio_client_stderr_capture() -> None:  # noqa: C901
     """
     Monkeypatch mcp.client.stdio.stdio_client so child process stderr is
     routed to our logger at trace level with a stable prefix.
@@ -45,7 +30,7 @@ def install_stdio_client_stderr_capture() -> None:
     _original_stdio_client = _mcp_stdio.stdio_client
 
     @asynccontextmanager
-    async def _edison_stdio_client(
+    async def _edison_stdio_client(  # noqa: C901
         server: _mcp_stdio.StdioServerParameters, errlog: TextIO | None = sys.stderr
     ) -> AsyncIterator[tuple[object, object]]:
         # Respect non-default errlog
