@@ -26,9 +26,13 @@ help: ## Show this help message
 all: run ## Run the Open Edison MCP Proxy Server (default)
 
 # Run the Open Edison MCP proxy server
-.PHONY: run
+.PHONY: run dev
 run: check_uv sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
 	@echo "🚀 Starting Open Edison MCP Proxy Server..."
+	uv run open-edison
+
+dev: check_uv sync frontend_pack ## Sync deps, build dashboard and run the Open Edison MCP Proxy Server
+	@echo "🚀 Starting Open Edison MCP Proxy Server with development config..."
 	OPEN_EDISON_CONFIG_DIR=$(PROJECT_ROOT)/dev_config_dir uv run open-edison
 
 ########################################################

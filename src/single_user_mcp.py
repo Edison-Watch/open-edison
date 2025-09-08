@@ -95,46 +95,6 @@ class SingleUserMCP(FastMCP[Any]):
 
         return {"mcpServers": mcp_servers}
 
-    async def create_composite_proxy(self, enabled_servers: list[MCPServerConfig]) -> bool:
-        """
-        Create a unified composite proxy for all enabled MCP servers.
-
-        This replaces individual server mounting with a single FastMCP composite proxy
-        that handles all configured servers with automatic namespacing.
-
-        Args:
-            enabled_servers: List of enabled MCP server configurations
-
-        Returns:
-            True if composite proxy was created successfully, False otherwise
-        """
-        if not enabled_servers:
-            log.info("No real servers to mount in composite proxy")
-            return True
-
-        oauth_manager = get_oauth_manager()
-
-        for server_config in enabled_servers:
-            server_name = server_config.name
-
-            # Skip if this server would produce an empty config (e.g., misconfigured)
-            fastmcp_config = self._convert_to_fastmcp_config([server_config])
-            if not fastmcp_config.get("mcpServers"):
-                log.warning(f"Skipping server '{server_name}' due to empty MCP config")
-                continue
-
-            try:
-                await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            except Exception as e:
-                log.error(f"❌ Failed to mount server {server_name}: {e}")
-                # Continue with other servers even if one fails
-                continue
-
-        log.info(
-            f"✅ Created composite proxy with {len(enabled_servers)} servers ({mounted_servers.keys()})"
-        )
-        return True
-
     async def _mount_single_server(
         self,
         server_config: MCPServerConfig,
@@ -197,7 +157,7 @@ class SingleUserMCP(FastMCP[Any]):
 
         else:
             # Local server - create proxy directly from config (avoids union type issue)
-            log.info(f"🔧 Creating local process proxy for {server_name}")
+            log.debug(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
         super().mount(proxy, prefix=server_name)
@@ -243,10 +203,10 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             oauth_manager = get_oauth_manager()
             await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            # Warm lists after mount
-            _ = await self._tool_manager.list_tools()
-            _ = await self._resource_manager.list_resources()
-            _ = await self._prompt_manager.list_prompts()
+            ## Warm lists after mount
+            # _ = await self._tool_manager.list_tools()
+            # _ = await self._resource_manager.list_resources()
+            # _ = await self._prompt_manager.list_prompts()
             return True
         except Exception as e:  # noqa: BLE001
             log.error(f"❌ Failed to mount server {server_name}: {e}")
@@ -310,8 +270,10 @@ class SingleUserMCP(FastMCP[Any]):
             # Use return_exceptions=True to prevent one failing server from breaking everything
             tools_lists = await asyncio.gather(*list_tasks, return_exceptions=True)
             for server, tools_result in zip(
-                self._tool_manager._mounted_servers, tools_lists, strict=False
-            ):  # type: ignore
+                self._tool_manager._mounted_servers,  # type: ignore
+                tools_lists,
+                strict=False,
+            ):
                 if isinstance(tools_result, Exception):
                     log.warning(f"Failed to get tools from server {server.prefix}: {tools_result}")
                     continue
@@ -405,15 +367,20 @@ class SingleUserMCP(FastMCP[Any]):
             f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
         )
 
-        # Unmount all servers
-        for server_name in list(mounted_servers.keys()):
-            await self.unmount(server_name, rewarm_caches=False)
+        # Figure out which servers are to be unmounted
+        enabled_server_names = {s.name for s in enabled_servers}
+        servers_to_unmount = [s for s in mounted_servers if s not in enabled_server_names]
 
-        # Create composite proxy for all real servers
-        success = await self.create_composite_proxy(enabled_servers)
-        if not success:
-            log.error("Failed to create composite proxy")
-            return
+        # Figure out which servers are to be mounted
+        servers_to_mount = [s.name for s in enabled_servers if s.name not in mounted_servers]
+
+        # Unmount those servers
+        for server_name in servers_to_unmount:
+            await self.unmount(server_name)
+
+        # Mount those servers
+        for server_name in servers_to_mount:
+            await self.mount_server(server_name)
 
         if rewarm_caches:
             await self.list_all_servers_components_parallel()

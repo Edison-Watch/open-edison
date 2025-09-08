@@ -31,8 +31,11 @@ from loguru import logger as log
 from pydantic import BaseModel, Field
 
 from src import events
-from src.config import Config, MCPServerConfig, clear_json_file_cache
+from src.config import Config, MCPServerConfig, clear_json_file_cache, get_config_json_path
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
+from src.mcp_stdio_capture import (
+    install_stdio_client_stderr_capture as _install_stdio_capture,
+)
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
@@ -46,6 +49,9 @@ from src.telemetry import initialize_telemetry, set_servers_installed
 # Module-level dependency singletons
 _security = HTTPBearer()
 _auth_dependency = Depends(_security)
+
+
+_install_stdio_capture()
 
 
 class OpenEdisonProxy:
@@ -372,6 +378,9 @@ class OpenEdisonProxy:
         log.info(f"FastAPI management API on {self.host}:{self.port + 1}")
         log.info(f"FastMCP protocol server on {self.host}:{self.port}")
 
+        # Print location of config
+        log.info(f"Config file location: {get_config_json_path()}")
+
         initialize_telemetry()
 
         # Ensure the sessions database exists and has the required schema
@@ -543,11 +552,8 @@ class OpenEdisonProxy:
         warms the lists to ensure subsequent list calls reflect current state.
         """
         try:
-            mcp = self.single_user_mcp
-            # Warm managers so any internal caches are refreshed
-            await mcp._tool_manager.list_tools()  # type: ignore[attr-defined]
-            await mcp._resource_manager.list_resources()  # type: ignore[attr-defined]
-            await mcp._prompt_manager.list_prompts()  # type: ignore[attr-defined]
+            clear_json_file_cache()
+            Permissions.clear_permissions_file_cache()
             return {"status": "ok"}
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to process permissions-changed: {e}")

@@ -53,6 +53,9 @@ class ResourcePermission:
     write_operation: bool = False
     read_private_data: bool = False
     read_untrusted_public_data: bool = False
+    acl: str = "PUBLIC"
+    # Optional metadata fields (ignored by enforcement but accepted from JSON)
+    description: str | None = None
 
 
 @dataclass
@@ -226,10 +229,20 @@ class Permissions:
     def get_tool_permission(self, tool_name: str) -> ToolPermission:
         """Get permission for a specific tool"""
         if tool_name not in self.tool_permissions:
+            if tool_name.startswith("builtin_"):
+                log.info(
+                    f"Tool '{tool_name}' not found; returning builtin safe default (enabled, 0 risk)"
+                )
+                return ToolPermission(
+                    enabled=True,
+                    write_operation=False,
+                    read_private_data=False,
+                    read_untrusted_public_data=False,
+                    acl="PUBLIC",
+                )
             log.warning(
                 f"Tool '{tool_name}' not found in permissions; returning enabled full-trifecta default"
             )
-            # Disabled but fully data-using to be conservatively classified if inspected
             return ToolPermission(
                 enabled=True,
                 write_operation=True,
@@ -242,6 +255,16 @@ class Permissions:
     def get_resource_permission(self, resource_name: str) -> ResourcePermission:
         """Get permission for a specific resource"""
         if resource_name not in self.resource_permissions:
+            if resource_name.startswith("builtin_"):
+                log.info(
+                    f"Resource '{resource_name}' not found; returning builtin safe default (enabled, 0 risk)"
+                )
+                return ResourcePermission(
+                    enabled=True,
+                    write_operation=False,
+                    read_private_data=False,
+                    read_untrusted_public_data=False,
+                )
             log.warning(
                 f"Resource '{resource_name}' not found in permissions; returning enabled full-trifecta default"
             )
@@ -256,6 +279,17 @@ class Permissions:
     def get_prompt_permission(self, prompt_name: str) -> PromptPermission:
         """Get permission for a specific prompt"""
         if prompt_name not in self.prompt_permissions:
+            if prompt_name.startswith("builtin_"):
+                log.info(
+                    f"Prompt '{prompt_name}' not found; returning builtin safe default (enabled, 0 risk)"
+                )
+                return PromptPermission(
+                    enabled=True,
+                    write_operation=False,
+                    read_private_data=False,
+                    read_untrusted_public_data=False,
+                    acl="PUBLIC",
+                )
             log.warning(
                 f"Prompt '{prompt_name}' not found in permissions; returning enabled full-trifecta default"
             )

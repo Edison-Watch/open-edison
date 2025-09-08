@@ -61,8 +61,20 @@ self.addEventListener('notificationclick', (event) => {
             return;
         }
 
-        // Generic click: open dashboard as a safe fallback
-        event.waitUntil(self.clients.openWindow('/dashboard').catch(() => { }));
+        // Generic click: focus existing dashboard tab if present, else open one (with trailing slash)
+        event.waitUntil((async () => {
+            try {
+                const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+                const base = self.location && self.location.origin ? self.location.origin : '';
+                const targetPrefix = base + '/dashboard';
+                const existing = allClients.find(c => c.url && c.url.startsWith(targetPrefix));
+                if (existing) {
+                    await existing.focus();
+                    return;
+                }
+            } catch (e) { /* ignore */ }
+            try { await self.clients.openWindow('/dashboard/'); } catch (e) { /* ignore */ }
+        })());
     } catch (e) {
         // swallow
     }

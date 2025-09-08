@@ -84,7 +84,7 @@ class OAuthManager:
         Returns:
             OAuthServerInfo with detection results
         """
-        log.info(f"🔍 Checking OAuth requirement for {server_name}")
+        log.debug(f"🔍 Checking OAuth requirement for {server_name}")
 
         # If no mcp_url provided, this is a local server - no OAuth needed
         if not mcp_url:
@@ -95,7 +95,7 @@ class OAuthManager:
             self._oauth_info[server_name] = info
             return info
 
-        log.info(f"🔍 Checking OAuth requirement for remote server {server_name} at {mcp_url}")
+        log.debug(f"🔍 Checking OAuth requirement for remote server {server_name} at {mcp_url}")
 
         try:
             # Check if auth is required (with timeout)
