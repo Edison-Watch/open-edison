@@ -11,6 +11,12 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+
+# Low level FastMCP imports
+from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool_transform import (
+    apply_transformations_to_tools,
+)
 from loguru import logger as log
 
 from src.config import Config, MCPServerConfig
@@ -286,7 +292,64 @@ class SingleUserMCP(FastMCP[Any]):
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
 
-    async def list_servers_components_parallel(self) -> None:
+    async def list_all_servers_tools_parallel(self) -> list[Tool]:
+        """Reload all servers' tools in parallel.
+        Reimplements FastMCP's ToolManager._list_tools method with parallel execution.
+        """
+
+        # Execute all server reloads in parallel
+        list_tasks = [
+            server.server._list_tools()
+            for server in self._tool_manager._mounted_servers  # type: ignore
+        ]
+
+        log.debug(f"Starting reload for {len(list_tasks)} servers' tools in parallel")
+        start_time = time.perf_counter()
+        all_tools: dict[str, Tool] = {}
+        if list_tasks:
+            # Use return_exceptions=True to prevent one failing server from breaking everything
+            tools_lists = await asyncio.gather(*list_tasks, return_exceptions=True)
+            for server, tools_result in zip(
+                self._tool_manager._mounted_servers, tools_lists, strict=False
+            ):  # type: ignore
+                if isinstance(tools_result, Exception):
+                    log.warning(f"Failed to get tools from server {server.prefix}: {tools_result}")
+                    continue
+
+                tools_list = tools_result
+                if not tools_list or not isinstance(tools_list, list):
+                    continue
+
+                tools_dict = {t.key: t for t in tools_list}  # type: ignore
+                if server.prefix:
+                    for tool in tools_dict.values():
+                        prefixed_tool = tool.model_copy(  # type: ignore
+                            key=f"{server.prefix}_{tool.key}"  # type: ignore
+                        )
+                        all_tools[prefixed_tool.key] = prefixed_tool  # type: ignore
+                else:
+                    all_tools.update(tools_dict)  # type: ignore
+            log.debug(
+                f"Saved {len(all_tools)} tools from {len([r for r in tools_lists if not isinstance(r, Exception)])} servers"
+            )
+        else:
+            all_tools = {}
+
+        # Add local tools
+        all_tools.update(self._tool_manager._tools)  # type: ignore
+
+        transformed_tools = apply_transformations_to_tools(
+            tools=all_tools,
+            transformations=self._tool_manager.transformations,
+        )
+
+        final_tools_list = list(transformed_tools.values())
+
+        end_time = time.perf_counter()
+        log.debug(f"Time taken to reload all servers' tools: {end_time - start_time:.1f} seconds")
+        return final_tools_list
+
+    async def list_all_servers_components_parallel(self) -> None:
         """Reload all servers' components in parallel."""
 
         # Reload a server's components in parallel
@@ -294,7 +357,6 @@ class SingleUserMCP(FastMCP[Any]):
             log.debug(f"Reloading all components for server {server.prefix} in parallel...")
             server_time = time.perf_counter()
 
-            # await server.server._list_tools()
             # Run all three list operations in parallel
             await asyncio.gather(
                 server.server._list_tools(),
@@ -304,7 +366,7 @@ class SingleUserMCP(FastMCP[Any]):
             )
             log.debug("Reloading complete")
             log.debug(
-                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time} seconds"
+                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time:.1f} seconds"
             )
 
         # Execute all server reloads in parallel
@@ -313,12 +375,20 @@ class SingleUserMCP(FastMCP[Any]):
             for server in self._tool_manager._mounted_servers  # type: ignore
         ]
 
-        log.debug(f"Starting reload for {len(list_tasks)} servers in parallel")
+        log.debug(f"Starting reload for {len(list_tasks)} servers' components in parallel")
         start_time = time.perf_counter()
         if list_tasks:
-            await asyncio.gather(*list_tasks)
+            # Use return_exceptions=True to prevent one failing server from breaking everything
+            results = await asyncio.gather(*list_tasks, return_exceptions=True)
+            # Log any exceptions that occurred
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    server = self._tool_manager._mounted_servers[i]  # type: ignore
+                    log.warning(f"Failed to reload components for server {server.prefix}: {result}")
         end_time = time.perf_counter()
-        log.debug(f"Time taken to reload all servers: {end_time - start_time} seconds")
+        log.debug(
+            f"Time taken to reload all servers' components: {end_time - start_time:.1f} seconds"
+        )
 
     async def initialize(self, rewarm_caches: bool = False) -> None:
         """Initialize the FastMCP server using unified composite proxy approach.
@@ -346,7 +416,7 @@ class SingleUserMCP(FastMCP[Any]):
             return
 
         if rewarm_caches:
-            await self.list_servers_components_parallel()
+            await self.list_all_servers_components_parallel()
 
         log.info("✅ Single User MCP server initialized with composite proxy")
 
@@ -438,7 +508,7 @@ class SingleUserMCP(FastMCP[Any]):
             """
             Get a list of all available tools. Use this tool to get an updated list of available tools.
             """
-            tool_list = await self._tool_manager.list_tools()
+            tool_list = await self.list_all_servers_tools_parallel()
             available_tools: list[str] = []
             log.trace(f"Raw tool list: {tool_list}")
             perms = Permissions()
