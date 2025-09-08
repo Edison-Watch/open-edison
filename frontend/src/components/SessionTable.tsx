@@ -111,7 +111,7 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
                                 <th className="border-b border-app-border py-2 text-left">Time</th>
                                 <th className="border-b border-app-border py-2 text-left">Tool</th>
                                 <th className="border-b border-app-border py-2 text-left">Status</th>
-                                <th className="border-b border-app-border py-2 text-left">Duration (ms)</th>
+                                <th className="border-b border-app-border py-2 text-left">Duration (s)</th>
                                 <th className="border-b border-app-border py-2 text-left min-w-[240px]">Parameters</th>
                               </tr>
                             </thead>
@@ -121,7 +121,9 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
                                   <td className="border-b border-app-border py-2 whitespace-nowrap">{formatDate(tc.timestamp)}</td>
                                   <td className="border-b border-app-border py-2">{tc.tool_name}</td>
                                   <td className="border-b border-app-border py-2">{tc.status ?? 'pending'}</td>
-                                  <td className="border-b border-app-border py-2">{tc.duration_ms ?? ''}</td>
+                                  <td className="border-b border-app-border py-2">
+                                    {typeof tc.duration_ms === 'number' ? (tc.duration_ms / 1000).toPrecision(3) : ''}
+                                  </td>
                                   <td className="border-b border-app-border py-2 text-xs font-mono">
                                     <code className="text-xs">{JSON.stringify(tc.parameters ?? {}, null, 0)}</code>
                                   </td>
