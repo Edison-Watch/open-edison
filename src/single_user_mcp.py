@@ -236,10 +236,10 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             oauth_manager = get_oauth_manager()
             await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            # Warm lists after mount
-            _ = await self._tool_manager.list_tools()
-            _ = await self._resource_manager.list_resources()
-            _ = await self._prompt_manager.list_prompts()
+            ## Warm lists after mount
+            # _ = await self._tool_manager.list_tools()
+            # _ = await self._resource_manager.list_resources()
+            # _ = await self._prompt_manager.list_prompts()
             return True
         except Exception as e:  # noqa: BLE001
             log.error(f"❌ Failed to mount server {server_name}: {e}")
@@ -317,19 +317,30 @@ class SingleUserMCP(FastMCP[Any]):
             f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
         )
 
-        # Unmount all servers
-        for server_name in list(mounted_servers.keys()):
+        # Figure out which servers are to be unmounted
+        enabled_server_names = {s.name for s in enabled_servers}
+        servers_to_unmount = [s for s in mounted_servers if s not in enabled_server_names]
+
+        # Figure out which servers are to be mounted
+        servers_to_mount = [s.name for s in enabled_servers if s.name not in mounted_servers]
+
+        # Unmount those servers
+        for server_name in servers_to_unmount:
             await self.unmount(server_name)
 
-        # Create composite proxy for all real servers
-        success = await self.create_composite_proxy(enabled_servers)
-        if not success:
-            log.error("Failed to create composite proxy")
-            return
+        # Mount those servers
+        for server_name in servers_to_mount:
+            await self.mount_server(server_name)
+
+        ## Create composite proxy for all real servers
+        # success = await self.create_composite_proxy(enabled_servers)
+        # if not success:
+        #    log.error("Failed to create composite proxy")
+        #    return
 
         log.info("✅ Single User MCP server initialized with composite proxy")
 
-        if rewarm_caches:
+        if False and rewarm_caches:
             # Invalidate and warm lists to ensure reload
             log.debug("Reloading tool list...")
             _ = await self._tool_manager.list_tools()
