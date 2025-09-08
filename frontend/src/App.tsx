@@ -632,6 +632,44 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
         }
     }
 
+    async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+        const controller = new AbortController()
+        const id = setTimeout(() => controller.abort(), timeoutMs)
+        try {
+            const resp = await fetch(url, { ...options, signal: controller.signal })
+            return resp
+        } finally {
+            clearTimeout(id)
+        }
+    }
+
+    const saveAndReinitialize = async () => {
+        setStatusMsg('Saving…')
+        await saveToDisk()
+        try {
+            setStatusMsg('Reinitializing…')
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+
+            // Best-effort cache invalidation
+            try {
+                await fetch(`/api/permissions-changed`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+            } catch { }
+
+            const reinitResponse = await fetchWithTimeout(`/mcp/reinitialize`, { method: 'POST', headers }, 10_000)
+            if (!reinitResponse.ok) {
+                const errorData = await reinitResponse.json().catch(() => ({} as any))
+                throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
+            }
+            setStatusMsg('Reinitialized')
+        } catch (e: any) {
+            const isAbort = e?.name === 'AbortError'
+            setError(isAbort ? 'Reinitialize timed out after 10s' : (e?.message || 'Failed to reinitialize'))
+            setStatusMsg('')
+        }
+    }
+
     const file = files.find(f => f.key === active)!
     const val = content[active] ?? (loadingKey === active ? '// Loading…' : '')
 
@@ -665,7 +703,7 @@ function JsonEditors({ projectRoot }: { projectRoot: string }) {
                     <div className="flex items-center justify-between mb-3">
                         <div className="text-sm text-app-muted">Editing: <span className="text-app-text">{file.name}</span></div>
                         <div className="flex gap-2 items-center">
-                            <button className="button" onClick={saveToDisk}>Save</button>
+                            <button className="button" onClick={saveAndReinitialize}>Reinitialize</button>
                             <button className="button" onClick={download}>Download</button>
                             {statusMsg && <span className="text-xs text-app-muted">{statusMsg}</span>}
                         </div>
@@ -1004,27 +1042,43 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         return JSON.parse(JSON.stringify(obj))
     }
 
-    const upsertServer = (srvName: string, updater: (existing: ConfigFile['mcp_servers'][number] | undefined, def?: MCPServerDefault) => ConfigFile['mcp_servers'][number]) => {
-        if (!config) return
-        const currentList = config.mcp_servers || []
-        const idx = currentList.findIndex(s => s.name === srvName)
-        const def = defaults.find(d => d.name === srvName)
-        const updated = updater(currentList[idx], def)
-        let nextList = [...currentList]
-        if (idx === -1) nextList.push(updated)
-        else nextList[idx] = updated
-        setConfig({ ...config, mcp_servers: nextList })
-    }
+    // Removed unused upsertServer helper (replaced by inline logic in toggleServer)
 
-    const toggleServer = (srvName: string, enabled: boolean) => {
-        upsertServer(srvName, (existing) => ({
-            name: srvName,
-            command: existing?.command ?? '',
-            args: existing?.args ?? [],
-            env: existing?.env ?? {},
-            enabled,
-            roots: existing?.roots ?? [],
-        }))
+    const toggleServer = async (srvName: string, enabled: boolean) => {
+        try {
+            // Compute next config state synchronously
+            const currentList = [...(config?.mcp_servers || [])]
+            const idx = currentList.findIndex(s => (s.name || '').trim().toLowerCase() === srvName.toLowerCase())
+            const existing = idx >= 0 ? currentList[idx] : undefined
+            const updated = {
+                name: srvName,
+                command: existing?.command ?? '',
+                args: existing?.args ?? [],
+                env: existing?.env ?? {},
+                enabled,
+                roots: existing?.roots ?? [],
+            }
+            const nextList = [...currentList]
+            if (idx === -1) nextList.push(updated)
+            else nextList[idx] = updated
+            const nextCfg = { ...(config || { mcp_servers: [] } as any), mcp_servers: nextList }
+
+            // Optimistically update UI
+            setConfig(nextCfg as any)
+
+            // Persist to backend immediately
+            const resp = await fetch('/__save_json__', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: 'config.json', content: JSON.stringify(nextCfg, null, 4) })
+            })
+            if (!resp.ok) throw new Error('Save failed')
+            // Update baseline on success so subsequent diffs are correct
+            setOrigConfig(nextCfg as any)
+            console.log(`✅ Auto-saved config.json after toggling ${srvName} to ${enabled}`)
+        } catch (e) {
+            console.warn('⚠️ Failed to auto-save config.json on toggle:', e)
+        }
     }
 
     // Removed setServerApiKey: API key defaults are no longer provided here
@@ -1117,6 +1171,18 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     })()
 
+    // Helper: fetch with timeout (used for long-running operations like reinitialize)
+    async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+        const controller = new AbortController()
+        const id = setTimeout(() => controller.abort(), timeoutMs)
+        try {
+            const resp = await fetch(url, { ...options, signal: controller.signal })
+            return resp
+        } finally {
+            clearTimeout(id)
+        }
+    }
+
     const reinitializeServers = async () => {
         setSaving(true)
         setToast(null)
@@ -1151,13 +1217,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             if (notOk) throw new Error('One or more files failed to save')
 
             console.log('✅ Configuration saved successfully')
+            setToast({ message: 'Saved. Reinitializing servers…', type: 'success' })
 
             // Step 2: Clear permission caches
             console.log('🔄 Clearing permission caches...')
             try {
-                const serverHost = config?.server?.host || 'localhost'
-                const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
+                const cacheResponse = await fetch(`/api/permissions-changed`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
@@ -1173,19 +1238,17 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             // Step 3: Reinitialize MCP servers
             console.log('🔄 Reinitializing MCP servers...')
-            const serverHost = config?.server?.host || 'localhost'
-            const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
-            const apiKey = config?.server?.api_key || ''
-
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const apiKey = storedKey || config?.server?.api_key || ''
             if (apiKey) {
                 headers['Authorization'] = `Bearer ${apiKey}`
             }
 
-            const reinitResponse = await fetch(`http://${serverHost}:${serverPort}/mcp/reinitialize`, {
+            const reinitResponse = await fetchWithTimeout(`/mcp/reinitialize`, {
                 method: 'POST',
                 headers
-            })
+            }, 10_000)
 
             if (!reinitResponse.ok) {
                 const errorData = await reinitResponse.json().catch(() => ({}))
@@ -1194,7 +1257,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             const result = await reinitResponse.json()
             console.log('✅ MCP servers reinitialized successfully:', result)
-            setToast({ message: `Saved and reinitialized ${result.total_final_mounted || 0} servers`, type: 'success' })
+            const count = result.total_final_mounted || 0
+            const names = Array.isArray(result.mounted_servers) ? result.mounted_servers.join(', ') : ''
+            setToast({ message: `Saved and reinitialized ${count} servers${names ? `: ${names}` : ''}`, type: 'success' })
 
             // Refresh OAuth status after successful reinitialization
             console.log('🔐 Refreshing OAuth status after reinitialization...')
@@ -1202,7 +1267,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
         } catch (e) {
             console.error('❌ Failed to save and reinitialize:', e)
-            setToast({ message: e instanceof Error ? e.message : 'Save and reinitialize failed', type: 'error' })
+            const isAbort = (e as any)?.name === 'AbortError'
+            const msg = isAbort ? 'Reinitialize timed out after 10s' : (e instanceof Error ? e.message : 'Save and reinitialize failed')
+            setToast({ message: msg, type: 'error' })
         } finally {
             setSaving(false)
         }
@@ -1273,8 +1340,8 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
     async function quickStart(serverName: string) {
         await validateAndImport(serverName)
-        toggleServer(serverName, true)
-        setToast({ message: 'Quick-start: imported permissions and enabled (not yet saved)', type: 'success' })
+        await toggleServer(serverName, true)
+        setToast({ message: 'Quick-start: imported permissions and enabled', type: 'success' })
     }
 
     const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://api.edison.watch/api/config-perms'// 'http://localhost:3101/api/config-perms'
@@ -1966,7 +2033,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
-                        <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Save'}</button>
+                        <button className="button" disabled={saving} onClick={reinitializeServers}>{saving ? 'Saving and reinitializing…' : 'Reinitialize'}</button>
 
                     </div>
                 </div>
@@ -2168,20 +2235,34 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                 const enabled = !!existing?.enabled
                                 const selected = selectedServer === def.name
                                 return (
-                                    <button key={def.name} className={`text-left border rounded p-3 transition-colors ${selected ? 'border-app-accent bg-app-accent/5' : 'border-app-border bg-app-bg/50 hover:bg-app-border/20'}`} onClick={() => setSelectedServer(def.name)}>
+                                    <div key={def.name} className={`text-left border rounded p-3 transition-colors ${selected ? 'border-app-accent bg-app-accent/5' : 'border-app-border bg-app-bg/50 hover:bg-app-border/20'}`}>
                                         <div className="flex items-start justify-between gap-2">
-                                            <div>
+                                            <button className="text-left" onClick={() => setSelectedServer(def.name)}>
                                                 <div className="font-semibold">{def.name}</div>
                                                 <div className="text-xs text-app-muted mt-0.5">Derived from permissions files</div>
+                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <Toggle checked={enabled} onChange={(v) => toggleServer(def.name, v)} />
+                                                <span className={`text-xs ${enabled ? 'text-blue-400' : 'text-app-muted'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
                                             </div>
-                                            <span className={`text-xs ${enabled ? 'text-blue-400' : 'text-app-muted'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
                                         </div>
-                                    </button>
+                                    </div>
                                 )
                             })}
                         </div>
                         {selectedServer && (
                             <div className="mt-4 space-y-3">
+                                {(() => {
+                                    const srv = (config.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === selectedServer.toLowerCase())
+                                    const enabled = !!srv?.enabled
+                                    return (
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <span className="text-app-muted">Server status</span>
+                                            <Toggle checked={enabled} onChange={(v) => toggleServer(selectedServer, v)} />
+                                            <span>{enabled ? 'Enabled' : 'Disabled'}</span>
+                                        </div>
+                                    )
+                                })()}
                                 {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer), setToolPerms, false, false)}
                                 {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer), setResourcePerms, false, false)}
                                 {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer), setPromptPerms, false, false)}
