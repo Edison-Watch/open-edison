@@ -77,6 +77,35 @@ export function App(): React.JSX.Element {
         return () => clearTimeout(t)
     }, [uiToast])
 
+    // In-page approval queue (fallback when OS notifications aren't visible)
+    type PendingApproval = { id: string; sessionId: string; kind: 'tool' | 'resource' | 'prompt'; name: string; reason?: string }
+    const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
+    const [lastBannerAt, setLastBannerAt] = useState<number>(0)
+    const [emphasize, setEmphasize] = useState(false)
+    useEffect(() => {
+        if (!lastBannerAt) return
+        setEmphasize(true)
+        const t = setTimeout(() => setEmphasize(false), 2500)
+        return () => clearTimeout(t)
+    }, [lastBannerAt])
+    const approveItem = async (item: PendingApproval) => {
+        try {
+            await fetch(`/api/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name })
+            })
+            setUiToast({ message: `Approved ${item.kind} '${item.name}'`, type: 'success' })
+        } catch {
+            setUiToast({ message: `Failed to approve ${item.kind} '${item.name}'`, type: 'error' })
+        } finally {
+            setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
+        }
+    }
+    const denyItem = (item: PendingApproval) => {
+        setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
+    }
+
     useEffect(() => {
         const checkMcpStatus = async () => {
             try {
@@ -183,6 +212,22 @@ export function App(): React.JSX.Element {
                     const title = 'Edison blocked a risky action'
                     const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
                     const sessionId = data.session_id || ''
+                    // Always surface an in-page approval banner as a reliable fallback
+                    if (sessionId && data.kind && data.name) {
+                        const newItem: PendingApproval = {
+                            id: `${Date.now()}-${data.kind}-${data.name}-${Math.random()}`,
+                            sessionId,
+                            kind: data.kind,
+                            name: data.name,
+                            reason: data.reason,
+                        }
+                        setPendingApprovals(prev => {
+                            // de-duplicate same pending tuple
+                            if (prev.some(p => p.sessionId === newItem.sessionId && p.kind === newItem.kind && p.name === newItem.name)) return prev
+                            return [...prev, newItem]
+                        })
+                        setLastBannerAt(Date.now())
+                    }
                     const trySW = async () => {
                         try {
                             if ('serviceWorker' in navigator && Notification) {
@@ -363,9 +408,32 @@ export function App(): React.JSX.Element {
             ) : (
                 <ConfigurationManager projectRoot={projectRoot} />
             )}
+            {/* In-page approval banner (fallback for OS notifications) */}
+            {pendingApprovals.length > 0 && pendingApprovals[0] && (
+                <div className={`fixed bottom-4 right-4 z-50 w-[min(92vw,28rem)] transition-transform duration-300 ${emphasize ? 'animate-[pop_300ms_ease-out] translate-y-[-4px]' : ''}`}>
+                    {(() => {
+                        const item = pendingApprovals[0]!
+                        return (
+                            <div className="relative p-4 rounded-lg shadow-xl border border-blue-400/60 bg-blue-50 text-blue-900 dark:bg-blue-900/20 dark:text-blue-200">
+                                {/* subtle glow */}
+                                <div className="absolute -inset-0.5 rounded-lg bg-blue-400/20 blur-md pointer-events-none" aria-hidden="true"></div>
+                                <div className="relative text-sm font-semibold mb-1">Approval required</div>
+                                <div className="relative text-xs mb-3">
+                                    {item.kind}: <span className="font-mono">{item.name}</span>{item.reason ? ` — ${item.reason}` : ''}
+                                </div>
+                                <div className="relative flex gap-2">
+                                    <button className="button !bg-blue-600 !text-white hover:!bg-blue-700" onClick={() => approveItem(item)}>Approve</button>
+                                    <button className="button !bg-blue-100 dark:!bg-blue-800/40" onClick={() => denyItem(item)}>Deny</button>
+                                </div>
+                            </div>
+                        )
+                    })()}
+                </div>
+            )}
+
             {/* Global toast for cross-page confirmations */}
             {uiToast && (
-                <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${uiToast.type === 'success'
+                <div className={`fixed bottom-4 left-4 right-auto z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 ${uiToast.type === 'success'
                     ? 'bg-green-500 text-white'
                     : 'bg-red-500 text-white'
                     }`}>

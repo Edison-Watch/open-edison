@@ -26,12 +26,15 @@ def _approval_key(session_id: str, kind: str, name: str) -> str:
 
 
 def requires_loop(func: Callable[..., Any]) -> Callable[..., None | Any]:  # noqa: ANN401
-    """Decorator to ensure the function is called when there is an asyncio event loop.
+    """Decorator to ensure the function is called when there is a running asyncio loop.
     This is for sync(!) functions that return None / can do so on error"""
 
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> None | Any:
-        if asyncio.get_event_loop_policy()._local._loop is None:  # type: ignore[attr-defined]
+        try:
+            # get_running_loop() raises RuntimeError if no loop is running in this thread
+            _ = asyncio.get_running_loop()
+        except RuntimeError:
             log.warning("fire_and_forget called in non-async context")
             return None
         return func(*args, **kwargs)
