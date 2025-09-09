@@ -210,7 +210,7 @@ class SingleUserMCP(FastMCP[Any]):
             log.error(f"❌ Failed to mount server {server_name}: {e}")
             return False
 
-    async def unmount(self, server_name: str, rewarm_caches: bool = False) -> bool:
+    async def unmount(self, server_name: str) -> bool:
         """
         Unmount a previously mounted server by name.
 
@@ -330,48 +330,7 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(f"Time taken to reload all servers' tools: {end_time - start_time:.1f} seconds")
         return final_tools_list
 
-    async def list_all_servers_components_parallel(self) -> None:
-        """Reload all servers' components in parallel."""
-
-        # Reload a server's components in parallel
-        async def list_server_components(server: Any) -> None:
-            log.debug(f"Reloading all components for server {server.prefix} in parallel...")
-            server_time = time.perf_counter()
-
-            # Run all three list operations in parallel
-            await asyncio.gather(
-                server.server._list_tools(),
-                server.server._list_resources(),
-                server.server._list_prompts(),
-                return_exceptions=True,
-            )
-            log.debug("Reloading complete")
-            log.debug(
-                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time:.1f} seconds"
-            )
-
-        # Execute all server reloads in parallel
-        list_tasks = [
-            list_server_components(server)
-            for server in self._tool_manager._mounted_servers  # type: ignore
-        ]
-
-        log.debug(f"Starting reload for {len(list_tasks)} servers' components in parallel")
-        start_time = time.perf_counter()
-        if list_tasks:
-            # Use return_exceptions=True to prevent one failing server from breaking everything
-            results = await asyncio.gather(*list_tasks, return_exceptions=True)
-            # Log any exceptions that occurred
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    server = self._tool_manager._mounted_servers[i]  # type: ignore
-                    log.warning(f"Failed to reload components for server {server.prefix}: {result}")
-        end_time = time.perf_counter()
-        log.debug(
-            f"Time taken to reload all servers' components: {end_time - start_time:.1f} seconds"
-        )
-
-    async def initialize(self, rewarm_caches: bool = False) -> None:
+    async def initialize(self) -> None:
         """Initialize the FastMCP server using unified composite proxy approach.
 
         Args:
