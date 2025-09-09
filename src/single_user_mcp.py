@@ -213,7 +213,6 @@ class SingleUserMCP(FastMCP[Any]):
     async def unmount(self, server_name: str) -> bool:
         """
         Unmount a previously mounted server by name.
-
         Returns True if it was unmounted, False if it wasn't mounted.
         """
         info = mounted_servers.pop(server_name, None)
@@ -331,11 +330,7 @@ class SingleUserMCP(FastMCP[Any]):
         return final_tools_list
 
     async def initialize(self) -> None:
-        """Initialize the FastMCP server using unified composite proxy approach.
-
-        Args:
-            rewarm_caches: Whether to rewarm the caches after unmounting and remounting servers
-        """
+        """Initialize the FastMCP server using unified composite proxy approach."""
         log.info("Initializing Single User MCP server with composite proxy")
         log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
         start_time = time.perf_counter()
@@ -352,13 +347,13 @@ class SingleUserMCP(FastMCP[Any]):
         # Figure out which servers are to be mounted
         servers_to_mount = [s.name for s in enabled_servers if s.name not in mounted_servers]
 
-        # Unmount those servers
+        # Unmount those servers (quick)
         for server_name in servers_to_unmount:
             await self.unmount(server_name)
 
-        # Mount those servers
-        for server_name in servers_to_mount:
-            await self.mount_server(server_name)
+        # Mount those servers (async gathered bc import does network roundtrip)
+        mount_tasks = [self.mount_server(server_name) for server_name in servers_to_mount]
+        await asyncio.gather(*mount_tasks)
 
         log.info("✅ Single User MCP server initialized with composite proxy")
         log.debug(
