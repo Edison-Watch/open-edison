@@ -141,7 +141,9 @@ def confirm_apply_configs(client: CLIENT, *, dry_run: bool = False) -> None:
     if dry_run:
         print(f"[dry-run] Export prepared for {client.name}; no changes written.")
     else:
-        print(f"Successfully set up Open Edison for {client.name}! Your previous MCP configuration has been backed up at {result.backup_path}")
+        print(
+            f"Successfully set up Open Edison for {client.name}! Your previous MCP configuration has been backed up at {result.backup_path}"
+        )
 
 
 def show_manual_setup_screen() -> None:

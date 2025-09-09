@@ -221,11 +221,23 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"ℹ️  Server {server_name} was not mounted")
             return False
 
+        # Remove the server from mounted_servers lists in all managers
+        for manager_name in ("_tool_manager", "_resource_manager", "_prompt_manager"):
+            manager = getattr(self, manager_name, None)
+            if manager is None:
+                continue
+            mounted_list = getattr(manager, "_mounted_servers", None)
+            if mounted_list is None:
+                continue
+
+            # Remove servers with matching prefix
+            mounted_list[:] = [m for m in mounted_list if m.prefix != server_name]
+
         # Collect keys to delete first to avoid "dictionary changed size during iteration"
         tools_to_delete = [
             key
             for key in self._tool_manager._tools  # type: ignore
-            if key == server_name
+            if key.startswith(f"{server_name}_")
         ]
         for key in tools_to_delete:
             del self._tool_manager._tools[key]  # type: ignore
@@ -233,7 +245,7 @@ class SingleUserMCP(FastMCP[Any]):
         transformations_to_delete = [
             key
             for key in self._tool_manager.transformations  # type: ignore
-            if key == server_name
+            if key.startswith(f"{server_name}_")
         ]
         for key in transformations_to_delete:
             del self._tool_manager.transformations[key]  # type: ignore
@@ -257,7 +269,7 @@ class SingleUserMCP(FastMCP[Any]):
         prompts_to_delete = [
             key
             for key in self._prompt_manager._prompts  # type: ignore
-            if key == server_name
+            if key.startswith(f"{server_name}_")
         ]
         for key in prompts_to_delete:
             del self._prompt_manager._prompts[key]  # type: ignore
