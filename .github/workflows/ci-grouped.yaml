@@ -64,13 +64,3 @@ jobs:
         uses: ./.github/actions/setup
       - name: Run tests
         run: make test
-
-
-  gate:
-    name: CI Gate
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck, deadcode, tests]
-    steps:
-      - name: All grouped CI jobs succeeded
-        run: echo "OK"
-
