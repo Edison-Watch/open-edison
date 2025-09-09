@@ -11,7 +11,7 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
-from fastmcp.server.server import has_resource_prefix
+from fastmcp.server.server import add_resource_prefix, has_resource_prefix
 
 # Low level FastMCP imports
 from fastmcp.tools.tool import Tool
@@ -19,6 +19,7 @@ from fastmcp.tools.tool_transform import (
     apply_transformations_to_tools,
 )
 from loguru import logger as log
+from mcp.server.lowlevel.server import LifespanResultT
 
 from src.config import Config, MCPServerConfig
 from src.middleware.session_tracking import (
@@ -68,6 +69,114 @@ class SingleUserMCP(FastMCP[Any]):
         self._setup_demo_tools()
         self._setup_demo_resources()
         self._setup_demo_prompts()
+
+    async def import_server(
+        self,
+        server: FastMCP[LifespanResultT],
+        prefix: str | None = None,
+        tool_separator: str | None = None,
+        resource_separator: str | None = None,
+        prompt_separator: str | None = None,
+    ) -> None:
+        """
+        Import the MCP objects from another FastMCP server into this one with a given prefix.
+        Overloads FastMCP's import_server method to improve performance.
+
+        Args:
+            server: The FastMCP server to import
+            prefix: prefix to use for the imported server's objects. If None,
+                objects are imported with their original names.
+            tool_separator: Deprecated. Required to be None.
+            resource_separator: Deprecated. Required to be None.
+            prompt_separator: Deprecated. Required to be None.
+        """
+
+        if prefix is None:
+            raise ValueError("Prefix is required")
+
+        if tool_separator is not None:
+            raise ValueError("Tool separator is deprecated and not supported")
+
+        if resource_separator is not None:
+            raise ValueError("Resource separator is deprecated and not supported")
+
+        if prompt_separator is not None:
+            raise ValueError("Prompt separator is deprecated and not supported")
+
+        log.debug(f"🔧 Importing server {prefix} ({server.name}) into single user MCP'")
+
+        # Fetch all server objects in parallel
+        tools, resources, templates, prompts = await asyncio.gather(
+            server.get_tools(),
+            server.get_resources(),
+            server.get_resource_templates(),
+            server.get_prompts(),
+            return_exceptions=True,
+        )
+
+        # Validate and normalize all results
+        tools = self._validate_server_result(tools, "tools", server.name)
+        resources = self._validate_server_result(resources, "resources", server.name)
+        templates = self._validate_server_result(templates, "templates", server.name)
+        prompts = self._validate_server_result(prompts, "prompts", server.name)
+
+        # Import all components
+        self._import_tools(tools, prefix)
+        self._import_resources(resources, prefix)
+        self._import_templates(templates, prefix)
+        self._import_prompts(prompts, prefix)
+
+        log.debug(f"Imported server {server.name} with prefix '{prefix}'")
+
+    def _validate_server_result(
+        self, result: Any, result_type: str, server_name: str
+    ) -> dict[str, Any]:
+        """Validate and normalize server result from asyncio.gather with return_exceptions=True."""
+        if isinstance(result, Exception):
+            log.warning(f'Server {server_name} does not appear to contain "{result_type}"')
+            log.debug(f"Server {server_name} _validate_server_result exception result: {result}")
+            return {}
+        if not isinstance(result, dict):
+            log.warning(f"Server {server_name} returned an unexpected response")
+            log.debug(
+                f"Server {server_name} _validate_server_result unexpected type {type(result)} with value: {result}"
+            )
+            return {}
+        return result  # type: ignore[return-value]
+
+    def _import_tools(self, tools: dict[str, Any], prefix: str) -> None:
+        """Import tools from server"""
+        for key, tool in tools.items():
+            if prefix:
+                tool = tool.model_copy(key=f"{prefix}_{key}")
+            self._tool_manager.add_tool(tool)
+
+    def _import_resources(self, resources: dict[str, Any], prefix: str) -> None:
+        """Import resources from server"""
+        for key, resource in resources.items():
+            if prefix:
+                resource_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
+                resource = resource.model_copy(
+                    update={"name": f"{prefix}_{resource.name}"}, key=resource_key
+                )
+            self._resource_manager.add_resource(resource)
+
+    def _import_templates(self, templates: dict[str, Any], prefix: str) -> None:
+        """Import templates from server"""
+        for key, template in templates.items():
+            if prefix:
+                template_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
+                template = template.model_copy(
+                    update={"name": f"{prefix}_{template.name}"}, key=template_key
+                )
+            self._resource_manager.add_template(template)
+
+    def _import_prompts(self, prompts: dict[str, Any], prefix: str) -> None:
+        """Import prompts from server"""
+        for key, prompt in prompts.items():
+            if prefix:
+                prompt = prompt.model_copy(key=f"{prefix}_{key}")
+            self._prompt_manager.add_prompt(prompt)
 
     def _convert_to_fastmcp_config(self, enabled_servers: list[MCPServerConfig]) -> dict[str, Any]:
         """
@@ -161,7 +270,9 @@ class SingleUserMCP(FastMCP[Any]):
             log.debug(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
-        await super().import_server(proxy, prefix=server_name)
+        log.debug(f"🔧 Importing server {server_name} into single user MCP")
+        await self.import_server(proxy, prefix=server_name)
+        # await super().import_server(proxy, prefix=server_name)
         mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
