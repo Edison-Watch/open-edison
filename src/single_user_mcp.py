@@ -210,10 +210,9 @@ class SingleUserMCP(FastMCP[Any]):
             log.error(f"❌ Failed to mount server {server_name}: {e}")
             return False
 
-    async def unmount(self, server_name: str, rewarm_caches: bool = False) -> bool:
+    async def unmount(self, server_name: str) -> bool:
         """
         Unmount a previously mounted server by name.
-
         Returns True if it was unmounted, False if it wasn't mounted.
         """
         info = mounted_servers.pop(server_name, None)
@@ -336,53 +335,8 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(f"Time taken to reload all servers' tools: {end_time - start_time:.1f} seconds")
         return final_tools_list
 
-    async def list_all_servers_components_parallel(self) -> None:
-        """Reload all servers' components in parallel."""
-
-        # Reload a server's components in parallel
-        async def list_server_components(server: Any) -> None:
-            log.debug(f"Reloading all components for server {server.prefix} in parallel...")
-            server_time = time.perf_counter()
-
-            # Run all three list operations in parallel
-            await asyncio.gather(
-                server.server._list_tools(),
-                server.server._list_resources(),
-                server.server._list_prompts(),
-                return_exceptions=True,
-            )
-            log.debug("Reloading complete")
-            log.debug(
-                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time:.1f} seconds"
-            )
-
-        # Execute all server reloads in parallel
-        list_tasks = [
-            list_server_components(server)
-            for server in self._tool_manager._mounted_servers  # type: ignore
-        ]
-
-        log.debug(f"Starting reload for {len(list_tasks)} servers' components in parallel")
-        start_time = time.perf_counter()
-        if list_tasks:
-            # Use return_exceptions=True to prevent one failing server from breaking everything
-            results = await asyncio.gather(*list_tasks, return_exceptions=True)
-            # Log any exceptions that occurred
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    server = self._tool_manager._mounted_servers[i]  # type: ignore
-                    log.warning(f"Failed to reload components for server {server.prefix}: {result}")
-        end_time = time.perf_counter()
-        log.debug(
-            f"Time taken to reload all servers' components: {end_time - start_time:.1f} seconds"
-        )
-
-    async def initialize(self, rewarm_caches: bool = False) -> None:
-        """Initialize the FastMCP server using unified composite proxy approach.
-
-        Args:
-            rewarm_caches: Whether to rewarm the caches after unmounting and remounting servers
-        """
+    async def initialize(self) -> None:
+        """Initialize the FastMCP server using unified composite proxy approach."""
         log.info("Initializing Single User MCP server with composite proxy")
         log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
         start_time = time.perf_counter()
@@ -399,13 +353,13 @@ class SingleUserMCP(FastMCP[Any]):
         # Figure out which servers are to be mounted
         servers_to_mount = [s.name for s in enabled_servers if s.name not in mounted_servers]
 
-        # Unmount those servers
+        # Unmount those servers (quick)
         for server_name in servers_to_unmount:
             await self.unmount(server_name)
 
-        # Mount those servers
-        for server_name in servers_to_mount:
-            await self.mount_server(server_name)
+        # Mount those servers (async gathered bc import does network roundtrip)
+        mount_tasks = [self.mount_server(server_name) for server_name in servers_to_mount]
+        await asyncio.gather(*mount_tasks)
 
         log.info("✅ Single User MCP server initialized with composite proxy")
         log.debug(

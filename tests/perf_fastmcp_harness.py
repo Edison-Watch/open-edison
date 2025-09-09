@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
-from dataclasses import dataclass
 import asyncio
 import contextlib
 import os
 import signal
+import statistics
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from loguru import logger as log
-import statistics
 
 import httpx
 from fastmcp import Client as FastMCPClient
 from loguru import logger as log
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_DIR = REPO_ROOT / "dev_config_dir"
 FASTAPI_HEALTH_URL = "http://127.0.0.1:3001/health"
 FASTMCP_URL = "http://127.0.0.1:3000/mcp/"
-N_ITERATIONS = 10
+N_ITERATIONS = 100
 
 
 async def wait_for_health(url: str, timeout_s: float = 10.0) -> dict[str, Any]:
@@ -53,7 +51,7 @@ async def open_edison_server():
     # We use the same Python interpreter to avoid venv mismatches.
     cmd = [sys.executable, "-m", "src"]
 
-    log.info(f"Starting Open Edison server")
+    log.info("Starting Open Edison server")
     proc = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
@@ -195,13 +193,13 @@ async def run_harness() -> int:
 
         log.info("--------------------------------")
 
-        for tool_name, tool_perf_info in tool_perf_infos.items():
-            log.info(
-                f"{tool_name} tool: mean {tool_perf_info.mean_ms:.1f} ms, stdev {tool_perf_info.stdev_ms:.1f} ms per call over {N_ITERATIONS} iterations"
-            )
-            log.info("--------------------------------")
+    for tool_name, tool_perf_info in tool_perf_infos.items():
+        log.info(
+            f"{tool_name} tool: mean {tool_perf_info.mean_ms:.1f} ms, stdev {tool_perf_info.stdev_ms:.1f} ms per call over {N_ITERATIONS} iterations"
+        )
+        log.info("--------------------------------")
 
-        return 0
+    return 0
 
 
 def main() -> None:
