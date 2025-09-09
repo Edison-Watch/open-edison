@@ -176,7 +176,7 @@ jobs:
       - name: Start server
         run: |
           set -euxo pipefail
-          make run &
+          make dev &
           echo $! > server.pid
           # wait for port 3001 to be up
           for i in {1..60}; do
