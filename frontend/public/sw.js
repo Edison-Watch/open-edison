@@ -61,7 +61,7 @@ self.addEventListener('notificationclick', (event) => {
             return;
         }
 
-        // Generic click: focus existing dashboard tab if present, else open one (with trailing slash)
+        // Generic click: focus existing dashboard tab; if not found, open one with URL params so it can enqueue the pending approval
         event.waitUntil((async () => {
             try {
                 const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -69,11 +69,19 @@ self.addEventListener('notificationclick', (event) => {
                 const targetPrefix = base + '/dashboard';
                 const existing = allClients.find(c => c.url && c.url.startsWith(targetPrefix));
                 if (existing) {
+                    try { existing.postMessage({ type: 'MCP_ENQUEUE_PENDING', data: payload }); } catch (e) { /* ignore */ }
                     await existing.focus();
                     return;
                 }
             } catch (e) { /* ignore */ }
-            try { await self.clients.openWindow('/dashboard/'); } catch (e) { /* ignore */ }
+            try {
+                const params = new URLSearchParams();
+                if (payload.sessionId) params.set('pa_s', payload.sessionId);
+                if (payload.kind) params.set('pa_k', payload.kind);
+                if (payload.name) params.set('pa_n', payload.name);
+                const url = '/dashboard/?' + params.toString();
+                await self.clients.openWindow(url);
+            } catch (e) { /* ignore */ }
         })());
     } catch (e) {
         // swallow
