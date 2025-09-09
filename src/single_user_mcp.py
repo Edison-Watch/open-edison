@@ -11,6 +11,7 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+from fastmcp.server.server import has_resource_prefix
 
 # Low level FastMCP imports
 from fastmcp.tools.tool import Tool
@@ -160,7 +161,7 @@ class SingleUserMCP(FastMCP[Any]):
             log.debug(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
-        super().mount(proxy, prefix=server_name)
+        await super().import_server(proxy, prefix=server_name)
         mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
@@ -203,16 +204,13 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             oauth_manager = get_oauth_manager()
             await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            ## Warm lists after mount
-            # _ = await self._tool_manager.list_tools()
-            # _ = await self._resource_manager.list_resources()
-            # _ = await self._prompt_manager.list_prompts()
+
             return True
         except Exception as e:  # noqa: BLE001
             log.error(f"❌ Failed to mount server {server_name}: {e}")
             return False
 
-    async def unmount(self, server_name: str, rewarm_caches: bool = False) -> bool:
+    async def unmount(self, server_name: str) -> bool:
         """
         Unmount a previously mounted server by name.
 
@@ -223,31 +221,52 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"ℹ️  Server {server_name} was not mounted")
             return False
 
-        proxy = info.get("proxy")
-
-        # Manually remove from FastMCP managers' mounted lists
+        # Remove the server from mounted_servers lists in all managers
         for manager_name in ("_tool_manager", "_resource_manager", "_prompt_manager"):
             manager = getattr(self, manager_name, None)
+            if manager is None:
+                continue
             mounted_list = getattr(manager, "_mounted_servers", None)
             if mounted_list is None:
                 continue
 
-            # Prefer removing by both prefix and object identity; fallback to prefix-only
-            new_list = [
-                m
-                for m in mounted_list
-                if not (m.prefix == server_name and (proxy is None or m.server is proxy))
-            ]
-            if len(new_list) == len(mounted_list):
-                new_list = [m for m in mounted_list if m.prefix != server_name]
+            # Remove servers with matching prefix
+            mounted_list[:] = [m for m in mounted_list if m.prefix != server_name]
 
-            mounted_list[:] = new_list
+        # Remove tools with matching prefix (server name)
+        self._tool_manager._tools = {  # type: ignore
+            key: value
+            for key, value in self._tool_manager._tools.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
 
-        # Invalidate and warm lists to ensure reload
-        if rewarm_caches:
-            _ = await self._tool_manager.list_tools()
-            _ = await self._resource_manager.list_resources()
-            _ = await self._prompt_manager.list_prompts()
+        # Remove transformations with matching prefix (server name)
+        self._tool_manager.transformations = {  # type: ignore
+            key: value
+            for key, value in self._tool_manager.transformations.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
+
+        # Remove resources with matching prefix (server name)
+        self._resource_manager._resources = {  # type: ignore
+            key: value
+            for key, value in self._resource_manager._resources.items()  # type: ignore
+            if not has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        }
+
+        # Remove templates with matching prefix (server name)
+        self._resource_manager._templates = {  # type: ignore
+            key: value
+            for key, value in self._resource_manager._templates.items()  # type: ignore
+            if not has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        }
+
+        # Remove prompts with matching prefix (server name)
+        self._prompt_manager._prompts = {  # type: ignore
+            key: value
+            for key, value in self._prompt_manager._prompts.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
 
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
@@ -311,48 +330,7 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(f"Time taken to reload all servers' tools: {end_time - start_time:.1f} seconds")
         return final_tools_list
 
-    async def list_all_servers_components_parallel(self) -> None:
-        """Reload all servers' components in parallel."""
-
-        # Reload a server's components in parallel
-        async def list_server_components(server: Any) -> None:
-            log.debug(f"Reloading all components for server {server.prefix} in parallel...")
-            server_time = time.perf_counter()
-
-            # Run all three list operations in parallel
-            await asyncio.gather(
-                server.server._list_tools(),
-                server.server._list_resources(),
-                server.server._list_prompts(),
-                return_exceptions=True,
-            )
-            log.debug("Reloading complete")
-            log.debug(
-                f"Time taken to reload server {server.prefix}: {time.perf_counter() - server_time:.1f} seconds"
-            )
-
-        # Execute all server reloads in parallel
-        list_tasks = [
-            list_server_components(server)
-            for server in self._tool_manager._mounted_servers  # type: ignore
-        ]
-
-        log.debug(f"Starting reload for {len(list_tasks)} servers' components in parallel")
-        start_time = time.perf_counter()
-        if list_tasks:
-            # Use return_exceptions=True to prevent one failing server from breaking everything
-            results = await asyncio.gather(*list_tasks, return_exceptions=True)
-            # Log any exceptions that occurred
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    server = self._tool_manager._mounted_servers[i]  # type: ignore
-                    log.warning(f"Failed to reload components for server {server.prefix}: {result}")
-        end_time = time.perf_counter()
-        log.debug(
-            f"Time taken to reload all servers' components: {end_time - start_time:.1f} seconds"
-        )
-
-    async def initialize(self, rewarm_caches: bool = False) -> None:
+    async def initialize(self) -> None:
         """Initialize the FastMCP server using unified composite proxy approach.
 
         Args:
@@ -360,7 +338,7 @@ class SingleUserMCP(FastMCP[Any]):
         """
         log.info("Initializing Single User MCP server with composite proxy")
         log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
-
+        start_time = time.perf_counter()
         # Get all enabled servers
         enabled_servers = [s for s in Config().mcp_servers if s.enabled]
         log.info(
@@ -382,10 +360,10 @@ class SingleUserMCP(FastMCP[Any]):
         for server_name in servers_to_mount:
             await self.mount_server(server_name)
 
-        if rewarm_caches:
-            await self.list_all_servers_components_parallel()
-
         log.info("✅ Single User MCP server initialized with composite proxy")
+        log.debug(
+            f"Time taken to initialize Single User MCP server: {time.perf_counter() - start_time:.1f} seconds"
+        )
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

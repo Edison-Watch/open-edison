@@ -391,7 +391,7 @@ class OpenEdisonProxy:
             log.warning(f"Failed to pre-initialize sessions database: {db_err}")
 
         # Initialize the FastMCP server (this handles starting enabled MCP servers)
-        await self.single_user_mcp.initialize(rewarm_caches=True)
+        await self.single_user_mcp.initialize()
 
         # Emit snapshot of enabled servers
         enabled_count = len([s for s in Config().mcp_servers if s.enabled])
@@ -596,7 +596,7 @@ class OpenEdisonProxy:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
             # Initialize the new instance with fresh config
-            await self.single_user_mcp.initialize(rewarm_caches=True)
+            await self.single_user_mcp.initialize()
 
             # Summarize final mounted servers
             try:
@@ -633,7 +633,7 @@ class OpenEdisonProxy:
     async def unmount_mcp_server(self, server_name: str) -> dict[str, Any]:
         """Unmount a previously mounted MCP server by name (auth required)."""
         try:
-            ok = await self.single_user_mcp.unmount(server_name, rewarm_caches=True)
+            ok = await self.single_user_mcp.unmount(server_name)
             return {"unmounted": bool(ok), "server": server_name}
         except Exception as e:
             log.error(f"❌ Failed to unmount server {server_name}: {e}")
