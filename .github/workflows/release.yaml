@@ -2,6 +2,7 @@ name: Release (publish based on existing version)
 
 on:
   merge_group:
+    types: [checks_requested]
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
