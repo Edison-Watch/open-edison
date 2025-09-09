@@ -1,11 +1,11 @@
-name: Release (auto patch → prerelease → verify → stable)
+name: Release (publish based on existing version)
 
 on:
-  push:
-    branches: [ main ]
+  merge_group:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
