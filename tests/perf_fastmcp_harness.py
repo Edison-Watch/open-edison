@@ -17,8 +17,8 @@ from loguru import logger as log
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_DIR = REPO_ROOT / "dev_config_dir"
-FASTAPI_HEALTH_URL = "http://127.0.0.1:3001/health"
-FASTMCP_URL = "http://127.0.0.1:3000/mcp/"
+FASTAPI_HEALTH_URL = "http://localhost:3001/health"
+FASTMCP_URL = "http://localhost:3000/mcp/"
 N_ITERATIONS = 100
 
 
