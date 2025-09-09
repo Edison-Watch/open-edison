@@ -232,46 +232,40 @@ class SingleUserMCP(FastMCP[Any]):
             # Remove servers with matching prefix
             mounted_list[:] = [m for m in mounted_list if m.prefix != server_name]
 
-        # Collect keys to delete first to avoid "dictionary changed size during iteration"
-        tools_to_delete = [
-            key
-            for key in self._tool_manager._tools  # type: ignore
-            if key.startswith(f"{server_name}_")
-        ]
-        for key in tools_to_delete:
-            del self._tool_manager._tools[key]  # type: ignore
+        # Remove tools with matching prefix (server name)
+        self._tool_manager._tools = {  # type: ignore
+            key: value
+            for key, value in self._tool_manager._tools.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
 
-        transformations_to_delete = [
-            key
-            for key in self._tool_manager.transformations  # type: ignore
-            if key.startswith(f"{server_name}_")
-        ]
-        for key in transformations_to_delete:
-            del self._tool_manager.transformations[key]  # type: ignore
+        # Remove transformations with matching prefix (server name)
+        self._tool_manager.transformations = {  # type: ignore
+            key: value
+            for key, value in self._tool_manager.transformations.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
 
-        resources_to_delete = [
-            key
-            for key in self._resource_manager._resources  # type: ignore
-            if has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
-        ]
-        for key in resources_to_delete:
-            del self._resource_manager._resources[key]  # type: ignore
+        # Remove resources with matching prefix (server name)
+        self._resource_manager._resources = {  # type: ignore
+            key: value
+            for key, value in self._resource_manager._resources.items()  # type: ignore
+            if not has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        }
 
-        templates_to_delete = [
-            key
-            for key in self._resource_manager._templates  # type: ignore
-            if has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
-        ]
-        for key in templates_to_delete:
-            del self._resource_manager._templates[key]  # type: ignore
+        # Remove templates with matching prefix (server name)
+        self._resource_manager._templates = {  # type: ignore
+            key: value
+            for key, value in self._resource_manager._templates.items()  # type: ignore
+            if not has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        }
 
-        prompts_to_delete = [
-            key
-            for key in self._prompt_manager._prompts  # type: ignore
-            if key.startswith(f"{server_name}_")
-        ]
-        for key in prompts_to_delete:
-            del self._prompt_manager._prompts[key]  # type: ignore
+        # Remove prompts with matching prefix (server name)
+        self._prompt_manager._prompts = {  # type: ignore
+            key: value
+            for key, value in self._prompt_manager._prompts.items()  # type: ignore
+            if not key.startswith(f"{server_name}_")
+        }
 
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
