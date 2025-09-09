@@ -204,6 +204,34 @@ export function App(): React.JSX.Element {
         }
         void registerSW();
 
+        // Listen for SW messages that ask us to enqueue a pending approval
+        const onMessage = (ev: MessageEvent) => {
+            try {
+                const msg = ev.data || {}
+                if (msg && msg.type === 'MCP_ENQUEUE_PENDING' && msg.data) {
+                    const d = msg.data || {}
+                    const s = String(d.sessionId || '')
+                    const k = d.kind
+                    const n = d.name
+                    if (s && k && n) {
+                        const newItem: PendingApproval = {
+                            id: `${Date.now()}-${k}-${n}-${Math.random()}`,
+                            sessionId: s,
+                            kind: k,
+                            name: n,
+                            reason: d.reason,
+                        }
+                        setPendingApprovals(prev => {
+                            if (prev.some(p => p.sessionId === newItem.sessionId && p.kind === newItem.kind && p.name === newItem.name)) return prev
+                            return [...prev, newItem]
+                        })
+                        setLastBannerAt(Date.now())
+                    }
+                }
+            } catch { /* ignore */ }
+        }
+        navigator.serviceWorker?.addEventListener?.('message', onMessage)
+
         const es = new EventSource(`/events`)
         es.onmessage = (ev) => {
             try {
@@ -286,7 +314,38 @@ export function App(): React.JSX.Element {
             } catch { /* ignore */ }
         }
         es.onerror = () => { /* auto-retry by browser */ }
-        return () => { es.close() }
+        return () => {
+            es.close()
+            try { navigator.serviceWorker?.removeEventListener?.('message', onMessage) } catch { /* ignore */ }
+        }
+    }, [])
+
+    // On first render, parse URL params to enqueue pending approval when the page is opened by SW with params
+    useEffect(() => {
+        try {
+            const url = new URL(window.location.href)
+            const s = url.searchParams.get('pa_s') || ''
+            const k = (url.searchParams.get('pa_k') || '') as 'tool' | 'resource' | 'prompt' | ''
+            const n = url.searchParams.get('pa_n') || ''
+            if (s && k && n) {
+                const newItem: PendingApproval = {
+                    id: `${Date.now()}-${k}-${n}-${Math.random()}`,
+                    sessionId: s,
+                    kind: k as any,
+                    name: n,
+                }
+                setPendingApprovals(prev => {
+                    if (prev.some(p => p.sessionId === newItem.sessionId && p.kind === newItem.kind && p.name === newItem.name)) return prev
+                    return [...prev, newItem]
+                })
+                setLastBannerAt(Date.now())
+                // Clean the URL so params don't linger
+                try {
+                    const clean = url.origin + url.pathname
+                    window.history.replaceState({}, '', clean)
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
     }, [])
 
     return (
