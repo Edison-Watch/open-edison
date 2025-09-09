@@ -73,13 +73,3 @@ jobs:
     steps:
       - name: All grouped CI jobs succeeded
         run: echo "OK"
-
-
-  gate:
-    name: CI Gate
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck, deadcode, tests]
-    steps:
-      - name: All grouped CI jobs succeeded
-        run: echo "OK"
-
