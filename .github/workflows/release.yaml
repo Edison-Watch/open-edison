@@ -13,8 +13,7 @@ concurrency:
 
 jobs:
   prerelease:
-    if: github.actor != 'github-actions[bot]'
-    name: Bump patch, mark prerelease, publish to PyPI
+    name: Mark prerelease (no commit) and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypipublishing
     outputs:
@@ -35,26 +34,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Configure git author
+      - name: Mark prerelease (rc) without committing
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump patch version and mark prerelease (rc)
-        run: |
-          make bump_version PART=patch
-          make mark_prerelease
+          uv run python scripts/version_mark.py prerelease --tag rc --no-commit
 
       - name: Read version
         id: get_version
         run: |
           VERSION=$(grep -E '^version\s*=\s*"([^"]+)"' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Tag and push changes
-        run: |
-          git tag "v${{ steps.get_version.outputs.version }}"
-          git push origin HEAD:main --follow-tags
 
       - name: Publish prerelease to PyPI
         env:
@@ -114,7 +102,7 @@ jobs:
           if [ -f server.pid ]; then kill $(cat server.pid) || true; fi
 
   promote_stable:
-    name: Strip prerelease, tag, and publish stable to PyPI
+    name: Strip prerelease (no commit) and publish stable to PyPI
     runs-on: ubuntu-latest
     needs: verify_prerelease_from_pypi
     environment: pypipublishing
@@ -134,25 +122,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Configure git author
+      - name: Mark release (strip prerelease) without committing
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Mark release (strip prerelease)
-        run: |
-          make mark_release
+          uv run python scripts/version_mark.py release --no-commit
 
       - name: Read version
         id: get_version
         run: |
           VERSION=$(grep -E '^version\s*=\s*"([^"]+)"' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Tag and push changes
-        run: |
-          git tag "v${{ steps.get_version.outputs.version }}"
-          git push origin HEAD:main --follow-tags
 
       - name: Publish stable to PyPI
         env:
