@@ -11,6 +11,7 @@ from typing import Any, TypedDict
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+from fastmcp.server.server import has_resource_prefix
 
 # Low level FastMCP imports
 from fastmcp.tools.tool import Tool
@@ -160,7 +161,7 @@ class SingleUserMCP(FastMCP[Any]):
             log.debug(f"🔧 Creating local process proxy for {server_name}")
             proxy = FastMCP.as_proxy(fastmcp_config)
 
-        super().mount(proxy, prefix=server_name)
+        await super().import_server(proxy, prefix=server_name)
         mounted_servers[server_name] = MountedServerInfo(config=server_config, proxy=proxy)
 
         server_type = "remote" if server_config.is_remote_server() else "local"
@@ -203,10 +204,7 @@ class SingleUserMCP(FastMCP[Any]):
         try:
             oauth_manager = get_oauth_manager()
             await self._mount_single_server(server_config, fastmcp_config, oauth_manager)
-            ## Warm lists after mount
-            # _ = await self._tool_manager.list_tools()
-            # _ = await self._resource_manager.list_resources()
-            # _ = await self._prompt_manager.list_prompts()
+
             return True
         except Exception as e:  # noqa: BLE001
             log.error(f"❌ Failed to mount server {server_name}: {e}")
@@ -223,31 +221,46 @@ class SingleUserMCP(FastMCP[Any]):
             log.info(f"ℹ️  Server {server_name} was not mounted")
             return False
 
-        proxy = info.get("proxy")
+        # Collect keys to delete first to avoid "dictionary changed size during iteration"
+        tools_to_delete = [
+            key
+            for key in self._tool_manager._tools  # type: ignore
+            if key == server_name
+        ]
+        for key in tools_to_delete:
+            del self._tool_manager._tools[key]  # type: ignore
 
-        # Manually remove from FastMCP managers' mounted lists
-        for manager_name in ("_tool_manager", "_resource_manager", "_prompt_manager"):
-            manager = getattr(self, manager_name, None)
-            mounted_list = getattr(manager, "_mounted_servers", None)
-            if mounted_list is None:
-                continue
+        transformations_to_delete = [
+            key
+            for key in self._tool_manager.transformations  # type: ignore
+            if key == server_name
+        ]
+        for key in transformations_to_delete:
+            del self._tool_manager.transformations[key]  # type: ignore
 
-            # Prefer removing by both prefix and object identity; fallback to prefix-only
-            new_list = [
-                m
-                for m in mounted_list
-                if not (m.prefix == server_name and (proxy is None or m.server is proxy))
-            ]
-            if len(new_list) == len(mounted_list):
-                new_list = [m for m in mounted_list if m.prefix != server_name]
+        resources_to_delete = [
+            key
+            for key in self._resource_manager._resources  # type: ignore
+            if has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        ]
+        for key in resources_to_delete:
+            del self._resource_manager._resources[key]  # type: ignore
 
-            mounted_list[:] = new_list
+        templates_to_delete = [
+            key
+            for key in self._resource_manager._templates  # type: ignore
+            if has_resource_prefix(key, server_name, self.resource_prefix_format)  # type: ignore
+        ]
+        for key in templates_to_delete:
+            del self._resource_manager._templates[key]  # type: ignore
 
-        # Invalidate and warm lists to ensure reload
-        if rewarm_caches:
-            _ = await self._tool_manager.list_tools()
-            _ = await self._resource_manager.list_resources()
-            _ = await self._prompt_manager.list_prompts()
+        prompts_to_delete = [
+            key
+            for key in self._prompt_manager._prompts  # type: ignore
+            if key == server_name
+        ]
+        for key in prompts_to_delete:
+            del self._prompt_manager._prompts[key]  # type: ignore
 
         log.info(f"🧹 Unmounted server {server_name} and cleared references")
         return True
@@ -360,7 +373,7 @@ class SingleUserMCP(FastMCP[Any]):
         """
         log.info("Initializing Single User MCP server with composite proxy")
         log.debug(f"Available MCP servers in config: {[s.name for s in Config().mcp_servers]}")
-
+        start_time = time.perf_counter()
         # Get all enabled servers
         enabled_servers = [s for s in Config().mcp_servers if s.enabled]
         log.info(
@@ -382,10 +395,10 @@ class SingleUserMCP(FastMCP[Any]):
         for server_name in servers_to_mount:
             await self.mount_server(server_name)
 
-        if rewarm_caches:
-            await self.list_all_servers_components_parallel()
-
         log.info("✅ Single User MCP server initialized with composite proxy")
+        log.debug(
+            f"Time taken to initialize Single User MCP server: {time.perf_counter() - start_time:.1f} seconds"
+        )
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """
