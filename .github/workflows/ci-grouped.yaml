@@ -4,6 +4,7 @@ on:
   workflow_call:
   pull_request:
     types: [opened, synchronize, reopened]
+  merge_group:
   push:
     branches:
       - '**'
@@ -64,4 +65,12 @@ jobs:
       - name: Run tests
         run: make test
 
+
+  gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, deadcode, tests]
+    steps:
+      - name: All grouped CI jobs succeeded
+        run: echo "OK"
 
