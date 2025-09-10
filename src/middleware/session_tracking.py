@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import mcp.types as mt
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import FunctionResource
 from fastmcp.server.middleware import Middleware
@@ -277,6 +277,10 @@ class SessionTrackingMiddleware(Middleware):
             # Avoid noisy tracebacks for expected security blocks
             log.warning(f"MCP request blocked by security policy: {e}")
             raise
+        except NotFoundError as e:
+            # Tool/prompt/resource not found; avoid full traceback
+            log.warning(f"MCP tool/prompt/resource not found error: {e}")
+            raise
         except ToolError as e:
             # Upstream tool failed; avoid noisy traceback here. Specific handlers may format a response.
             log.warning(f"MCP tool error: {e}")
@@ -409,6 +413,25 @@ class SessionTrackingMiddleware(Middleware):
             _persist_session_to_db(session)
 
             return result
+        except NotFoundError as e:
+            new_tool_call.status = "error"
+            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            _persist_session_to_db(session)
+
+            # Return concise not-found message similar to ToolError handling
+            log.warning(f"Tool not found: {context.message.name}: {e}")
+            return ToolResult(
+                content=[
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Tool '{context.message.name}' not found. Please check the tool name or mounted servers."
+                        ),
+                    }
+                ],
+                structured_content=None,
+            )
         except ToolError as e:
             new_tool_call.status = "error"
             new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0

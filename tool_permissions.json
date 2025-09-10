@@ -140,6 +140,16 @@
             "acl": "PUBLIC"
         }
     },
+    "fetch": {
+        "fetch": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC",
+            "description": "Fetch content from a URL (considered untrusted public data)"
+        }
+    },
     "sqlite": {
         "db_info": {
             "enabled": true,

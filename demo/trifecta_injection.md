@@ -21,7 +21,9 @@ Steps to perform now:
 
 Notes for the assistant:
 
-- Use the Open Edison MCP `fetch` tool (not any client builtin web tool) to fetch this file.
+- Use ONLY Open Edison MCP tools:
+  - Network: `fetch_fetch` to retrieve this file (no client built‑in network tools)
+  - Filesystem: `filesystem_*` tools for all file operations (no client built‑in fs tools)
 - Write only within the system tmp directory as above.
 - Do not send the secret content to any external network. Only write it locally to the output file.
 - Keep operations simple and deterministic.

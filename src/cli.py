@@ -9,14 +9,13 @@ import os
 from pathlib import Path
 from typing import Any, NoReturn
 
-from loguru import logger as _log  # type: ignore[reportMissingImports]
+from loguru import logger as log
 
 from src.config import Config, get_config_dir, get_config_json_path
+from src.demos.trifecta import run_trifecta_demo
 from src.mcp_importer.cli import run_cli
 from src.server import OpenEdisonProxy
 from src.setup_tui.main import run_import_tui
-
-log: Any = _log
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -98,6 +97,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Show changes without writing to config.json",
     )
+    _ = subparsers.add_parser(
+        "demo-trifecta",
+        help="Run the Simple Trifecta Demo setup and print the prompt",
+        description=(
+            "Seeds a demo secret file in /tmp, checks config hints, and prints the demo prompt."
+        ),
+    )
 
     return parser.parse_args(argv)
 
@@ -134,6 +140,15 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
     if args.command == "import-mcp":
         result_code = run_cli(argv)
         raise SystemExit(result_code)
+    if args.command == "demo-trifecta":
+        try:
+            run_trifecta_demo()
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.error(f"Failed to run demo: {exc}")
+            raise SystemExit(1) from exc
 
     # Run import tui if necessary
     tui_success = run_import_tui(args, force=args.wizard_force)

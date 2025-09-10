@@ -63,6 +63,63 @@ def get_config_json_path() -> Path:
     return get_config_dir() / "config.json"
 
 
+def repo_defaults_path(filename: str) -> Path:
+    """Path to repository/package-default JSON next to src/.
+
+    Example: repo_defaults_path("tool_permissions.json") -> /.../src/../tool_permissions.json
+    """
+    return root_dir / filename
+
+
+def ensure_permissions_file(file_path: Path, *, default_json: dict[str, Any] | None = None) -> Path:
+    """Ensure a permissions JSON file exists at file_path.
+
+    Behavior:
+    - If file exists: return it
+    - Else: try to copy repo default (next to src/) into place; if not present, write minimal stub
+    - Returns the final path (which should exist unless write failed)
+    """
+    if file_path.exists():
+        return file_path
+
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    repo_candidate = repo_defaults_path(file_path.name)
+    if repo_candidate.exists():
+        file_path.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
+        log.info(f"Bootstrapped permissions file from defaults: {file_path}")
+        return file_path
+
+    # Minimal stub when no repo default available
+    minimal_obj: dict[str, Any] = default_json if default_json is not None else {"_metadata": {}}
+    file_path.write_text(json.dumps(minimal_obj, indent=2), encoding="utf-8")
+    log.info(f"Created minimal permissions file: {file_path}")
+    return file_path
+
+
+def resolve_json_path_with_bootstrap(filename: str) -> Path:
+    """Resolve a JSON config file path with repo bootstrap fallback.
+
+    Precedence:
+    1) Return config-dir path if it already exists
+    2) If repo default exists, attempt to copy it into config-dir and return the copied path
+    3) Return the config-dir target path (may not exist yet)
+    """
+    base = get_config_dir()
+    target = base / filename
+    if target.exists():
+        return target
+
+    repo_candidate = repo_defaults_path(filename)
+    if repo_candidate.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
+        return target
+    raise FileNotFoundError(
+        f"File {filename} not found in the src repo and could not be bootstrapped"
+    )
+
+
 @dataclass
 class ServerConfig:
     """Server configuration"""
