@@ -21,6 +21,9 @@ jobs:
         run: |
           git fetch origin main:refs/remotes/origin/main --depth=1
 
+      - name: Setup
+        uses: ./.github/actions/setup
+
       - name: Run version guard
         run: make check_higher_than_main
 
