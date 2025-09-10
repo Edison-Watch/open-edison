@@ -115,10 +115,10 @@ class SingleUserMCP(FastMCP[Any]):
         )
 
         # Validate and normalize all results
-        tools = self._validate_server_result(tools, "tools", server.name)
-        resources = self._validate_server_result(resources, "resources", server.name)
-        templates = self._validate_server_result(templates, "templates", server.name)
-        prompts = self._validate_server_result(prompts, "prompts", server.name)
+        tools = self._validate_server_result(tools, "tools", prefix)
+        resources = self._validate_server_result(resources, "resources", prefix)
+        templates = self._validate_server_result(templates, "templates", prefix)
+        prompts = self._validate_server_result(prompts, "prompts", prefix)
 
         # Import all components
         self._import_tools(tools, prefix)
@@ -132,9 +132,13 @@ class SingleUserMCP(FastMCP[Any]):
         self, result: Any, result_type: str, server_name: str
     ) -> dict[str, Any]:
         """Validate and normalize server result from asyncio.gather with return_exceptions=True."""
+        if isinstance(result, RuntimeError):
+            log.debug(f'Server {server_name} does not appear to contain "{result_type}"')
+            return {}
         if isinstance(result, Exception):
-            log.warning(f'Server {server_name} does not appear to contain "{result_type}"')
-            log.debug(f"Server {server_name} _validate_server_result exception result: {result}")
+            log.error(
+                f'Server {server_name} received and unexpected exception when feetching "{result_type}". result: {result}'
+            )
             return {}
         if not isinstance(result, dict):
             log.warning(f"Server {server_name} returned an unexpected response")
