@@ -1,7 +1,6 @@
 """
 CLI entrypoint for Open Edison.
-
-Provides `open-edison` executable when installed via pip/uvx/pipx.
+Provides the `open-edison` executable when installed via pip/uvx/pipx.
 """
 
 import argparse
