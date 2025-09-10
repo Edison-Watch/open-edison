@@ -1,0 +1,25 @@
+name: Version Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check Version Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Run version guard
+        run: make check_higher_than_main
+

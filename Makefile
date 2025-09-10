@@ -135,6 +135,16 @@ ci: sync lint ty_checker_check deadcode test ## Run CI checks (sync deps, lint, 
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################
+# Version Guard
+########################################################
+
+.PHONY: check_higher_than_main
+check_higher_than_main: check_uv ## Fail if local pyproject version is not greater than origin/main
+	@echo "$(YELLOW)🔍 Comparing version with origin/main...$(RESET)"
+	@uv run python scripts/version_guard.py --base-branch main --file pyproject.toml
+	@echo "$(GREEN)✅ Version is greater than origin/main.$(RESET)"
+
+########################################################
 # Configuration Management
 ########################################################
 
