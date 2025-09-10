@@ -15,7 +15,7 @@
             "args": [
                 "-y",
                 "@modelcontextprotocol/server-filesystem",
-                "/Users/gatlingx/work/test_oe"
+                "Add your working path here"
             ],
             "env": {},
             "enabled": true,
