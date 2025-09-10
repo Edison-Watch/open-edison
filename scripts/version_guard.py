@@ -10,9 +10,11 @@ Semver comparison with prerelease awareness (PEP 440-ish ordering):
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 
@@ -42,15 +44,41 @@ def read_local_version(pyproject_path: Path) -> str:
     return v
 
 
-def read_base_version(base_ref: str) -> str | None:
-    content = run_git_show(f"{base_ref}:pyproject.toml")
-    if content is None:
-        return None
+def detect_repo() -> tuple[str, str] | None:
+    repo_env = os.environ.get("GITHUB_REPOSITORY")
+    if repo_env and "/" in repo_env:
+        owner, name = repo_env.split("/", 1)
+        return owner, name
     try:
-        text = content.decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
+        cp = subprocess.run(
+            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
+        )
+        url = cp.stdout.strip()
+        m = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?$", url)
+        if m:
+            return m.group("owner"), m.group("repo")
+    except subprocess.CalledProcessError:
         return None
-    return extract_version_from_text(text)
+    return None
+
+
+def read_base_version_remote(base_branch: str) -> str | None:
+    repo = detect_repo()
+    if not repo:
+        print("Could not detect repo (GITHUB_REPOSITORY or git remote origin)", file=sys.stderr)
+        return None
+    owner, name = repo
+    url = f"https://raw.githubusercontent.com/{owner}/{name}/{base_branch}/pyproject.toml"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            if resp.status != 200:
+                print(f"Failed to fetch base pyproject.toml: HTTP {resp.status}", file=sys.stderr)
+                return None
+            text = resp.read().decode("utf-8")
+            return extract_version_from_text(text)
+    except Exception as e:
+        print(f"Error fetching base pyproject.toml: {e}", file=sys.stderr)
+        return None
 
 
 def parse_version(version: str) -> tuple[int, int, int, int, int]:
@@ -71,11 +99,14 @@ def parse_version(version: str) -> tuple[int, int, int, int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Ensure version > base ref's version")
     parser.add_argument("--base-ref", default="origin/main", help="git ref to compare against")
+    parser.add_argument("--base-branch", default=None, help="explicit base branch name")
     parser.add_argument("--file", default="pyproject.toml", help="path to pyproject.toml")
     args = parser.parse_args()
 
     local_version = read_local_version(Path(args.file))
-    base_version = read_base_version(args.base_ref)
+    # Determine base branch
+    base_branch = args.base_branch or args.base_ref.split("/")[-1]
+    base_version = read_base_version_remote(base_branch)
 
     if base_version is None:
         print(f"Base ref not available: {args.base_ref}; skipping guard (OK)")
@@ -87,7 +118,7 @@ def main() -> int:
     except SystemExit:
         return 1
 
-    print(f"Current: {local_version} | Base({args.base_ref}): {base_version}")
+    print(f"Current: {local_version} | Base({base_branch}): {base_version}")
     if local_tuple <= base_tuple:
         print(
             f"Version must be greater than base: current={local_version} <= base={base_version}",

@@ -17,10 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch main for comparison
-        run: |
-          git fetch origin main:refs/remotes/origin/main --depth=1
-
       - name: Setup
         uses: ./.github/actions/setup
 
