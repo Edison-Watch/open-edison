@@ -1,0 +1,152 @@
+{
+    "_metadata": {
+        "description": "Tool security classifications for Open Edison data access tracker. For OE demo",
+        "last_updated": "2025-09-10"
+    },
+    "builtin": {
+        "echo": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "get_server_info": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "get_security_status": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "get_available_tools": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "tools_changed": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        }
+    },
+    "filesystem": {
+        "read_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "read_text_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "read_media_file": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "read_multiple_files": {
+            "enabled": false,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "write_file": {
+            "enabled": true,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "edit_file": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "create_directory": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "list_directory": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "list_directory_with_sizes": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "directory_tree": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "move_file": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "search_files": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "get_file_info": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": true,
+            "read_untrusted_public_data": false,
+            "acl": "PRIVATE"
+        },
+        "list_allowed_directories": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        }
+    },
+    "webfetch": {
+        "fetch": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": true,
+            "acl": "PUBLIC"
+        }
+    }
+}

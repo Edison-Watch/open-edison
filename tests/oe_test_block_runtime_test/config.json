@@ -1,0 +1,41 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 3000,
+        "api_key": "dev-api-key-change-me"
+    },
+    "logging": {
+        "level": "INFO",
+        "database_path": "sessions.db"
+    },
+    "mcp_servers": [
+        {
+            "name": "filesystem",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                "/Users/gatlingx/work/test_oe"
+            ],
+            "env": {},
+            "enabled": true,
+            "roots": []
+        },
+        {
+            "name": "webfetch",
+            "command": "uvx",
+            "args": [
+                "mcp-server-fetch"
+            ],
+            "env": {},
+            "enabled": true,
+            "roots": []
+        }
+    ],
+    "telemetry": {
+        "enabled": true,
+        "otlp_endpoint": "https://otel-collector-production-e7a6.up.railway.app/v1/metrics",
+        "headers": null,
+        "export_interval_ms": 60000
+    }
+}
