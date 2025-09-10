@@ -60,18 +60,17 @@ jobs:
         run: |
           make publish_pre_pypi
 
-      - name: Install published prerelease from PyPI (retry)
+      - name: Install published prerelease from PyPI (retry via uvx)
         shell: bash
         run: |
           set -euxo pipefail
           VERSION='${{ steps.get_pre.outputs.version }}'
-          for i in {1..8}; do
-            if uv pip install --system --pre "open-edison==${VERSION}"; then
+          for i in {1..12}; do
+            if uvx --refresh --from "open-edison==${VERSION}" open-edison --help; then
               break
             fi
-            echo "Package not yet available on PyPI, retrying in 15s..."; sleep 15
+            echo "Package not yet available on PyPI, retrying in 10s..."; sleep 10
           done
-          open-edison --help || (echo "open-edison CLI failed" && exit 1)
 
       - name: Prepare config
         run: |
@@ -82,10 +81,11 @@ jobs:
           cp prompt_permissions.json test_config/
           touch test_config/.setup_tui_ran
 
-      - name: Start server from installed package
+      - name: Start server from installed package (uvx)
         run: |
           set -euxo pipefail
-          open-edison --config-dir test_config &
+          VERSION='${{ steps.get_pre.outputs.version }}'
+          uvx --from "open-edison==${VERSION}" open-edison --config-dir test_config &
           echo $! > server.pid
           for i in {1..90}; do
             if curl -sf http://localhost:3001/health >/dev/null; then
