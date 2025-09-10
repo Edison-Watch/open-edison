@@ -814,9 +814,15 @@ class OpenEdisonProxy:
             raise AttributeError(f"Proxy does not expose list method for {kind}")
 
         async def list_all() -> tuple[list[Any], list[Any], list[Any]]:
-            tools = await _call_list("tools")
-            resources = await _call_list("resources")
-            prompts = await _call_list("prompts")
+            tools, resources, prompts = await asyncio.gather(
+                _call_list("tools"),
+                _call_list("resources"),
+                _call_list("prompts"),
+                return_exceptions=True,
+            )
+            tools = tools if isinstance(tools, list) else []
+            resources = resources if isinstance(resources, list) else []
+            prompts = prompts if isinstance(prompts, list) else []
             return tools, resources, prompts
 
         timeout = body.timeout_s if isinstance(body.timeout_s, (int | float)) else 20.0
