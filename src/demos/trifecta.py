@@ -12,9 +12,6 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_RAW_URL = "https://raw.githubusercontent.com/Edison-Watch/open-edison/simple-trifecta-demo/demo/trifecta_injection.md"
-
-
 def _get_tmp_root() -> Path:
     if sys.platform == "darwin":
         return Path("/private/tmp")
