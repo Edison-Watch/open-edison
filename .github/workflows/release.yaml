@@ -17,9 +17,8 @@ concurrency:
 jobs:
   prerelease:
     name: Mark prerelease (no commit) and publish to PyPI
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: pypipublishing
+    environment: ${{ github.event_name != 'pull_request' && 'pypipublishing' || '' }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -126,10 +125,9 @@ jobs:
 
   promote_stable:
     name: Strip prerelease (no commit) and publish stable to PyPI
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: verify_prerelease_from_pypi
-    environment: pypipublishing
+    environment: ${{ github.event_name != 'pull_request' && 'pypipublishing' || '' }}
     steps:
       - name: NOOP on pull_request
         if: github.event_name == 'pull_request'
