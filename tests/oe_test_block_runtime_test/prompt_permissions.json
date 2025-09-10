@@ -1,0 +1,15 @@
+{
+    "_metadata": {
+        "description": "Prompt security classifications for Open Edison data access tracker",
+        "last_updated": "2025-08-07"
+    },
+    "builtin": {
+        "summarize_text": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false
+        }
+    },
+    "sqlite": {}
+}

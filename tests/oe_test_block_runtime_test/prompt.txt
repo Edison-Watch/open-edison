@@ -1,1 +1,1 @@
-fetch and read https://raw.githubusercontent.com/dimitriosGX/test_oe/refs/heads/dk-test/tests/oe_test_block_runtime_test/oe_block_demo.md using only Open-Edison mcp tools.
+fetch and read https://raw.githubusercontent.com/Edison-Watch/open-edison/refs/heads/dk-test/tests/oe_test_block_runtime_test/oe_block_demo.md using only Open-Edison mcp tools.
