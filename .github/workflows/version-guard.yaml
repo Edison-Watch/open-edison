@@ -9,7 +9,7 @@ on:
 
 jobs:
   check:
-    name: Check
+    name: Check Version Guard
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
