@@ -5,7 +5,7 @@ from loguru import logger as log
 
 from src.config import MCPServerConfig
 
-from .parsers import ImportErrorDetails, parse_mcp_like_json, safe_read_json
+from .parsers import ImportErrorDetails, parse_mcp_like_json, permissive_read_json
 from .paths import (
     find_claude_code_user_all_candidates,
     find_claude_code_user_settings_file,
@@ -22,17 +22,29 @@ def import_from_cursor() -> list[MCPServerConfig]:
             "Cursor MCP config not found (~/.cursor/mcp.json).",
             Path.home() / ".cursor" / "mcp.json",
         )
-    data = safe_read_json(files[0])
+    data = permissive_read_json(files[0])
     return parse_mcp_like_json(data, default_enabled=True)
 
 
 def import_from_vscode() -> list[MCPServerConfig]:
     files = find_vscode_user_mcp_file()
     if not files:
-        raise ImportErrorDetails("VSCode mcp.json not found at User/mcp.json on macOS/Linux.")
-    log.info("VSCode MCP config detected at: {}", files[0])
-    data = safe_read_json(files[0])
-    return parse_mcp_like_json(data, default_enabled=True)
+        raise ImportErrorDetails(
+            "VSCode configuration not found (checked User/mcp.json and User/settings.json)."
+        )
+    # Try each file; stop at the first that yields MCP servers
+    for f in files:
+        try:
+            log.info("VSCode config detected at: {}", f)
+            data = permissive_read_json(f)
+            parsed = parse_mcp_like_json(data, default_enabled=True)
+            if parsed:
+                return parsed
+        except Exception as e:
+            print(f"Failed reading VSCode config {f}: {e}")
+    # If we saw files but none yielded servers, return empty with info
+    log.info("No MCP servers found in VSCode config candidates; returning empty list")
+    return []
 
 
 def import_from_claude_code() -> list[MCPServerConfig]:
@@ -44,7 +56,7 @@ def import_from_claude_code() -> list[MCPServerConfig]:
     for f in files:
         try:
             log.info("Claude Code config detected at: {}", f)
-            data = safe_read_json(f)
+            data = permissive_read_json(f)
             parsed = parse_mcp_like_json(data, default_enabled=True)
             if parsed:
                 return parsed

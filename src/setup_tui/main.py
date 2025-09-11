@@ -39,7 +39,9 @@ def show_welcome_screen(*, dry_run: bool = False) -> None:
     print(welcome_text)
 
     # Prompt to continue
-    questionary.confirm("Ready to begin the setup process?", default=True).ask()
+    if not questionary.confirm("Ready to begin the setup process?", default=True).ask():
+        print("Setup aborted. ")
+        sys.exit(1)
 
 
 def handle_mcp_source(  # noqa: C901
@@ -128,6 +130,29 @@ def confirm_configs(configs: list[MCPServerConfig], *, dry_run: bool = False) ->
     return questionary.confirm(
         "Are you sure you want to use these servers with open-edison?", default=True
     ).ask()
+
+
+def select_imported_configs(
+    configs: list[MCPServerConfig], *, dry_run: bool = False
+) -> list[MCPServerConfig]:
+    """Present a checkbox list of imported servers and return the selected subset.
+
+    - Arrow keys to navigate; Space to toggle; Enter to confirm.
+    - Defaults to all selected.
+    """
+    if not configs:
+        return []
+
+    choices = [
+        questionary.Choice(title=config.name, value=config, checked=True) for config in configs
+    ]
+
+    selected = questionary.checkbox(
+        "Select the MCP servers to import (Space to toggle, Enter to confirm):",
+        choices=choices,
+    ).ask()
+
+    return list(selected or [])
 
 
 def confirm_apply_configs(client: CLIENT, *, dry_run: bool = False) -> None:
@@ -246,15 +271,24 @@ def run(*, dry_run: bool = False, skip_oauth: bool = False) -> bool:  # noqa: C9
     # Deduplicate configs
     configs = deduplicate_by_name(configs)
 
-    if not confirm_configs(configs, dry_run=dry_run):
-        return False
+    # Let the user select which servers to import
+    selected_configs = select_imported_configs(configs, dry_run=dry_run)
+
+    if len(selected_configs) == 0:
+        if not questionary.confirm(
+            "No MCP servers selected. Continue without importing any?", default=False
+        ).ask():
+            return False
+    else:
+        if not confirm_configs(selected_configs, dry_run=dry_run):
+            return False
 
     for client in mcp_clients:
         confirm_apply_configs(client, dry_run=dry_run)
 
     # Persist imported servers into config.json
-    if len(configs) > 0:
-        save_imported_servers(configs, dry_run=dry_run)
+    if len(selected_configs) > 0:
+        save_imported_servers(selected_configs, dry_run=dry_run)
 
     show_manual_setup_screen()
 

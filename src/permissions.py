@@ -11,9 +11,9 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from loguru import logger as log
+from loguru import logger as log  # pyright: ignore[reportUnknownVariableType]
 
-from src.config import Config, get_config_dir
+from src.config import Config, ensure_permissions_file, get_config_dir
 
 
 def _default_permissions_dir() -> Path:
@@ -180,24 +180,8 @@ class Permissions:
         permissions: dict[str, Any] = {}
         metadata: PermissionsMetadata | None = None
 
-        if not file_path.exists():
-            # Bootstrap missing permissions files on first run.
-            # Prefer copying repo/package defaults (next to src/), else create minimal stub.
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            repo_candidate = Path(__file__).parent.parent / file_path.name
-            if repo_candidate.exists():
-                file_path.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
-                log.info(f"Bootstrapped permissions file from defaults: {file_path}")
-            if not file_path.exists():
-                # Create minimal empty structure
-                try:
-                    file_path.write_text(json.dumps({"_metadata": {}}), encoding="utf-8")
-                    log.info(f"Created empty permissions file: {file_path}")
-                except Exception as e:
-                    raise PermissionsError(
-                        f"Unable to create permissions file at {file_path}: {e}", file_path
-                    ) from e
+        # Centralized bootstrap: ensure file exists or create from repo defaults
+        file_path = ensure_permissions_file(file_path)
 
         with open(file_path) as f:
             data: dict[str, Any] = json.load(f)

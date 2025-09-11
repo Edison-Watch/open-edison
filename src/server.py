@@ -31,7 +31,13 @@ from loguru import logger as log
 from pydantic import BaseModel, Field
 
 from src import events
-from src.config import Config, MCPServerConfig, clear_json_file_cache, get_config_json_path
+from src.config import (
+    Config,
+    MCPServerConfig,
+    clear_json_file_cache,
+    get_config_json_path,
+    resolve_json_path_with_bootstrap,
+)
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
@@ -209,26 +215,7 @@ class OpenEdisonProxy:
             2) Repository/package defaults next to src/ — and bootstrap a copy into the config dir if missing
             3) Config dir target path (even if not yet created) as last resort
             """
-            # 1) Config directory (preferred)
-            try:
-                base = _get_cfg_dir()
-            except Exception:
-                base = Path.cwd()
-            target = base / filename
-            if target.exists():
-                return target
-
-            # 2) Repository/package defaults next to src/
-            repo_candidate = Path(__file__).parent.parent / filename
-            if repo_candidate.exists():
-                # Bootstrap a copy into config dir when possible (best effort)
-                with suppress(Exception):
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(repo_candidate.read_text(encoding="utf-8"), encoding="utf-8")
-                return target if target.exists() else repo_candidate
-
-            # 3) Fall back to config dir path (will be created on save)
-            return target
+            return resolve_json_path_with_bootstrap(filename)
 
         async def _serve_json(filename: str) -> Response:  # type: ignore[override]
             if filename not in allowed_json_files:

@@ -1,10 +1,8 @@
-# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingImports=false, reportUnknownMemberType=false
-
-import json
 import shlex
 from pathlib import Path
 from typing import Any, cast
 
+import rapidjson
 from loguru import logger as log
 
 from src.config import MCPServerConfig
@@ -38,10 +36,13 @@ class ImportErrorDetails(Exception):  # noqa: N818
         self.path = path
 
 
-def safe_read_json(path: Path) -> dict[str, Any]:
+# Many clients, like vscode, allow comments and trailing commas etc in their settings files.
+def permissive_read_json(path: Path) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
-            loaded = json.load(f)
+            loaded = rapidjson.load(
+                f, parse_mode=rapidjson.PM_COMMENTS | rapidjson.PM_TRAILING_COMMAS
+            )
     except Exception as e:
         raise ImportErrorDetails(f"Failed to read JSON from {path}: {e}", path) from e
 
