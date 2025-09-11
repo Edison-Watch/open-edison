@@ -3,13 +3,22 @@ Trifecta demo runner used by the CLI and the standalone script.
 
 This module seeds a secret file under the tmp directory, checks for basic
 config hints, and prints the user prompt found at demo/trifecta_user_prompt.txt.
+
+Additionally, it provides a helper to create a temporary configuration
+directory containing `config.json` and the three permissions JSON files
+so the demo can run with a known-good configuration without touching the
+user's real config directory.
 """
 
-import json
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from tempfile import TemporaryDirectory
+
+import questionary
+from loguru import logger as log
 
 
 def _get_tmp_root() -> Path:
@@ -35,26 +44,6 @@ def _load_project_version(pyproject_path: Path) -> str:
         return "unknown"
 
 
-def _read_runtime_config(config_path: Path) -> dict[str, Any] | None:
-    try:
-        with config_path.open("r") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def _is_server_enabled(config: dict[str, Any] | None, name: str) -> bool:
-    try:
-        if not config:
-            return False
-        for srv in config.get("mcp_servers", []):
-            if srv.get("name") == name and bool(srv.get("enabled", False)):
-                return True
-        return False
-    except Exception:
-        return False
-
-
 def _seed_secret_file(version: str) -> None:
     SECRET_DIR.mkdir(parents=True, exist_ok=True)
     installed_ts = datetime.now(UTC).isoformat()
@@ -66,46 +55,56 @@ def _seed_secret_file(version: str) -> None:
     SECRET_FILE.write_text("\n".join(lines), encoding="utf-8")
 
 
+@contextmanager
+def demo_config_dir() -> Generator[Path, None, None]:
+    """Create a temporary config directory for the demo with JSONs.
+
+    Copies `config.json`, `tool_permissions.json`, `resource_permissions.json`,
+    and `prompt_permissions.json` from the repository root into a new directory
+    under the system tmp path. Ensures the `fetch` and `filesystem` servers are
+    enabled in the copied `config.json`. Returns the created directory path.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    filenames = [
+        "config.json",
+        "tool_permissions.json",
+        "resource_permissions.json",
+        "prompt_permissions.json",
+    ]
+
+    with TemporaryDirectory(prefix="open-edison-demo-") as tmp_dir:
+        demo_dir = Path(tmp_dir)
+        for filename in filenames:
+            log.debug(f"Copying {filename} to {demo_dir / filename}")
+            (demo_dir / filename).write_text(
+                (repo_root / filename).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+        log.info(f"Created temporary demo config directory: {demo_dir}")
+        yield demo_dir
+
+
 def run_trifecta_demo() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     pyproject = repo_root / "pyproject.toml"
-    default_config = repo_root / "config.json"
-    dev_config = repo_root / "dev_config_dir" / "config.json"
-
     version = _load_project_version(pyproject)
 
     _seed_secret_file(version)
 
-    config_used: Path | None = None
-    cfg = None
-    for candidate in (dev_config, default_config):
-        if candidate.exists():
-            cfg = _read_runtime_config(candidate)
-            config_used = candidate
-            break
-
-    fetch_ok = _is_server_enabled(cfg, "fetch")
-    filesystem_ok = _is_server_enabled(cfg, "filesystem")
-
     print("\n=== Open Edison: Simple Trifecta Demo Setup ===")
     print(f"Seeded secret file at: {SECRET_FILE}")
     print(f"Project version detected: {version}")
-    if config_used:
-        print(f"Checked config: {config_used}")
-    print("")
-
-    if not fetch_ok:
-        print("[hint] The 'fetch' server is not enabled in the checked config.")
-        print(
-            "       The demo fetches a public file (no auth). Ensure the Open Edison MCP 'fetch' server is enabled."
-        )
-
-    if not filesystem_ok:
-        print("[hint] The 'filesystem' server is not enabled in the checked config.")
-        print("       The demo reads /tmp/open-edison and writes to /tmp.")
 
     print("\nNext step: Copy/paste this prompt into your MCP client:")
     print("----------------------------------------------------")
     prompt_path = repo_root / "demo" / "trifecta_user_prompt.txt"
     prompt_text = prompt_path.read_text(encoding="utf-8").strip()
     print(prompt_text)
+    print("----------------------------------------------------")
+
+    questionary.confirm(
+        "Have you copied the prompt into your MCP client and are ready to launch the server now?",
+        default=True,
+    ).ask()
+
+    # On return, the cli.py handles launching the server
