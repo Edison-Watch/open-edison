@@ -5,7 +5,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger as log
 
@@ -63,7 +63,8 @@ def _read_json_or_error(path: Path) -> dict[str, Any]:
         raise ExportError(f"Malformed JSON at {path}: {e}") from e
     if not isinstance(data, dict):
         raise ExportError(f"Expected top-level JSON object at {path}")
-    return data
+    typed_data: dict[str, Any] = cast(dict[str, Any], data)
+    return typed_data
 
 
 def _require_supported_os() -> None:
@@ -188,21 +189,25 @@ def _build_open_edison_server(
 def _is_already_open_edison(
     config_obj: dict[str, Any], *, url: str, api_key: str, name: str
 ) -> bool:
-    servers_node = config_obj.get("mcpServers") or config_obj.get("servers")
-    if not isinstance(servers_node, dict):
+    servers_raw: Any = config_obj.get("mcpServers") or config_obj.get("servers")
+    if not isinstance(servers_raw, dict):
         return False
+    servers_node: dict[str, Any] = cast(dict[str, Any], servers_raw)
     # Must be exactly one server
     if len(servers_node) != 1:
         return False
-    only_name, only_spec = next(iter(servers_node.items()))
-    if only_name != name or not isinstance(only_spec, dict):
+    only_name, only_spec_any = next(iter(servers_node.items()))
+    if only_name != name or not isinstance(only_spec_any, dict):
         return False
-    if only_spec.get("command") != "npx":
+    only_spec: dict[str, Any] = cast(dict[str, Any], only_spec_any)
+    cmd_val_any: Any = only_spec.get("command")
+    if cmd_val_any != "npx":
         return False
-    args = only_spec.get("args")
-    if not isinstance(args, list):
+    args_obj_any: Any = only_spec.get("args")
+    if not isinstance(args_obj_any, list):
         return False
-    args_str = [str(a) for a in args]
+    args_list: list[Any] = cast(list[Any], args_obj_any)
+    args_str = [str(a) for a in args_list]
     expected_header = f"Authorization: Bearer {api_key}"
     return (
         url in args_str
@@ -210,6 +215,163 @@ def _is_already_open_edison(
         and "mcp-remote" in args_str
         and "--transport" in args_str
         and "http-only" in args_str
+    )
+
+
+# --- Restore helpers and functions ---
+
+
+@dataclass
+class RestoreResult:
+    target_path: Path
+    restored_from_backup: Path | None
+    wrote_changes: bool
+    dry_run: bool
+    removed_open_edison_only: bool
+
+
+def _find_latest_backup(target_path: Path) -> Path | None:
+    parent = target_path.parent
+    prefix = target_path.name + ".bak-"
+    candidates: list[Path] = [p for p in parent.glob(target_path.name + ".bak-*") if p.is_file()]
+    if not candidates:
+        return None
+    # Sort by timestamp portion descending (string sort works with our format)
+    def _key(p: Path) -> str:
+        return p.name.replace(prefix, "")
+
+    candidates.sort(key=_key, reverse=True)
+    return candidates[0]
+
+
+def _is_open_edison_singleton(config_obj: dict[str, Any], *, name: str) -> bool:
+    servers_raw: Any = config_obj.get("mcpServers") or config_obj.get("servers")
+    if not isinstance(servers_raw, dict):
+        return False
+    servers_node: dict[str, Any] = cast(dict[str, Any], servers_raw)
+    if len(servers_node) != 1:
+        return False
+    only_name, only_spec_any = next(iter(servers_node.items()))
+    if only_name != name or not isinstance(only_spec_any, dict):
+        return False
+    only_spec: dict[str, Any] = cast(dict[str, Any], only_spec_any)
+    cmd_val_any: Any = only_spec.get("command")
+    if cmd_val_any != "npx":
+        return False
+    args_obj_any: Any = only_spec.get("args")
+    if not isinstance(args_obj_any, list):
+        return False
+    args_list: list[Any] = cast(list[Any], args_obj_any)
+    args_str = [str(a) for a in args_list]
+    return "mcp-remote" in args_str
+
+
+def _restore_from_backup_or_remove(
+    *,
+    target_path: Path,
+    label: str,
+    key_name: str,
+    server_name: str,
+    dry_run: bool,
+) -> RestoreResult:
+    backup = _find_latest_backup(target_path)
+    if backup is not None:
+        if dry_run:
+            log.info("[dry-run] Would restore {} from backup {}", label, backup)
+            return RestoreResult(
+                target_path=target_path,
+                restored_from_backup=backup,
+                wrote_changes=False,
+                dry_run=True,
+                removed_open_edison_only=False,
+            )
+        _ensure_parent_dir(target_path)
+        shutil.copy2(backup, target_path)
+        log.info("Restored {} from backup {}", label, backup)
+        return RestoreResult(
+            target_path=target_path,
+            restored_from_backup=backup,
+            wrote_changes=True,
+            dry_run=False,
+            removed_open_edison_only=False,
+        )
+
+    # No backup found; as a safety, remove the Open Edison-only MCP section if it exactly matches
+    if not target_path.exists():
+        return RestoreResult(
+            target_path=target_path,
+            restored_from_backup=None,
+            wrote_changes=False,
+            dry_run=dry_run,
+            removed_open_edison_only=False,
+        )
+    current = _read_json_or_error(target_path)
+    if _is_open_edison_singleton(current, name=server_name):
+        if dry_run:
+            log.info("[dry-run] Would remove Open Edison-only MCP section from {}", label)
+            return RestoreResult(
+                target_path=target_path,
+                restored_from_backup=None,
+                wrote_changes=False,
+                dry_run=True,
+                removed_open_edison_only=True,
+            )
+        if key_name in current:
+            # Remove entire MCP section
+            current.pop(key_name, None)
+        _atomic_write_json(target_path, current)
+        log.info("Removed Open Edison-only MCP section from {}", label)
+        return RestoreResult(
+            target_path=target_path,
+            restored_from_backup=None,
+            wrote_changes=True,
+            dry_run=False,
+            removed_open_edison_only=True,
+        )
+    # Nothing to do
+    return RestoreResult(
+        target_path=target_path,
+        restored_from_backup=None,
+        wrote_changes=False,
+        dry_run=dry_run,
+        removed_open_edison_only=False,
+    )
+
+
+def restore_cursor(*, server_name: str = "open-edison", dry_run: bool = False) -> RestoreResult:
+    _require_supported_os()
+    target_path = _resolve_cursor_target()
+    return _restore_from_backup_or_remove(
+        target_path=target_path,
+        label="Cursor",
+        key_name="mcpServers",
+        server_name=server_name,
+        dry_run=dry_run,
+    )
+
+
+def restore_vscode(*, server_name: str = "open-edison", dry_run: bool = False) -> RestoreResult:
+    _require_supported_os()
+    target_path = _resolve_vscode_target()
+    return _restore_from_backup_or_remove(
+        target_path=target_path,
+        label="VS Code",
+        key_name="servers",
+        server_name=server_name,
+        dry_run=dry_run,
+    )
+
+
+def restore_claude_code(*, server_name: str = "open-edison", dry_run: bool = False) -> RestoreResult:
+    _require_supported_os()
+    target_path = _resolve_claude_code_target()
+    # Claude Code uses general settings format; MCP key is "mcpServers"
+    return _restore_from_backup_or_remove(
+        target_path=target_path,
+        label="Claude Code",
+        key_name="mcpServers",
+        server_name=server_name,
+        dry_run=dry_run,
     )
 
 
@@ -378,7 +540,7 @@ def export_to_claude_code(
         current = {}
 
     new_mcp = _build_open_edison_server(name=server_name, url=url, api_key=api_key)
-    if is_existing and isinstance(current, dict) and current:
+    if is_existing and current:
         new_config = _merge_preserving_non_mcp(current, new_mcp)
     else:
         new_config = {"mcpServers": new_mcp}

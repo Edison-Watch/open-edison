@@ -15,9 +15,13 @@ from src.config import Config, MCPServerConfig, get_config_json_path
 from src.mcp_importer import paths as _paths
 from src.mcp_importer.exporters import (
     ExportResult,
+    RestoreResult,
     export_to_claude_code,
     export_to_cursor,
     export_to_vscode,
+    restore_claude_code,
+    restore_cursor,
+    restore_vscode,
 )
 from src.mcp_importer.importers import (
     import_from_claude_code,
@@ -133,6 +137,30 @@ def export_edison_to(
                 force=force,
                 create_if_missing=create_if_missing,
             )
+
+
+def restore_client(
+    client: CLIENT,
+    *,
+    server_name: str = "open-edison",
+    dry_run: bool = False,
+) -> RestoreResult:
+    if dry_run:
+        print(f"[dry-run] Would restore original MCP config for '{client}' (using latest backup if present)")
+        return RestoreResult(
+            target_path=Path(""),
+            restored_from_backup=None,
+            wrote_changes=False,
+            dry_run=True,
+            removed_open_edison_only=False,
+        )
+    match client:
+        case CLIENT.CURSOR:
+            return restore_cursor(server_name=server_name, dry_run=dry_run)
+        case CLIENT.VSCODE:
+            return restore_vscode(server_name=server_name, dry_run=dry_run)
+        case CLIENT.CLAUDE_CODE:
+            return restore_claude_code(server_name=server_name, dry_run=dry_run)
 
 
 def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
