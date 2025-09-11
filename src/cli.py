@@ -14,6 +14,7 @@ from loguru import logger as log
 
 from src.config import Config, get_config_dir, get_config_json_path
 from src.demos.trifecta import demo_config_dir, run_trifecta_demo
+from src.mcp_importer.api import detect_clients, restore_client
 from src.mcp_importer.cli import run_cli
 from src.server import OpenEdisonProxy
 from src.setup_tui.main import run_import_tui
@@ -106,6 +107,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
 
+    # restore-clients: restore editor configs from backups or remove OE-only config
+    sp_restore = subparsers.add_parser(
+        "restore-clients",
+        help="Restore backed up MCP client configs (Cursor, VS Code, Claude Code)",
+        description=(
+            "Detect installed clients and restore their MCP config from the most recent backup, "
+            "or remove the Open Edison-only MCP entry if no backup is present."
+        ),
+    )
+    sp_restore.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview restore operations without writing",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -156,6 +172,41 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         with demo_config_dir() as demo_dir:
             os.environ["OPEN_EDISON_CONFIG_DIR"] = str(demo_dir)
             asyncio.run(_run_server(args))
+        raise SystemExit(0)
+
+    if args.command == "restore-clients":
+        # Detect clients and prompt user per client
+        available = sorted(detect_clients(), key=lambda c: c.value)
+        if not available:
+            log.info("No supported MCP clients detected")
+            raise SystemExit(0)
+        from questionary import confirm
+
+        for client in available:
+            if not confirm(
+                f"Restore original MCP config for {client.value}? (removes Open Edison)", default=True
+            ).ask():
+                continue
+            try:
+                res = restore_client(client, dry_run=getattr(args, "dry_run", False))
+                if getattr(args, "dry_run", False):
+                    log.info("[dry-run] {}: would restore at {}", client.value, res.target_path)
+                else:
+                    if res.restored_from_backup is not None:
+                        log.info(
+                            "Restored {} from backup {}", client.value, res.restored_from_backup
+                        )
+                    elif res.removed_open_edison_only:
+                        log.info(
+                            "Removed Open Edison-only entry from {} at {}",
+                            client.value,
+                            res.target_path,
+                        )
+                    else:
+                        log.info("No restore action taken for {}", client.value)
+            except Exception as e:
+                log.error(f"Restore failed for {client.value}: {e}")
+                raise SystemExit(1) from e
         raise SystemExit(0)
 
     # Run import tui if necessary
