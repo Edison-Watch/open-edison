@@ -17,7 +17,8 @@
             "args": [
                 "-y",
                 "@modelcontextprotocol/server-filesystem",
-                "/tmp"
+                "/tmp",
+                "/private/tmp"
             ],
             "env": {},
             "enabled": true,
@@ -25,13 +26,12 @@
         },
         {
             "name": "fetch",
-            "command": "npx",
+            "command": "uvx",
             "args": [
-                "-y",
-                "@modelcontextprotocol/server-everything"
+                "mcp-server-fetch"
             ],
             "env": {},
-            "enabled": false
+            "enabled": true
         },
         {
             "name": "github",

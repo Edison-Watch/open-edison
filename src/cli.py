@@ -6,17 +6,17 @@ Provides the `open-edison` executable when installed via pip/uvx/pipx.
 import argparse
 import asyncio
 import os
+import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
-from loguru import logger as _log  # type: ignore[reportMissingImports]
+from loguru import logger as log
 
 from src.config import Config, get_config_dir, get_config_json_path
+from src.demos.trifecta import demo_config_dir, run_trifecta_demo
 from src.mcp_importer.cli import run_cli
 from src.server import OpenEdisonProxy
 from src.setup_tui.main import run_import_tui
-
-log: Any = _log
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -98,6 +98,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Show changes without writing to config.json",
     )
+    _ = subparsers.add_parser(
+        "demo-trifecta",
+        help="Run the Simple Trifecta Demo setup and print the prompt",
+        description=(
+            "Seeds a demo secret file in /tmp, checks config hints, and prints the demo prompt."
+        ),
+    )
 
     return parser.parse_args(argv)
 
@@ -132,8 +139,24 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         args.command = "run"
 
     if args.command == "import-mcp":
-        result_code = run_cli(argv)
+        # Forward only the subcommand args (exclude the 'import-mcp' token itself)
+        if argv is None:
+            argv = sys.argv[1:]
+        raw_args = list(argv)
+        try:
+            subcmd_index = raw_args.index("import-mcp")
+            sub_argv = raw_args[subcmd_index + 1 :]
+        except ValueError:
+            sub_argv = raw_args
+
+        result_code = run_cli(sub_argv)
         raise SystemExit(result_code)
+    if args.command == "demo-trifecta":
+        run_trifecta_demo()
+        with demo_config_dir() as demo_dir:
+            os.environ["OPEN_EDISON_CONFIG_DIR"] = str(demo_dir)
+            asyncio.run(_run_server(args))
+        raise SystemExit(0)
 
     # Run import tui if necessary
     tui_success = run_import_tui(args, force=args.wizard_force)
