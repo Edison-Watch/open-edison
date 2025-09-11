@@ -147,13 +147,6 @@ def restore_client(
 ) -> RestoreResult:
     if dry_run:
         print(f"[dry-run] Would restore original MCP config for '{client}' (using latest backup if present)")
-        return RestoreResult(
-            target_path=Path(""),
-            restored_from_backup=None,
-            wrote_changes=False,
-            dry_run=True,
-            removed_open_edison_only=False,
-        )
     match client:
         case CLIENT.CURSOR:
             return restore_cursor(server_name=server_name, dry_run=dry_run)
