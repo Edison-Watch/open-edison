@@ -11,7 +11,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from loguru import logger as log
+from loguru import logger as log  # pyright: ignore[reportUnknownVariableType]
 
 from src.config import Config, ensure_permissions_file, get_config_dir
 

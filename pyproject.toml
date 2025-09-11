@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.83"
+version = "0.1.84"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -23,8 +23,9 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.36.0",
     "hatchling>=1.27.0",
     "questionary>=2.1.1",
+    "python-rapidjson>=1.21",
 ]
-requires-python = ">= 3.12"
+requires-python = ">=3.12"
 
 [project.scripts]
 open-edison = "src.cli:main"

@@ -17,14 +17,33 @@ def find_cursor_user_file() -> list[Path]:
     return [p] if p.exists() else []
 
 
+def _vscode_base_dirs() -> list[Path]:
+    """Return likely VSCode user base directories for different distributions."""
+    home = Path.home()
+    vscode_config_base = (
+        home / "Library" / "Application Support" if is_macos() else home / ".config"
+    )
+    return [
+        x
+        for x in [
+            vscode_config_base / "Code",
+            vscode_config_base / "Code - Insiders",
+            vscode_config_base / "VSCodium",
+            vscode_config_base / "Code - OSS",
+        ]
+        if x.exists()
+    ]
+
+
 def find_vscode_user_mcp_file() -> list[Path]:
-    """Find VSCode user-level MCP config (User/mcp.json) on macOS or Linux."""
-    if is_macos():
-        p = Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
-    else:
-        p = Path.home() / ".config" / "Code" / "User" / "mcp.json"
-    p = p.resolve()
-    return [p] if p.exists() else []
+    """Find VSCode user-level MCP config: prefer User/mcp.json; fall back to User/settings.json."""
+    results: list[Path] = []
+    for base in _vscode_base_dirs():
+        for filename in ("mcp.json", "settings.json"):
+            candidate = (base / "User" / filename).resolve()
+            if candidate.exists():
+                results.append(candidate)
+    return list(set(results))
 
 
 def find_claude_code_user_settings_file() -> list[Path]:
@@ -71,11 +90,11 @@ def detect_vscode_config_path() -> Path | None:
 
 
 def get_default_vscode_config_path() -> Path:
-    if is_macos():
-        return (
-            Path.home() / "Library" / "Application Support" / "Code" / "User" / "mcp.json"
-        ).resolve()
-    return (Path.home() / ".config" / "Code" / "User" / "mcp.json").resolve()
+    # Prefer the first base dir; target mcp.json under User/
+    existing_base_dir = next((base for base in _vscode_base_dirs() if base.exists()), None)
+    if existing_base_dir:
+        return (existing_base_dir / "User" / "mcp.json").resolve()
+    raise RuntimeError("No VSCode base directory found! Are you sure VSCode is installed?")
 
 
 def get_default_cursor_config_path() -> Path:

@@ -6,6 +6,7 @@ Provides the `open-edison` executable when installed via pip/uvx/pipx.
 import argparse
 import asyncio
 import os
+import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -138,7 +139,17 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
         args.command = "run"
 
     if args.command == "import-mcp":
-        result_code = run_cli(argv)
+        # Forward only the subcommand args (exclude the 'import-mcp' token itself)
+        if argv is None:
+            argv = sys.argv[1:]
+        raw_args = list(argv)
+        try:
+            subcmd_index = raw_args.index("import-mcp")
+            sub_argv = raw_args[subcmd_index + 1 :]
+        except ValueError:
+            sub_argv = raw_args
+
+        result_code = run_cli(sub_argv)
         raise SystemExit(result_code)
     if args.command == "demo-trifecta":
         run_trifecta_demo()
