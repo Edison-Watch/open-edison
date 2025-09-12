@@ -2,9 +2,9 @@
 
 > The Secure MCP Control Panel
 
-Connect AI to your data/software securely to prevent data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing.
+Connect AI to your data/software with additional security controls to help reduce data exfiltration risks. Gain visibility, monitor potential threats, and get alerts on the data your agent is reading/writing.
 
-OpenEdison addresses the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
+OpenEdison helps address the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can increase risks of agent hijacking & data exfiltration by malicious actors.
 
 **Join our Discord** for feedback, feature requests, and to discuss MCP security for your use case: [discord.gg/tXjATaKgTV](https://discord.gg/tXjATaKgTV)
 
@@ -28,8 +28,8 @@ OpenEdison addresses the [lethal trifecta problem](https://simonwillison.net/202
 
 ## Features ✨
 
-- 🛑 **Data leak blocker** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
-- 🕰️ **Deterministic execution** - Deterministic execution. Guaranteed data exfiltration blocker.
+- 🛑 **Data leak monitoring** - Edison detects and blocks potential data leaks through configurable security controls
+- 🕰️ **Controlled execution** - Provides structured execution controls to reduce data exfiltration risks.
 - 🗂️ **Easily configurable** - Easy to configure and manage your MCP servers
 - 📊 **Visibility into agent interactions** - Track and monitor your agents and their interactions with connected software/data via MCP calls
 - 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
@@ -37,7 +37,7 @@ OpenEdison addresses the [lethal trifecta problem](https://simonwillison.net/202
 
 ## About Edison.watch 🏢
 
-Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance.
+Edison helps you gain observability, control, and policy enforcement for AI interactions with systems of records, existing company software and data. Reduce risks of AI-caused data leakage with streamlined setup for cross-system governance.
 
 ## Quick Start 🚀
 
@@ -245,7 +245,7 @@ Each MCP server configuration includes:
 
 </details>
 
-## 🔐 How Edison prevents data leakages
+## 🔐 How Edison reduces data leakages
 
 <details>
 <summary>🔱 The lethal trifecta, agent lifecycle management</summary>
@@ -264,7 +264,7 @@ The configuration allows you to classify these risks across **tools**, **resourc
 
 In addition to trifecta, we track Access Control Level (ACL) for each tool call,
 that is, each tool has an ACL level (one of PUBLIC, PRIVATE, or SECRET), and we track the highest ACL level for each session.
-If a write operation is attempted to a lower ACL level, it is blocked.
+If a write operation is attempted to a lower ACL level, it can be blocked based on your configuration.
 
 ### 🧰 Tool Permissions (`tool_permissions.json`)
 
