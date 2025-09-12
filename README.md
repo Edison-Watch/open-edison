@@ -2,9 +2,9 @@
 
 > The Secure MCP Control Panel
 
-Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing.
+Connect AI to your data/software securely to prevent data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing.
 
-OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
+OpenEdison addresses the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
 
 **Join our Discord** for feedback, feature requests, and to discuss MCP security for your use case: [discord.gg/tXjATaKgTV](https://discord.gg/tXjATaKgTV)
 
