@@ -6,6 +6,8 @@ Connect AI to your data/software securely without risk of data exfiltration. Gai
 
 OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
 
+**Join our Discord** for feedback, feature requests, and to discuss MCP security for your use case: [discord.gg/tXjATaKgTV](https://discord.gg/tXjATaKgTV)
+
 <p align="center">
   <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
 </p>
@@ -15,6 +17,7 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
 </div>
 
 <p align="center">
+  <a href="https://discord.gg/tXjATaKgTV"><img alt="Join our Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white"></a>
   <img alt="Project Version" src="https://img.shields.io/pypi/v/open-edison?label=version&color=blue">
   <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue?logo=python">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="License">
