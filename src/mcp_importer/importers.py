@@ -1,3 +1,4 @@
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from src.config import MCPServerConfig
 
 from .parsers import ImportErrorDetails, parse_mcp_like_json, permissive_read_json
 from .paths import (
+    detect_claude_desktop_config_path,
     find_claude_code_user_all_candidates,
     find_claude_code_user_settings_file,
     find_cursor_user_file,
@@ -68,8 +70,28 @@ def import_from_claude_code() -> list[MCPServerConfig]:
     return []
 
 
+def import_from_claude_desktop() -> list[MCPServerConfig]:
+    """Import from Claude Desktop's config file (claude_desktop_config.json)."""
+    path = detect_claude_desktop_config_path()
+    if path is None:
+        # Point to default expected path in error to aid the user
+        raise ImportErrorDetails(
+            "Claude Desktop configuration not found (claude_desktop_config.json).",
+            Path.home()
+            / (
+                "Library/Application Support/Claude/claude_desktop_config.json"
+                if sys.platform == "darwin"
+                else ".config/Claude/claude_desktop_config.json"
+            ),
+        )
+    log.info("Claude Desktop config detected at: {}", path)
+    data = permissive_read_json(path)
+    return parse_mcp_like_json(data, default_enabled=True)
+
+
 IMPORTERS: dict[str, Callable[..., list[MCPServerConfig]]] = {
     "cursor": import_from_cursor,
     "vscode": import_from_vscode,
     "claude-code": import_from_claude_code,
+    "claude-desktop": import_from_claude_desktop,
 }

@@ -24,7 +24,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--source",
-        choices=["cursor", "vscode", "claude-code"],
+        choices=["cursor", "vscode", "claude-code", "claude-desktop"],
         required=True,
     )
     p.add_argument(

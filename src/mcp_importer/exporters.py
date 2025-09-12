@@ -10,9 +10,11 @@ from typing import Any, cast
 from loguru import logger as log
 
 from .paths import (
+    detect_claude_desktop_config_path,
     find_claude_code_user_all_candidates,
     find_cursor_user_file,
     find_vscode_user_mcp_file,
+    get_default_claude_desktop_config_path,
     is_macos,
     is_windows,
 )
@@ -93,6 +95,13 @@ def _resolve_claude_code_target() -> Path:
     if existing:
         return existing[0]
     return (Path.home() / ".claude.json").resolve()
+
+
+def _resolve_claude_desktop_target() -> Path:
+    existing = detect_claude_desktop_config_path()
+    if existing:
+        return existing
+    return get_default_claude_desktop_config_path()
 
 
 def _validate_or_confirm_create(target_path: Path, *, create_if_missing: bool, label: str) -> None:
@@ -236,6 +245,7 @@ def _find_latest_backup(target_path: Path) -> Path | None:
     candidates: list[Path] = [p for p in parent.glob(target_path.name + ".bak-*") if p.is_file()]
     if not candidates:
         return None
+
     # Sort by timestamp portion descending (string sort works with our format)
     def _key(p: Path) -> str:
         return p.name.replace(prefix, "")
@@ -362,13 +372,30 @@ def restore_vscode(*, server_name: str = "open-edison", dry_run: bool = False) -
     )
 
 
-def restore_claude_code(*, server_name: str = "open-edison", dry_run: bool = False) -> RestoreResult:
+def restore_claude_code(
+    *, server_name: str = "open-edison", dry_run: bool = False
+) -> RestoreResult:
     _require_supported_os()
     target_path = _resolve_claude_code_target()
     # Claude Code uses general settings format; MCP key is "mcpServers"
     return _restore_from_backup_or_remove(
         target_path=target_path,
         label="Claude Code",
+        key_name="mcpServers",
+        server_name=server_name,
+        dry_run=dry_run,
+    )
+
+
+def restore_claude_desktop(
+    *, server_name: str = "open-edison", dry_run: bool = False
+) -> RestoreResult:
+    _require_supported_os()
+    target_path = _resolve_claude_desktop_target()
+    # Claude Desktop uses general settings format; MCP key is "mcpServers"
+    return _restore_from_backup_or_remove(
+        target_path=target_path,
+        label="Claude Desktop",
         key_name="mcpServers",
         server_name=server_name,
         dry_run=dry_run,
@@ -552,4 +579,59 @@ def export_to_claude_code(
         backup_path=backup_path,
         dry_run=dry_run,
         label="Claude Code",
+    )
+
+
+def export_to_claude_desktop(
+    *,
+    url: str = "http://localhost:3000/mcp/",
+    api_key: str = "dev-api-key-change-me",
+    server_name: str = "open-edison",
+    dry_run: bool = False,
+    force: bool = False,
+    create_if_missing: bool = False,
+) -> ExportResult:
+    """Export for Claude Desktop.
+
+    - Preserve non-MCP keys in existing config; otherwise write minimal MCP-only object.
+    - Location matches platform-specific user-level paths.
+    """
+
+    _require_supported_os()
+    target_path = _resolve_claude_desktop_target()
+
+    is_existing = target_path.exists()
+    if is_existing:
+        current = _read_json_or_error(target_path)
+        maybe_skip = _skip_if_already_configured(
+            target_path,
+            url=url,
+            api_key=api_key,
+            name=server_name,
+            force=force,
+            dry_run=dry_run,
+            label="Claude Desktop",
+        )
+        if maybe_skip is not None:
+            return maybe_skip
+    else:
+        if not create_if_missing:
+            raise ExportError(
+                f"Claude Desktop config not found at {target_path}. Refusing to create without confirmation."
+            )
+        current = {}
+
+    new_mcp = _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+    if is_existing and current:
+        new_config = _merge_preserving_non_mcp(current, new_mcp)
+    else:
+        new_config = {"mcpServers": new_mcp}
+
+    backup_path = _backup_if_exists(target_path, dry_run=dry_run)
+    return _write_config(
+        target_path,
+        new_config=new_config,
+        backup_path=backup_path,
+        dry_run=dry_run,
+        label="Claude Desktop",
     )
