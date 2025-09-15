@@ -1724,24 +1724,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     }
 
-    const resetLocalStorage = async () => {
-        try {
-            const response = await fetch('/api/reset-localstorage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            
-            if (!response.ok) {
-                throw new Error(`Failed to reset localStorage (${response.status})`)
-            }
-            
-            setToast({ message: 'localStorage reset triggered', type: 'success' })
-        } catch (error) {
-            console.error('Failed to reset localStorage:', error)
-            setToast({ message: 'Failed to reset localStorage', type: 'error' })
-        }
-    }
-
     async function validateAndImport(serverName: string) {
         setToast(null)
         setValidateInProgress(serverName)
@@ -2500,13 +2482,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
-                        <button 
-                            className="button" 
-                            onClick={resetLocalStorage}
-                            title="Reset localStorage and reload page"
-                        >
-                            Reset Storage
-                        </button>
                         <button 
                             className={`button ${needsReinitialize ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`} 
                             disabled={saving} 
