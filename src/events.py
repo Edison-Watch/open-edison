@@ -16,6 +16,9 @@ from loguru import logger as log
 _subscribers: set[asyncio.Queue[str]] = set()
 _lock = asyncio.Lock()
 
+# Track if server startup event has been sent
+_startup_event_sent = False
+
 # One-time approvals for (session_id, kind, name)
 _approvals: dict[str, asyncio.Event] = {}
 _approvals_lock = asyncio.Lock()
@@ -44,11 +47,34 @@ def requires_loop(func: Callable[..., Any]) -> Callable[..., None | Any]:  # noq
 
 async def subscribe() -> asyncio.Queue[str]:
     """Register a new subscriber and return its queue of SSE strings."""
+    global _startup_event_sent
     queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
     async with _lock:
         _subscribers.add(queue)
         log.debug(f"SSE subscriber added (total={len(_subscribers)})")
+
+        # Emit server startup event when first client subscribes
+        if not _startup_event_sent:
+            _startup_event_sent = True
+            # Schedule the startup event to be sent after the subscription is established
+            asyncio.create_task(_send_startup_event())
+
     return queue
+
+
+async def _send_startup_event() -> None:
+    """Send server startup event to notify frontend to reset localStorage."""
+    # Small delay to ensure the subscription is fully established
+    await asyncio.sleep(0.1)
+
+    startup_event = {
+        "type": "server_startup",
+        "message": "Open Edison server has started",
+        "timestamp": asyncio.get_event_loop().time(),
+    }
+
+    await publish(startup_event)
+    log.debug("Server startup event sent to reset localStorage")
 
 
 async def unsubscribe(queue: asyncio.Queue[str]) -> None:

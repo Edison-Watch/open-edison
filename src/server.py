@@ -325,6 +325,20 @@ class OpenEdisonProxy:
 
         app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
 
+        # Endpoint to trigger localStorage reset
+        async def _reset_localstorage() -> dict[str, Any]:  # type: ignore[override]
+            """Trigger a localStorage reset event for connected frontend clients."""
+            events.fire_and_forget(
+                {
+                    "type": "localstorage_reset",
+                    "message": "Reset localStorage",
+                    "timestamp": asyncio.get_event_loop().time(),
+                }
+            )
+            return {"status": "ok", "message": "localStorage reset event sent"}
+
+        app.add_api_route("/api/reset-localstorage", _reset_localstorage, methods=["POST"])  # type: ignore[arg-type]
+
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
             target = rest.strip("/")
@@ -434,6 +448,7 @@ class OpenEdisonProxy:
             with suppress(Exception):
                 loop.add_signal_handler(sig, _trigger_shutdown, sig.name)
 
+        # Run both servers concurrently
         await asyncio.gather(*servers_to_run, return_exceptions=False)
 
     def _register_routes(self, app: FastAPI) -> None:

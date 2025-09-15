@@ -184,7 +184,8 @@ def main(argv: list[str] | None = None) -> NoReturn:  # noqa: C901
 
         for client in available:
             if not confirm(
-                f"Restore original MCP config for {client.value}? (removes Open Edison)", default=True
+                f"Restore original MCP config for {client.value}? (removes Open Edison)",
+                default=True,
             ).ask():
                 continue
             try:
