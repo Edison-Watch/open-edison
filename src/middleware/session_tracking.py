@@ -35,6 +35,7 @@ from src.middleware.data_access_tracker import (
     DataAccessTracker,
     SecurityError,
 )
+from src.middleware.delete_interceptor import session_id_mapping_ctxvar
 from src.permissions import Permissions
 from src.telemetry import (
     record_prompt_used,
@@ -251,8 +252,17 @@ class SessionTrackingMiddleware(Middleware):
         assert context.fastmcp_context is not None
         session_id = context.fastmcp_context.session_id
 
-        # For debugging, let's log what we got
-        log.debug(f"FastMCP context session_id: {context.fastmcp_context.session_id}")
+        # Check if we have a session ID mapping from the DELETE interceptor
+        mapped_session_id = session_id_mapping_ctxvar.get()
+        if mapped_session_id:
+            log.info(f"Using mapped session ID: {session_id} -> {mapped_session_id}")
+            session_id = mapped_session_id
+            # Don't clear the mapping - keep it for the entire session
+            # The DELETE interceptor will manage when to clear it
+
+        # For debugging session continuity
+        log.trace(f"FastMCP context session_id: {context.fastmcp_context.session_id}")
+        log.trace(f"Modified session_id: {session_id}")
 
         # Check if we already have a session for this user
         session = get_session_from_db(session_id)

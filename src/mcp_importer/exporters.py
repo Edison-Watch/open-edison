@@ -236,6 +236,7 @@ def _find_latest_backup(target_path: Path) -> Path | None:
     candidates: list[Path] = [p for p in parent.glob(target_path.name + ".bak-*") if p.is_file()]
     if not candidates:
         return None
+
     # Sort by timestamp portion descending (string sort works with our format)
     def _key(p: Path) -> str:
         return p.name.replace(prefix, "")
@@ -362,7 +363,9 @@ def restore_vscode(*, server_name: str = "open-edison", dry_run: bool = False) -
     )
 
 
-def restore_claude_code(*, server_name: str = "open-edison", dry_run: bool = False) -> RestoreResult:
+def restore_claude_code(
+    *, server_name: str = "open-edison", dry_run: bool = False
+) -> RestoreResult:
     _require_supported_os()
     target_path = _resolve_claude_code_target()
     # Claude Code uses general settings format; MCP key is "mcpServers"

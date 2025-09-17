@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -29,6 +29,7 @@ from fastmcp import Client as FastMCPClient
 from fastmcp import FastMCP
 from loguru import logger as log
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src import events
 from src.config import (
@@ -58,6 +59,55 @@ _auth_dependency = Depends(_security)
 
 
 _install_stdio_capture()
+
+
+# Add a FastAPI middleware to detect DELETE requests and notify the FastMCP DELETE interceptor
+class DeleteDetectionMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: Any, single_user_mcp: SingleUserMCP):
+        super().__init__(app)
+        self.single_user_mcp = single_user_mcp
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Any]) -> Response:  # noqa
+        if request.method == "DELETE" and request.url.path.startswith("/mcp/"):
+            # Extract mcp-session-id from headers
+            mcp_session_id = request.headers.get("mcp-session-id")
+            user_agent = request.headers.get("user-agent")
+
+            # Print full headers for debugging
+            log.trace("DELETE request headers:")
+            for header_name, header_value in request.headers.items():
+                log.trace(f"  {header_name}: {header_value}")
+
+            if mcp_session_id:
+                log.debug(
+                    f'HTTP DELETE detected from agent "{user_agent}" with session ID: {mcp_session_id}'
+                )
+
+                # Only enable mapping if user-agent contains 'openai-mcp'
+                if user_agent and "openai-mcp" in user_agent:
+                    log.debug("✅ OpenAI MCP user-agent detected, enabling session mapping")
+                    # Notify the FastMCP DELETE interceptor
+                    self.single_user_mcp.handle_delete_operation(mcp_session_id)
+                else:
+                    log.debug(
+                        f"⚠️ Non-OpenAI MCP user-agent detected: {user_agent}, clearing session mapping"
+                    )
+                    # Clear any existing session mapping for non-OpenAI MCP clients
+                    self.single_user_mcp.clear_session_mapping()
+            else:
+                log.warning("⚠️ No mcp-session-id found in DELETE request headers")
+
+        # Clear session mapping for non-OpenAI MCP agents after processing
+        if (request.method == "GET" or request.method == "POST") and request.url.path.startswith(
+            "/mcp/"
+        ):
+            user_agent = request.headers.get("user-agent")
+
+            # Clear any existing session mappings from previous chatGPT calls, if the agent changes
+            if user_agent and "openai-mcp" not in user_agent:
+                self.single_user_mcp.clear_session_mapping()
+
+        return await call_next(request)
 
 
 class OpenEdisonProxy:
@@ -325,20 +375,6 @@ class OpenEdisonProxy:
 
         app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
 
-        # Endpoint to trigger localStorage reset
-        async def _reset_localstorage() -> dict[str, Any]:  # type: ignore[override]
-            """Trigger a localStorage reset event for connected frontend clients."""
-            events.fire_and_forget(
-                {
-                    "type": "localstorage_reset",
-                    "message": "Reset localStorage",
-                    "timestamp": asyncio.get_event_loop().time(),
-                }
-            )
-            return {"status": "ok", "message": "localStorage reset event sent"}
-
-        app.add_api_route("/api/reset-localstorage", _reset_localstorage, methods=["POST"])  # type: ignore[arg-type]
-
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
             target = rest.strip("/")
@@ -410,6 +446,10 @@ class OpenEdisonProxy:
         # Create server configurations
         servers_to_run: list[Coroutine[Any, Any, None]] = []
 
+        # Get SSL configuration
+        ssl_cert_file: str | None = Config().server.ssl_cert_file
+        ssl_key_file: str | None = Config().server.ssl_key_file
+
         # FastAPI management server on port 3001
         fastapi_config = uvicorn.Config(
             app=self.fastapi_app,
@@ -417,18 +457,26 @@ class OpenEdisonProxy:
             port=self.port + 1,
             log_level=Config().logging.level.lower(),
             timeout_graceful_shutdown=0,
+            ssl_certfile=ssl_cert_file,
+            ssl_keyfile=ssl_key_file,
         )
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
 
         # FastMCP protocol server on port 3000 (stateful for session persistence)
         mcp_app = self.single_user_mcp.http_app(path="/mcp/", stateless_http=False)
+
+        # Add the DELETE detection middleware to the FastMCP app
+        mcp_app.add_middleware(DeleteDetectionMiddleware, single_user_mcp=self.single_user_mcp)
+
         fastmcp_config = uvicorn.Config(
             app=mcp_app,
             host=self.host,
             port=self.port,
             log_level=Config().logging.level.lower(),
             timeout_graceful_shutdown=0,
+            ssl_certfile=ssl_cert_file,
+            ssl_keyfile=ssl_key_file,
         )
         fastmcp_server = uvicorn.Server(fastmcp_config)
         servers_to_run.append(fastmcp_server.serve())

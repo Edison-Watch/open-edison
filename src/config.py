@@ -127,6 +127,8 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 3000
     api_key: str = "dev-api-key-change-me"
+    ssl_cert_file: str | None = None
+    ssl_key_file: str | None = None
 
 
 @dataclass
