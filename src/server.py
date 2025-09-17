@@ -42,6 +42,7 @@ from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defin
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
 )
+from src.middleware.openai_mcp_session_id_patch import OpenaiMcpSessionIdPatchMiddleware
 from src.middleware.session_tracking import (
     MCPSessionModel,
     create_db_session,
@@ -325,20 +326,6 @@ class OpenEdisonProxy:
 
         app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
 
-        # Endpoint to trigger localStorage reset
-        async def _reset_localstorage() -> dict[str, Any]:  # type: ignore[override]
-            """Trigger a localStorage reset event for connected frontend clients."""
-            events.fire_and_forget(
-                {
-                    "type": "localstorage_reset",
-                    "message": "Reset localStorage",
-                    "timestamp": asyncio.get_event_loop().time(),
-                }
-            )
-            return {"status": "ok", "message": "localStorage reset event sent"}
-
-        app.add_api_route("/api/reset-localstorage", _reset_localstorage, methods=["POST"])  # type: ignore[arg-type]
-
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
             target = rest.strip("/")
@@ -410,6 +397,10 @@ class OpenEdisonProxy:
         # Create server configurations
         servers_to_run: list[Coroutine[Any, Any, None]] = []
 
+        # Get SSL configuration
+        ssl_cert_file: str | None = Config().server.ssl_cert_file
+        ssl_key_file: str | None = Config().server.ssl_key_file
+
         # FastAPI management server on port 3001
         fastapi_config = uvicorn.Config(
             app=self.fastapi_app,
@@ -417,18 +408,26 @@ class OpenEdisonProxy:
             port=self.port + 1,
             log_level=Config().logging.level.lower(),
             timeout_graceful_shutdown=0,
+            ssl_certfile=ssl_cert_file,
+            ssl_keyfile=ssl_key_file,
         )
         fastapi_server = uvicorn.Server(fastapi_config)
         servers_to_run.append(fastapi_server.serve())
 
         # FastMCP protocol server on port 3000 (stateful for session persistence)
         mcp_app = self.single_user_mcp.http_app(path="/mcp/", stateless_http=False)
+
+        # Add the DELETE detection middleware to the FastMCP app
+        mcp_app.add_middleware(OpenaiMcpSessionIdPatchMiddleware)
+
         fastmcp_config = uvicorn.Config(
             app=mcp_app,
             host=self.host,
             port=self.port,
             log_level=Config().logging.level.lower(),
             timeout_graceful_shutdown=0,
+            ssl_certfile=ssl_cert_file,
+            ssl_keyfile=ssl_key_file,
         )
         fastmcp_server = uvicorn.Server(fastmcp_config)
         servers_to_run.append(fastmcp_server.serve())

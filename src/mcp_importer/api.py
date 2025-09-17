@@ -146,7 +146,9 @@ def restore_client(
     dry_run: bool = False,
 ) -> RestoreResult:
     if dry_run:
-        print(f"[dry-run] Would restore original MCP config for '{client}' (using latest backup if present)")
+        print(
+            f"[dry-run] Would restore original MCP config for '{client}' (using latest backup if present)"
+        )
     match client:
         case CLIENT.CURSOR:
             return restore_cursor(server_name=server_name, dry_run=dry_run)

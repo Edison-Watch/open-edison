@@ -19,6 +19,7 @@ import mcp.types as mt
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import FunctionResource
+from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.server.proxy import ProxyPrompt, ProxyResource, ProxyTool
@@ -35,6 +36,7 @@ from src.middleware.data_access_tracker import (
     DataAccessTracker,
     SecurityError,
 )
+from src.middleware.openai_mcp_session_id_patch import get_openai_mcp_session_id
 from src.permissions import Permissions
 from src.telemetry import (
     record_prompt_used,
@@ -251,8 +253,21 @@ class SessionTrackingMiddleware(Middleware):
         assert context.fastmcp_context is not None
         session_id = context.fastmcp_context.session_id
 
-        # For debugging, let's log what we got
-        log.debug(f"FastMCP context session_id: {context.fastmcp_context.session_id}")
+        headers = get_http_headers()
+        log.trace(f"_get_or_create_session_stats - HTTP Headers: {headers}")
+
+        user_agent = headers.get("user-agent")
+        if user_agent and "openai-mcp" in user_agent:
+            # Check if we have an OpenAI MCP session ID from the module-level variable
+            openai_mcp_session_id = get_openai_mcp_session_id()
+            log.debug(
+                f"OpenAI MCP user-agent detected. Replacing Session ID with {openai_mcp_session_id}"
+            )
+
+            if openai_mcp_session_id:
+                session_id = openai_mcp_session_id
+            else:
+                log.error("No OpenAI MCP session ID found")
 
         # Check if we already have a session for this user
         session = get_session_from_db(session_id)

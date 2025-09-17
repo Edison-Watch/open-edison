@@ -393,3 +393,12 @@ build_package: check_uv clean_dist ## Build frontend, package into src/frontend_
 	@echo "$(YELLOW)📦 Building Python wheel...$(RESET)"
 	@uv build
 	@echo "$(GREEN)✅ build_package complete. Wheel contains packaged dashboard (frontend_dist).$(RESET)"
+
+########################################################
+# Ngrok Tunnel Management
+########################################################
+
+.PHONY: ngrok-start ngrok-stop ngrok-status ngrok-logs
+ngrok-start: ## Start ngrok tunnel for Open Edison
+	@echo "$(BLUE)🚀 Starting ngrok tunnel for Open Edison...$(RESET)"
+	@ngrok start --config=ngrok.yml open-edison-mcp
