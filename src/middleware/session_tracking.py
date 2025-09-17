@@ -267,7 +267,7 @@ class SessionTrackingMiddleware(Middleware):
             if openai_mcp_session_id:
                 session_id = openai_mcp_session_id
             else:
-                log.error("No OpenAI MCP session ID found")
+                log.warning("No OpenAI MCP session ID found. This is expected the first time that ChatGPT uses the Open-Edison MCP server.")
 
         # Check if we already have a session for this user
         session = get_session_from_db(session_id)
