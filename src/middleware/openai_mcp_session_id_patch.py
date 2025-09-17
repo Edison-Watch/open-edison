@@ -30,9 +30,6 @@ def set_openai_mcp_session_id(session_id: str) -> None:
 
 # Add a FastAPI middleware to detect DELETE requests and notify the FastMCP DELETE interceptor
 class OpenaiMcpSessionIdPatchMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: Any):
-        super().__init__(app)
-
     async def dispatch(self, request: Request, call_next: Callable[[Request], Any]) -> Response:  # noqa
         if request.method == "DELETE" and request.url.path == "/mcp/":
             # Extract mcp-session-id from headers
