@@ -14,7 +14,9 @@ from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from loguru import logger as log
 
 # Context variable to store session ID mapping
-session_id_mapping_ctxvar: ContextVar[str | None] = ContextVar("session_id_mapping", default=None)
+session_id_mapping_ctxvar: ContextVar[str | None] = ContextVar[str | None](
+    "session_id_mapping", default=None
+)
 
 
 class DeleteInterceptorMiddleware(Middleware):
