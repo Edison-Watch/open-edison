@@ -189,6 +189,73 @@ Or add to your MCP client config:
 </details>
 
 <details>
+<summary>🤖 Connect to ChatGPT (Plus/Pro)</summary>
+
+Open-Edison comes preconfigured with ngrok for easy ChatGPT integration. Follow these steps to connect:
+
+### 1. Set up ngrok Account
+
+1. Visit [https://dashboard.ngrok.com](https://dashboard.ngrok.com) to sign up for a free account
+2. Get your authtoken from the "Your Authtoken" page
+3. Create a domain name in the "Domains" page
+4. Set these values in your `ngrok.yml` file:
+
+```yaml
+version: 3
+
+agent:
+  authtoken: YOUR_NGROK_AUTH_TOKEN
+
+endpoints:
+  - name: open-edison-mcp
+    url: https://YOUR_DOMAIN.ngrok-free.app
+    upstream:
+      url: http://localhost:3000
+      protocol: http1
+```
+
+### 2. Start ngrok Tunnel
+
+```bash
+make ngrok
+```
+
+This will start the ngrok tunnel and make Open-Edison accessible via your custom domain.
+
+### 3. Enable Developer Mode in ChatGPT
+
+1. Click on your profile icon in ChatGPT
+2. Select **Settings**
+3. Go to **"Connectors"** in the settings menu
+4. Select **"Advanced Settings"**
+5. Enable **"Developer Mode (beta)"**
+
+### 4. Add Open-Edison to ChatGPT
+
+1. Click on your profile icon in ChatGPT
+2. Select **Settings**
+3. Go to **"Connectors"** in the settings menu
+4. Select **"Create"** next to "Browse connections"
+5. Set a name (e.g., "Open-Edison")
+6. Use your ngrok URL as the MCP Server URL (e.g., `https://your-domain.ngrok-free.app/mcp/`)
+7. Select **"No authentication"** in the Authentication menu
+8. Tick the **"I trust this application"** checkbox
+9. Press **Create**
+
+### 5. Use Open-Edison in ChatGPT
+
+Every time you start a new chat:
+
+1. Click on the plus sign in the prompt text box ("Ask anything")
+2. Hover over **"... More"**
+3. Click on **"Developer Mode"**
+4. **"Developer Mode"** and your connector name (e.g., "Open-Edison") will appear at the bottom of the prompt textbox
+
+You can now use Open-Edison's MCP tools directly in your ChatGPT conversations! Do not forget to repeat step 5 everytime you start a new chat.
+
+</details>
+
+<details>
 <summary>🧭 Usage</summary>
 
 ### API Endpoints

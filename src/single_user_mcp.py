@@ -22,7 +22,6 @@ from loguru import logger as log
 from mcp.server.lowlevel.server import LifespanResultT
 
 from src.config import Config, MCPServerConfig
-from src.middleware.delete_interceptor import DeleteInterceptorMiddleware
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
@@ -62,10 +61,6 @@ class SingleUserMCP(FastMCP[Any]):
     def __init__(self):
         # Disable error masking so upstream error details are preserved in responses
         super().__init__(name="open-edison-single-user", mask_error_details=False)
-
-        # Add DELETE interceptor middleware FIRST - it needs to process requests before any other middleware
-        self._delete_interceptor = DeleteInterceptorMiddleware()
-        self.add_middleware(self._delete_interceptor)
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
@@ -626,29 +621,3 @@ class SingleUserMCP(FastMCP[Any]):
         """
 
         log.info("✅ Added built-in demo prompts: summarize_text")
-
-    def handle_delete_operation(self, session_id: str) -> None:
-        """
-        Handle a DELETE operation by notifying the DELETE interceptor middleware.
-
-        This method should be called when a DELETE request is detected at the HTTP level.
-
-        Args:
-            session_id: The session ID from the DELETE request
-        """
-        if hasattr(self, "_delete_interceptor"):
-            self._delete_interceptor.handle_delete_operation(session_id)
-        else:
-            log.warning("⚠️ DELETE interceptor not available")
-
-    def clear_session_mapping(self) -> None:
-        """
-        Clear the session mapping in the DELETE interceptor middleware.
-
-        This method should be called when a non-OpenAI MCP client is detected
-        to ensure no stale session mapping persists.
-        """
-        if hasattr(self, "_delete_interceptor"):
-            self._delete_interceptor.clear_session_mapping()
-        else:
-            log.warning("⚠️ DELETE interceptor not available")
