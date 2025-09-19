@@ -114,11 +114,32 @@ class SingleUserMCP(FastMCP[Any]):
             return_exceptions=True,
         )
 
+        # If the server returned no object types at all (all RuntimeError), likely misconfigured
+        all_runtime_errors = all(
+            isinstance(r, RuntimeError) for r in (tools, resources, templates, prompts)
+        )
+        if all_runtime_errors:
+            log.error(
+                f"❌ Server {prefix} appears to expose no tools, resources, templates, or prompts. "
+                f"This likely indicates a misconfiguration."
+            )
+            return
+
         # Validate and normalize all results
         tools = self._validate_server_result(tools, "tools", prefix)
         resources = self._validate_server_result(resources, "resources", prefix)
         templates = self._validate_server_result(templates, "templates", prefix)
         prompts = self._validate_server_result(prompts, "prompts", prefix)
+
+        # If after validation all objects are empty dicts, also misconfigured (avoid double logging)
+        if not all_runtime_errors and all(
+            len(x) == 0 for x in (tools, resources, templates, prompts)
+        ):
+            log.error(
+                f"❌ Server {prefix} has no tools, resources, templates, or prompts after validation. "
+                f"This likely indicates a misconfiguration."
+            )
+            return
 
         # Import all components
         self._import_tools(tools, prefix)

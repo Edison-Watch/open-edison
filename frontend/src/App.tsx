@@ -15,7 +15,8 @@ export function App(): React.JSX.Element {
     const dbAbsolutePath = (globalThis as any).__PROJECT_ROOT__
         ? `${(globalThis as any).__PROJECT_ROOT__}${dbRelativeToProjectRoot}`
         : `${window.location.pathname}${dbRelativeToProjectRoot}`
-    const { data, loading, error } = useSessions(dbAbsolutePath)
+    const [reloadCounter, setReloadCounter] = useState(0)
+    const { data, loading, error } = useSessions(`${dbAbsolutePath}?r=${reloadCounter}`)
 
     type UISession = Session & { ts: number; day: string }
     const sessions = useMemo(() => (data?.sessions ?? []) as Session[], [data])
@@ -122,7 +123,7 @@ export function App(): React.JSX.Element {
                 console.log('🔄 Starting MCP status check...')
 
                 // Load config to get server settings
-                const configResponse = await fetch(`/@fs${projectRoot}/config.json`, { 
+                const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
                     cache: 'no-cache',
                     headers: { 'Cache-Control': 'no-cache' }
                 })
@@ -249,6 +250,11 @@ export function App(): React.JSX.Element {
         es.onmessage = (ev) => {
             try {
                 const data = JSON.parse(ev.data || '{}') as any
+                if (data?.type === 'sessions_db_changed') {
+                    // Bump reload counter to trigger re-fetch in hooks/useSessions via keying
+                    setReloadCounter((n) => n + 1)
+                    return
+                }
                 if (data?.type === 'mcp_pre_block') {
                     const title = 'Edison blocked a risky action'
                     const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
@@ -741,7 +747,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
         if (content[active] !== undefined && originalContent[active] !== undefined) {
             const hasChanged = content[active] !== originalContent[active]
             setEdited(prev => ({ ...prev, [active]: hasChanged }))
-            
+
             // Mark files as needing updates when they change
             if (hasChanged) {
                 const currentFlags = getUpdateFlags()
@@ -798,7 +804,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
                 // Don't reset update flags when loading files - they should persist across tab switches
                 // setNeedsPermissionUpdate(prev => ({ ...prev, [active]: false }))
                 // setNeedsConfigUpdate(prev => ({ ...prev, [active]: false }))
-                
+
                 // If this is config.json, extract API key and store in localStorage
                 if (f.key === 'config') {
                     try {
@@ -868,26 +874,26 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
             const file = files.find(f => f.key === active)!
             // Clear permission caches after successful save (only for permission files)
             // if (file.key === 'tool' || file.key === 'resource' || file.key === 'prompt') {
-                console.log(`🔄 Clearing permission caches after ${file.name} save...`)
-                // Load config to get server settings
-                const configResponse = await fetch('/config.json', { 
-                    cache: 'no-cache',
-                    headers: { 'Cache-Control': 'no-cache' }
+            console.log(`🔄 Clearing permission caches after ${file.name} save...`)
+            // Load config to get server settings
+            const configResponse = await fetch('/config.json', {
+                cache: 'no-cache',
+                headers: { 'Cache-Control': 'no-cache' }
+            })
+            if (configResponse.ok) {
+                const configData = await configResponse.json()
+                const serverHost = configData?.server?.host || 'localhost'
+                const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
+                const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
                 })
-                if (configResponse.ok) {
-                    const configData = await configResponse.json()
-                    const serverHost = configData?.server?.host || 'localhost'
-                    const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
-                    const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    })
-                    if (cacheResponse.ok) {
-                        const cacheResult = await cacheResponse.json()
-                        console.log('✅ Cache invalidation successful:', cacheResult)
-                    } else {
-                        console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
-                    }
+                if (cacheResponse.ok) {
+                    const cacheResult = await cacheResponse.json()
+                    console.log('✅ Cache invalidation successful:', cacheResult)
+                } else {
+                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
+                }
             }
             setToast({ message: 'Permissions updated', type: 'success' })
             // Reset permission update flag after successful update
@@ -972,8 +978,8 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
                             )}
                         </div>
                         <div className="flex gap-2 items-center">
-                            <button 
-                                className={`button ${edited[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`} 
+                            <button
+                                className={`button ${edited[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
                                 onClick={saveToDisk}
                             >
                                 Save
@@ -996,14 +1002,14 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
                     <div className="flex items-center justify-between mt-2">
                         <div className="text-xs text-app-muted">Read-only viewer (no direct disk writes). Use Download or Save to persist changes. You need to explicitly click "Update Configuration" for changes in the configuration file and "Update Permissions" for changes in the other files, for these changes to take effect in Open-Edison. </div>
                         <div className="flex gap-2">
-                            <button 
-                                className={`button text-xs px-2 py-1 ${updateFlags.needsPermissionUpdate[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`} 
+                            <button
+                                className={`button text-xs px-2 py-1 ${updateFlags.needsPermissionUpdate[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
                                 onClick={updatePermissions}
                             >
                                 Update Permissions
                             </button>
-                            <button 
-                                className={`button text-xs px-2 py-1 ${updateFlags.needsConfigUpdate[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`} 
+                            <button
+                                className={`button text-xs px-2 py-1 ${updateFlags.needsConfigUpdate[active] ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
                                 onClick={updateConfig}
                             >
                                 Update Configuration
@@ -1130,7 +1136,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         const beKey = config?.server?.api_key || ''
         setBackendApiKeyInput(beKey)
     }, [config])
-    
+
     // Copy API key from config to localStorage for authentication headers
     useEffect(() => {
         if (config?.server?.api_key) {
@@ -1151,13 +1157,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 }
             } catch { /* ignore */ }
         }
-        
+
         checkConfigUpdateFlag()
         // Check periodically for changes from other components
         const interval = setInterval(checkConfigUpdateFlag, 1000)
         return () => clearInterval(interval)
     }, [])
-    
+
     // Baselines for Save only changes
     const [origConfig, setOrigConfig] = useState<ConfigFile | null>(null)
     const [origToolPerms, setOrigToolPerms] = useState<ToolPerms | null>(null)
@@ -1214,19 +1220,19 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setError('')
             try {
                 const [c, t, r, p] = await Promise.all([
-                    fetch(`/@fs${projectRoot}/${CONFIG_NAME}`, { 
+                    fetch(`/@fs${projectRoot}/${CONFIG_NAME}`, {
                         cache: 'no-cache',
                         headers: { 'Cache-Control': 'no-cache' }
                     }),
-                    fetch(`/@fs${projectRoot}/${TOOL_NAME}`, { 
+                    fetch(`/@fs${projectRoot}/${TOOL_NAME}`, {
                         cache: 'no-cache',
                         headers: { 'Cache-Control': 'no-cache' }
                     }),
-                    fetch(`/@fs${projectRoot}/${RESOURCE_NAME}`, { 
+                    fetch(`/@fs${projectRoot}/${RESOURCE_NAME}`, {
                         cache: 'no-cache',
                         headers: { 'Cache-Control': 'no-cache' }
                     }),
-                    fetch(`/@fs${projectRoot}/${PROMPT_NAME}`, { 
+                    fetch(`/@fs${projectRoot}/${PROMPT_NAME}`, {
                         cache: 'no-cache',
                         headers: { 'Cache-Control': 'no-cache' }
                     }),
@@ -1424,7 +1430,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             // Update baseline on success so subsequent diffs are correct
             setOrigConfig(nextCfg as any)
             console.log(`✅ Auto-saved config.json after toggling ${srvName} to ${enabled}`)
-            
+
             // Set config update flag in localStorage to make buttons orange
             try {
                 const configFlags = localStorage.getItem('json_editor_needs_config_update')
@@ -1488,7 +1494,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             }
 
             setToast({ message: onlyChanges ? 'Saved changes' : 'Saved', type: 'success' })
-            
+
             // Reset permission update flags in localStorage after autosave
             try {
                 const permissionFlags = localStorage.getItem('json_editor_needs_permission_update')
@@ -2411,9 +2417,9 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
                             <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
                         </div>
-                        <button 
-                            className={`button ${needsReinitialize ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`} 
-                            disabled={saving} 
+                        <button
+                            className={`button ${needsReinitialize ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
+                            disabled={saving}
                             onClick={reinitializeServers}
                         >
                             {saving ? 'Saving and reinitializing…' : 'Reinitialize'}

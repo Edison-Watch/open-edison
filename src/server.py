@@ -38,7 +38,6 @@ from src.config import (
     get_config_json_path,
     resolve_json_path_with_bootstrap,
 )
-from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
 )
