@@ -111,9 +111,6 @@ def get_default_claude_code_config_path() -> Path:
     return (Path.home() / ".claude.json").resolve()
 
 
-# --- Claude Desktop paths ---
-
-
 def detect_claude_desktop_config_path() -> Path | None:
     """Detect Claude Desktop user-level config file.
 

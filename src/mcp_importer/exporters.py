@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -102,6 +103,39 @@ def _resolve_claude_desktop_target() -> Path:
     if existing:
         return existing
     return get_default_claude_desktop_config_path()
+
+
+def _open_with_os(path: Path) -> None:
+    try:
+        if is_macos():
+            subprocess.run(["open", str(path)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Failed to open {} via OS: {}", path, e)
+
+
+def _find_dxt_candidates() -> list[Path]:
+    """Return plausible locations for the packaged DXT file.
+
+    - Repo/dev: <repo_root>/desktop_ext/open-edison-connector.dxt
+    - Packaged under src: <site-packages>/src/desktop_ext/open-edison-connector.dxt (if included)
+    - Packaged at project root level inside site-packages: <site-packages>/desktop_ext/open-edison-connector.dxt
+    """
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]
+    candidates: list[Path] = [
+        # Repo/dev locations
+        (repo_root / "desktop_ext" / "open-edison-connector.dxt").resolve(),
+        (repo_root / "desktop_ext" / "desktop_ext.dxt").resolve(),
+        (repo_root / "open-edison-connector.dxt").resolve(),
+        # Installed wheel locations (desktop_ext at site-packages root)
+        (here.parents[1] / "desktop_ext" / "open-edison-connector.dxt").resolve(),
+        (here.parents[3] / "desktop_ext" / "open-edison-connector.dxt").resolve()
+        if len(here.parents) >= 4
+        else Path("/nonexistent"),
+    ]
+    return [p for p in candidates if p.exists()]
 
 
 def _validate_or_confirm_create(target_path: Path, *, create_if_missing: bool, label: str) -> None:
@@ -635,3 +669,18 @@ def export_to_claude_desktop(
         dry_run=dry_run,
         label="Claude Desktop",
     )
+
+
+def open_claude_desktop_extension_dxt() -> Path | None:
+    """Best-effort: locate and open the bundled .dxt file for install.
+
+    Returns the path if found, otherwise None. Does not raise on failure.
+    """
+    cands = _find_dxt_candidates()
+    if not cands:
+        log.info("No .dxt found in expected locations; skipping auto-open")
+        return None
+    dxt = cands[0]
+    log.info("Opening Claude Desktop extension: {}", dxt)
+    _open_with_os(dxt)
+    return dxt

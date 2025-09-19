@@ -131,7 +131,14 @@ deadcode: check_uv ## Find unused code with Vulture (fails on findings)
 	@uv run vulture src tests --min-confidence 60
 	@echo "$(GREEN)✅Vulture found no unused code (confidence ≥ 60).$(RESET)"
 
-ci: sync lint ty_checker_check deadcode test ## Run CI checks (sync deps, lint, type check, dead code scan, tests)
+# Verify built distributions contain the Claude Desktop DXT
+.PHONY: verify_dxt_in_artifacts
+verify_dxt_in_artifacts: build_dist ## Build dists and assert desktop_ext/open-edison-connector.dxt is present
+	@echo "$(YELLOW)🔎 Verifying DXT presence in wheel and sdist...$(RESET)"
+	@$(PYTHON) scripts/verify_dxt_in_artifacts.py
+	@echo "$(GREEN)✅ DXT verified in artifacts.$(RESET)"
+
+ci: sync lint ty_checker_check deadcode test verify_dxt_in_artifacts ## Run CI checks (sync deps, lint, type check, dead code scan, tests, artifact check)
 	@echo "$(GREEN)✅CI checks completed.$(RESET)"
 
 ########################################################

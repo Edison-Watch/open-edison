@@ -20,6 +20,7 @@ from src.mcp_importer.exporters import (
     export_to_claude_desktop,
     export_to_cursor,
     export_to_vscode,
+    open_claude_desktop_extension_dxt,
     restore_claude_code,
     restore_claude_desktop,
     restore_cursor,
@@ -146,7 +147,7 @@ def export_edison_to(
                 create_if_missing=create_if_missing,
             )
         case CLIENT.CLAUDE_DESKTOP:
-            return export_to_claude_desktop(
+            result = export_to_claude_desktop(
                 url=url,
                 api_key=api_key,
                 server_name=server_name,
@@ -154,6 +155,8 @@ def export_edison_to(
                 force=force,
                 create_if_missing=create_if_missing,
             )
+            open_claude_desktop_extension_dxt()
+            return result
 
 
 def restore_client(
