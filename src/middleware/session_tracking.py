@@ -401,6 +401,10 @@ class SessionTrackingMiddleware(Middleware):
                 session_id, "tool", context.message.name, timeout_s=30.0
             )
             if not approved:
+                # Mark and persist blocked tool call
+                new_tool_call.status = "blocked"
+                # Persist immediately so UI shows blocked entry
+                _persist_session_to_db(session)
                 # Return formatted SecurityError message (includes ASCII art)
                 return ToolResult(
                     content=[
