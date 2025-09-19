@@ -297,23 +297,30 @@ class OpenEdisonProxy:
         app.add_api_route("/events", _events, methods=["GET"])  # type: ignore[arg-type]
 
         # Approval endpoint to allow an item for the rest of the session
-        class _ApprovalBody(BaseModel):
+        class _ApproveOrDenyBody(BaseModel):
             session_id: str
             kind: Literal["tool", "resource", "prompt"]
             name: str
+            command: Literal["approve", "deny"]
 
-        async def _approve(body: _ApprovalBody) -> dict[str, Any]:  # type: ignore[override]
+        async def _approve_or_deny(body: _ApproveOrDenyBody) -> dict[str, Any]:  # type: ignore[override]
             try:
+                log.debug(
+                    f"Approving/denying {body.command} for {body.kind} {body.name} in session {body.session_id}"
+                )
                 # Mark approval once; no persistent overrides
-                await events.approve_once(body.session_id, body.kind, body.name)
+                await events.approve_or_deny_once(
+                    body.session_id, body.kind, body.name, body.command
+                )
 
                 # Notify listeners (best effort, log failure)
                 events.fire_and_forget(
                     {
-                        "type": "mcp_approved_once",
+                        "type": "mcp_approve_or_deny_once",
                         "session_id": body.session_id,
                         "kind": body.kind,
                         "name": body.name,
+                        "command": body.command,
                     }
                 )
 
@@ -321,10 +328,12 @@ class OpenEdisonProxy:
             except HTTPException:
                 raise
             except Exception as e:  # noqa: BLE001
-                log.error(f"Approval failed: {e}")
-                raise HTTPException(status_code=500, detail="Failed to approve item") from e
+                log.error(f"Approval/denial failed: {e}")
+                raise HTTPException(
+                    status_code=500, detail="Failed to process approval/denial"
+                ) from e
 
-        app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
+        app.add_api_route("/api/approve_or_deny", _approve_or_deny, methods=["POST"])  # type: ignore[arg-type]
 
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
@@ -612,6 +621,7 @@ class OpenEdisonProxy:
             log.info("🔄 Reinitializing MCP servers via API endpoint")
 
             # Initialize the new instance with fresh config
+            await self.permissions_changed()
             await self.single_user_mcp.initialize()
 
             # Summarize final mounted servers

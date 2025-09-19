@@ -132,10 +132,10 @@ export function App(): React.JSX.Element {
     }, [lastBannerAt])
     const approveItem = async (item: PendingApproval) => {
         try {
-            await fetch(`/api/approve`, {
+            await fetch(`/api/approve_or_deny`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name })
+                body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name, command: "approve" })
             })
             setUiToast({ message: `Approved ${item.kind} '${item.name}'`, type: 'success' })
         } catch {
@@ -144,8 +144,19 @@ export function App(): React.JSX.Element {
             setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
         }
     }
-    const denyItem = (item: PendingApproval) => {
-        setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
+    const denyItem = async (item: PendingApproval) => {
+        try {
+            await fetch(`/api/approve_or_deny`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name, command: "deny" })
+            })
+            setUiToast({ message: `Denied ${item.kind} '${item.name}'`, type: 'success' })
+        } catch {
+            setUiToast({ message: `Failed to deny ${item.kind} '${item.name}'`, type: 'error' })
+        } finally {
+            setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
+        }
     }
 
     useEffect(() => {
@@ -339,10 +350,10 @@ export function App(): React.JSX.Element {
                                     try {
                                         const ok = window.confirm(`Allow ${data.kind} '${data.name}' for this session?`)
                                         if (ok && sessionId) {
-                                            await fetch(`/api/approve`, {
+                                            await fetch(`/api/approve_or_deny`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ session_id: sessionId, kind: data.kind, name: data.name })
+                                                body: JSON.stringify({ session_id: sessionId, kind: data.kind, name: data.name, command: "approve" })
                                             })
                                         }
                                     } catch { /* ignore */ }
@@ -772,6 +783,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
         }
     }
 
+
     // Save update flags to localStorage
     const setUpdateFlags = (permissionFlags: Record<FileKey, boolean>, configFlags: Record<FileKey, boolean>) => {
         try {
@@ -785,8 +797,42 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
 
     // Refresh update flags from localStorage when active file changes
     useEffect(() => {
-        setUpdateFlagsState(getUpdateFlags())
-    }, [active])
+        const loadUpdateFlags = async () => {
+            // Validate config update flag first
+            try {
+                const configFlags = localStorage.getItem('json_editor_needs_config_update')
+                if (configFlags && content.config) {
+                    const flags = JSON.parse(configFlags)
+                    
+                    if (flags.config) {
+                        const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
+                            cache: 'no-cache',
+                            headers: { 'Cache-Control': 'no-cache' }
+                        })
+                        
+                        if (configResponse.ok) {
+                            const savedConfig = await configResponse.json()
+                            const currentConfig = JSON.parse(content.config)
+                            const configsMatch = JSON.stringify(savedConfig) === JSON.stringify(currentConfig)
+                            
+                            if (configsMatch) {
+                                // Configurations match, clear the flag
+                                console.log('🔄 Configurations match, clearing config update flag')
+                                const resetFlags = { ...flags, config: false }
+                                localStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Failed to validate config update flag:', e)
+            }
+            
+            // Refresh the state
+            setUpdateFlagsState(getUpdateFlags())
+        }
+        loadUpdateFlags()
+    }, [active, content.config, projectRoot])
 
     // Auto-dismiss toast after 10 seconds
     useEffect(() => {
@@ -1663,24 +1709,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             console.log('✅ Configuration saved successfully')
             setToast({ message: 'Saved. Reinitializing servers…', type: 'success' })
 
-            // Step 2: Clear permission caches
-            console.log('🔄 Clearing permission caches...')
-            try {
-                const cacheResponse = await fetch(`/api/permissions-changed`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                if (cacheResponse.ok) {
-                    const cacheResult = await cacheResponse.json()
-                    console.log('✅ Cache invalidation successful:', cacheResult)
-                } else {
-                    console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheResponse.status)
-                }
-            } catch (cacheError) {
-                console.warn('⚠️ Cache invalidation failed (server may not be running):', cacheError)
-            }
-
-            // Step 3: Reinitialize MCP servers
+            // Step 2: Reinitialize MCP servers
             console.log('🔄 Reinitializing MCP servers...')
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
@@ -1754,7 +1783,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 throw new Error(msg)
             }
 
-            const toPerm = (desc?: string): PermissionFlags => ({ enabled: false, write_operation: false, read_private_data: false, read_untrusted_public_data: false, description: desc, acl: 'PUBLIC' } as PermissionFlags)
+            const toPerm = (desc?: string): PermissionFlags => ({ enabled: true, write_operation: true, read_private_data: true, read_untrusted_public_data: true, description: desc, acl: 'SECRET' } as PermissionFlags)
 
             setToolPerms(prev => {
                 const next = { ...(prev || {}) } as any

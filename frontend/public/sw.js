@@ -57,7 +57,20 @@ self.addEventListener('notificationclick', (event) => {
         }
 
         if (action === 'deny') {
-            // No-op; could notify page if desired
+            // Send deny request to backend
+            const body = {
+                session_id: data.sessionId,
+                kind: data.kind,
+                name: data.name,
+                command: 'deny'
+            };
+            event.waitUntil(
+                fetch('/api/approve_or_deny', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }).catch(() => { })
+            );
             return;
         }
 

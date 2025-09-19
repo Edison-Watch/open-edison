@@ -23,6 +23,9 @@ _startup_event_sent = False
 _approvals: dict[str, asyncio.Event] = {}
 _approvals_lock = asyncio.Lock()
 
+# Track denied approvals to distinguish from timeouts
+_denied: set[str] = set()
+
 
 def _approval_key(session_id: str, kind: str, name: str) -> str:
     return f"{session_id}::{kind}::{name}"
@@ -131,30 +134,56 @@ def fire_and_forget(event: dict[str, Any]) -> None:
     task.add_done_callback(_log_exc)
 
 
-async def approve_once(session_id: str, kind: str, name: str) -> None:
-    """Approve a single pending operation for this session/kind/name.
+async def approve_or_deny_once(session_id: str, kind: str, name: str, command: str) -> None:
+    """Approve or deny a single pending operation for this session/kind/name.
 
     This unblocks exactly one waiter if present (and future waiters will create a new Event).
     """
     key = _approval_key(session_id, kind, name)
     async with _approvals_lock:
-        ev = _approvals.get(key)
-        if ev is None:
-            ev = asyncio.Event()
-            _approvals[key] = ev
-        ev.set()
+        if command == "approve":
+            ev = _approvals.get(key)
+            if ev is None:
+                ev = asyncio.Event()
+                _approvals[key] = ev
+            ev.set()
+        elif command == "deny":
+            # Mark as denied for instant denial
+            _denied.add(key)
+            # Remove from approvals and set event to unblock any waiting coroutines
+            ev = _approvals.pop(key, None)
+            if ev is not None:
+                ev.set()
 
 
 async def wait_for_approval(session_id: str, kind: str, name: str, timeout_s: float = 30.0) -> bool:
     """Wait up to timeout for approval. Consumes the approval if granted."""
     key = _approval_key(session_id, kind, name)
+
+    # Check if already denied - INSTANT denial
     async with _approvals_lock:
+        if key in _denied:
+            _denied.discard(key)  # Consume the denial
+            return False
+
+        # Check if already approved - INSTANT approval
         ev = _approvals.get(key)
+        if ev is not None and ev.is_set():
+            _approvals.pop(key, None)  # Consume the approval
+            return True
+
+        # Create event if it doesn't exist
         if ev is None:
             ev = asyncio.Event()
             _approvals[key] = ev
+
     try:
         await asyncio.wait_for(ev.wait(), timeout=timeout_s)
+        # Check if it was denied while waiting
+        async with _approvals_lock:
+            if key in _denied:
+                _denied.discard(key)  # Consume the denial
+                return False
         return True
     except TimeoutError:
         return False
