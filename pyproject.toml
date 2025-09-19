@@ -39,7 +39,9 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 managed = true
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
     "basedpyright>=1.21.0",
     "ruff>=0.12.3",
     "pytest>=8.3.3",

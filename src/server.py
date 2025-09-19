@@ -38,6 +38,7 @@ from src.config import (
     get_config_json_path,
     resolve_json_path_with_bootstrap,
 )
+from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
 )
@@ -163,12 +164,14 @@ class OpenEdisonProxy:
 
         # Special-case: serve SQLite db and config JSONs for dashboard (prod replacement for Vite @fs)
         def _resolve_db_path() -> Path:
-            # Try configured database path first
-            db_cfg = Config().logging.database_path
-            db_path = Path(db_cfg)
-            if db_path.is_absolute() and db_path.exists():
-                return db_path
-            raise FileNotFoundError(f"Database file not found at {db_path}")
+            # Exactly one location: config dir / sessions.db
+            cfg_dir = _get_cfg_dir()
+            looked = cfg_dir / "sessions.db"
+            if looked.exists():
+                return looked
+            raise FileNotFoundError(
+                f"Database file not found at {looked}. Expected under config dir: {cfg_dir}"
+            )
 
         async def _serve_db() -> FileResponse:  # type: ignore[override]
             db_file = _resolve_db_path()
@@ -366,6 +369,21 @@ class OpenEdisonProxy:
         log.info(f"Config file location: {get_config_json_path()}")
 
         initialize_telemetry()
+
+        # Ensure database file exists at config_dir/sessions.db; create if missing
+        try:
+            cfg_dir = _get_cfg_dir()
+        except Exception:
+            cfg_dir = Path.cwd()
+        db_file_path = cfg_dir / "sessions.db"
+        if not db_file_path.exists():
+            log.info(f"Creating sessions database at {db_file_path}")
+            db_file_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with create_db_session():
+                    pass
+            except Exception as db_err:  # noqa: BLE001
+                log.warning(f"Failed to create sessions database: {db_err}")
 
         # Ensure the sessions database exists and has the required schema
         try:

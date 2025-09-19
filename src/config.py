@@ -134,7 +134,7 @@ class LoggingConfig:
     """Logging configuration"""
 
     level: str = "INFO"
-    database_path: str = "sessions.db"
+    database_path: str | None = None  # No longer used, # noqa
 
 
 @dataclass

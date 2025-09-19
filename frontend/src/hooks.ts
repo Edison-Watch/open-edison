@@ -52,10 +52,8 @@ export function useSessions(dbPath: string) {
       }
     }
     void fetchSessions()
-    const id = setInterval(fetchSessions, 5_000)
     return () => {
       active = false
-      clearInterval(id)
     }
   }, [dbPath])
 

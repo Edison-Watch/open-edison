@@ -117,8 +117,7 @@ The project uses a **simple JSON configuration approach** with no database depen
     "api_key": "your-secure-api-key"
   },
   "logging": {
-    "level": "INFO",
-    "database_path": "sessions.db"
+    "level": "INFO"
   },
   "mcp_servers": [
     {

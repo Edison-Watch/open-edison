@@ -6,8 +6,7 @@
     },
     "autoconfig_url": "https://api.edison.watch/api/config-perms",
     "logging": {
-        "level": "INFO",
-        "database_path": "sessions.db"
+        "level": "INFO"
     },
     "edison-watch-api-key": "change-me",
     "mcp_servers": [
@@ -38,11 +37,12 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@github/mcp-server-github"
+                "mcp-remote",
+                "https://api.githubcopilot.com/mcp/",
+                "--header",
+                "Authorization: Bearer ${GITHUB_TOKEN}"
             ],
-            "env": {
-                "GITHUB_TOKEN": "your-github-token-here"
-            },
+            "env": {},
             "enabled": false
         },
         {

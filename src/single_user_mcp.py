@@ -147,7 +147,20 @@ class SingleUserMCP(FastMCP[Any]):
         self._import_templates(templates, prefix)
         self._import_prompts(prompts, prefix)
 
-        log.debug(f"Imported server {server.name} with prefix '{prefix}'")
+        log.debug(
+            f"Imported server {prefix} with "
+            + ", ".join(
+                part
+                for part in (
+                    f"{len(tools)} tools" if len(tools) > 0 else "",
+                    f"{len(resources)} resources" if len(resources) > 0 else "",
+                    f"{len(templates)} templates" if len(templates) > 0 else "",
+                    f"{len(prompts)} prompts" if len(prompts) > 0 else "",
+                )
+                if part
+            )
+            or ValueError("No parts to join")
+        )
 
     def _validate_server_result(
         self, result: Any, result_type: str, server_name: str

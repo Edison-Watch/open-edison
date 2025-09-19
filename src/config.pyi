@@ -20,7 +20,6 @@ class ServerConfig:
 
 class LoggingConfig:
     level: str
-    database_path: str
 
 class MCPServerConfig:
     name: str
