@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,9 +11,11 @@ from typing import Any, cast
 from loguru import logger as log
 
 from .paths import (
+    detect_claude_desktop_config_path,
     find_claude_code_user_all_candidates,
     find_cursor_user_file,
     find_vscode_user_mcp_file,
+    get_default_claude_desktop_config_path,
     is_macos,
     is_windows,
 )
@@ -93,6 +96,46 @@ def _resolve_claude_code_target() -> Path:
     if existing:
         return existing[0]
     return (Path.home() / ".claude.json").resolve()
+
+
+def _resolve_claude_desktop_target() -> Path:
+    existing = detect_claude_desktop_config_path()
+    if existing:
+        return existing
+    return get_default_claude_desktop_config_path()
+
+
+def _open_with_os(path: Path) -> None:
+    try:
+        if is_macos():
+            subprocess.run(["open", str(path)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Failed to open {} via OS: {}", path, e)
+
+
+def _find_dxt_candidates() -> list[Path]:
+    """Return plausible locations for the packaged DXT file.
+
+    - Repo/dev: <repo_root>/desktop_ext/open-edison-connector.dxt
+    - Packaged under src: <site-packages>/src/desktop_ext/open-edison-connector.dxt (if included)
+    - Packaged at project root level inside site-packages: <site-packages>/desktop_ext/open-edison-connector.dxt
+    """
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]
+    candidates: list[Path] = [
+        # Repo/dev locations
+        (repo_root / "desktop_ext" / "open-edison-connector.dxt").resolve(),
+        (repo_root / "desktop_ext" / "desktop_ext.dxt").resolve(),
+        (repo_root / "open-edison-connector.dxt").resolve(),
+        # Installed wheel locations (desktop_ext at site-packages root)
+        (here.parents[1] / "desktop_ext" / "open-edison-connector.dxt").resolve(),
+        (here.parents[3] / "desktop_ext" / "open-edison-connector.dxt").resolve()
+        if len(here.parents) >= 4
+        else Path("/nonexistent"),
+    ]
+    return [p for p in candidates if p.exists()]
 
 
 def _validate_or_confirm_create(target_path: Path, *, create_if_missing: bool, label: str) -> None:
@@ -378,6 +421,21 @@ def restore_claude_code(
     )
 
 
+def restore_claude_desktop(
+    *, server_name: str = "open-edison", dry_run: bool = False
+) -> RestoreResult:
+    _require_supported_os()
+    target_path = _resolve_claude_desktop_target()
+    # Claude Desktop uses general settings format; MCP key is "mcpServers"
+    return _restore_from_backup_or_remove(
+        target_path=target_path,
+        label="Claude Desktop",
+        key_name="mcpServers",
+        server_name=server_name,
+        dry_run=dry_run,
+    )
+
+
 def export_to_cursor(
     *,
     url: str = "http://localhost:3000/mcp/",
@@ -556,3 +614,73 @@ def export_to_claude_code(
         dry_run=dry_run,
         label="Claude Code",
     )
+
+
+def export_to_claude_desktop(
+    *,
+    url: str = "http://localhost:3000/mcp/",
+    api_key: str = "dev-api-key-change-me",
+    server_name: str = "open-edison",
+    dry_run: bool = False,
+    force: bool = False,
+    create_if_missing: bool = False,
+) -> ExportResult:
+    """Export for Claude Desktop.
+
+    - Preserve non-MCP keys in existing config; otherwise write minimal MCP-only object.
+    - Location matches platform-specific user-level paths.
+    """
+
+    _require_supported_os()
+    target_path = _resolve_claude_desktop_target()
+
+    is_existing = target_path.exists()
+    if is_existing:
+        current = _read_json_or_error(target_path)
+        maybe_skip = _skip_if_already_configured(
+            target_path,
+            url=url,
+            api_key=api_key,
+            name=server_name,
+            force=force,
+            dry_run=dry_run,
+            label="Claude Desktop",
+        )
+        if maybe_skip is not None:
+            return maybe_skip
+    else:
+        if not create_if_missing:
+            raise ExportError(
+                f"Claude Desktop config not found at {target_path}. Refusing to create without confirmation."
+            )
+        current = {}
+
+    new_mcp = _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+    if is_existing and current:
+        new_config = _merge_preserving_non_mcp(current, new_mcp)
+    else:
+        new_config = {"mcpServers": new_mcp}
+
+    backup_path = _backup_if_exists(target_path, dry_run=dry_run)
+    return _write_config(
+        target_path,
+        new_config=new_config,
+        backup_path=backup_path,
+        dry_run=dry_run,
+        label="Claude Desktop",
+    )
+
+
+def open_claude_desktop_extension_dxt() -> Path | None:
+    """Best-effort: locate and open the bundled .dxt file for install.
+
+    Returns the path if found, otherwise None. Does not raise on failure.
+    """
+    cands = _find_dxt_candidates()
+    if not cands:
+        log.info("No .dxt found in expected locations; skipping auto-open")
+        return None
+    dxt = cands[0]
+    log.info("Opening Claude Desktop extension: {}", dxt)
+    _open_with_os(dxt)
+    return dxt

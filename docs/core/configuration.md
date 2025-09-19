@@ -18,8 +18,7 @@ The complete configuration structure:
     "api_key": "dev-api-key-change-me"
   },
   "logging": {
-    "level": "INFO",
-    "database_path": "sessions.db"
+    "level": "INFO"
   },
   "mcp_servers": [
     {

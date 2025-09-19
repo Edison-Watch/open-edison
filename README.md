@@ -144,7 +144,7 @@ make setup
 ```json
 {
   "server": { "host": "0.0.0.0", "port": 3000, "api_key": "..." },
-  "logging": { "level": "INFO", "database_path": "sessions.db" },
+  "logging": { "level": "INFO"},
   "mcp_servers": [
     { "name": "filesystem", "command": "uvx", "args": ["mcp-server-filesystem", "/tmp"], "enabled": true },
     { "name": "github", "enabled": false, "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "..." } }

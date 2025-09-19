@@ -17,14 +17,18 @@ from src.mcp_importer.exporters import (
     ExportResult,
     RestoreResult,
     export_to_claude_code,
+    export_to_claude_desktop,
     export_to_cursor,
     export_to_vscode,
+    open_claude_desktop_extension_dxt,
     restore_claude_code,
+    restore_claude_desktop,
     restore_cursor,
     restore_vscode,
 )
 from src.mcp_importer.importers import (
     import_from_claude_code,
+    import_from_claude_desktop,
     import_from_cursor,
     import_from_vscode,
 )
@@ -38,6 +42,7 @@ class CLIENT(str, Enum):
     CURSOR = "cursor"
     VSCODE = "vscode"
     CLAUDE_CODE = "claude-code"
+    CLAUDE_DESKTOP = "claude-desktop"
 
     def __str__(self) -> str:
         return self.value.capitalize()
@@ -54,6 +59,8 @@ def detect_clients() -> set[CLIENT]:
         detected.add(CLIENT.VSCODE)
     if _paths.detect_claude_code_config_path() is not None:
         detected.add(CLIENT.CLAUDE_CODE)
+    if _paths.detect_claude_desktop_config_path() is not None:
+        detected.add(CLIENT.CLAUDE_DESKTOP)
     return detected
 
 
@@ -64,6 +71,8 @@ def import_from(client: CLIENT) -> list[MCPServerConfig]:
         return import_from_vscode()
     if client == CLIENT.CLAUDE_CODE:
         return import_from_claude_code()
+    if client == CLIENT.CLAUDE_DESKTOP:
+        return import_from_claude_desktop()
     raise ValueError(f"Unsupported client: {client}")
 
 
@@ -137,6 +146,17 @@ def export_edison_to(
                 force=force,
                 create_if_missing=create_if_missing,
             )
+        case CLIENT.CLAUDE_DESKTOP:
+            result = export_to_claude_desktop(
+                url=url,
+                api_key=api_key,
+                server_name=server_name,
+                dry_run=dry_run,
+                force=force,
+                create_if_missing=create_if_missing,
+            )
+            open_claude_desktop_extension_dxt()
+            return result
 
 
 def restore_client(
@@ -156,6 +176,8 @@ def restore_client(
             return restore_vscode(server_name=server_name, dry_run=dry_run)
         case CLIENT.CLAUDE_CODE:
             return restore_claude_code(server_name=server_name, dry_run=dry_run)
+        case CLIENT.CLAUDE_DESKTOP:
+            return restore_claude_desktop(server_name=server_name, dry_run=dry_run)
 
 
 def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa

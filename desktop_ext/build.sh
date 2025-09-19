@@ -29,27 +29,29 @@ echo "✅ Node.js and npx are available"
 echo "🧪 Testing configuration..."
 node test_connection.js
 
-# Validate the manifest (if dxt CLI is available)
-if command -v dxt &> /dev/null; then
-    echo "✅ Validating manifest.json..."
-    dxt validate manifest.json
-    
-    echo "📦 Packaging extension..."
-    dxt pack
-    
-    echo "✅ Extension packaged successfully!"
-    echo "📋 Output: open-edison-connector.dxt"
+echo "✅ Using npx for DXT packaging..."
+
+echo "✅ Validating manifest.json..."
+npx -y @anthropic-ai/dxt validate manifest.json
+
+echo "📦 Packaging extension..."
+npx -y @anthropic-ai/dxt pack
+
+# Ensure canonical output filename exists deterministically
+CANONICAL="open-edison-connector.dxt"
+DEFAULT_OUT="desktop_ext.dxt"
+if [ -f "$DEFAULT_OUT" ]; then
+    cp "$DEFAULT_OUT" "$CANONICAL"
+    echo "🪄 Copied $DEFAULT_OUT -> $CANONICAL"
+elif [ -f "$CANONICAL" ]; then
+    echo "✅ Canonical DXT present: $CANONICAL"
 else
-    echo "⚠️  DXT CLI not found. Install with: npm install -g @anthropic-ai/dxt"
-    echo "📦 Manual packaging required."
+    echo "❌ Packaging did not produce expected $DEFAULT_OUT"
+    exit 1
 fi
+
+echo "✅ Extension packaged successfully!"
+echo "📋 Output: $CANONICAL"
 
 echo ""
 echo "🎉 Build process completed!"
-echo ""
-echo "📋 Next steps:"
-echo "   1. If dxt CLI is installed, the .dxt file is ready"
-echo "   2. If not, install dxt CLI: npm install -g @anthropic-ai/dxt"
-echo "   3. Run 'dxt pack' to create the .dxt file"
-echo "   4. Install in Claude Desktop by dragging the .dxt file to Settings → Extensions"
-echo "   5. Configure with your Open Edison server URL and API key"

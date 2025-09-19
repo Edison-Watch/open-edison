@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.93"
+version = "0.1.94"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -39,7 +39,9 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 managed = true
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
     "basedpyright>=1.21.0",
     "ruff>=0.12.3",
     "pytest>=8.3.3",
@@ -65,10 +67,16 @@ include = [
   "resource_permissions.json",
   "prompt_permissions.json",
   "docs/**",
+  "desktop_ext/**",
 ]
 artifacts = [
   "src/frontend_dist/**",
+  "desktop_ext/open-edison-connector.dxt",
 ]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Ensure the desktop extension directory is present in wheels
+"desktop_ext" = "desktop_ext"
 
 
 [tool.hatch.build.targets.wheel.hooks.custom]
@@ -85,10 +93,16 @@ include = [
   "prompt_permissions.json",
   "src/**",
   "docs/**",
+  "desktop_ext/**",
 ]
 artifacts = [
   "src/frontend_dist/**",
+  "desktop_ext/open-edison-connector.dxt",
 ]
+
+[tool.hatch.build.targets.sdist.force-include]
+# Ensure the built DXT is included even if untracked by VCS
+"desktop_ext/open-edison-connector.dxt" = "desktop_ext/open-edison-connector.dxt"
 
 
 [tool.hatch.build.targets.sdist.hooks.custom]

@@ -138,8 +138,7 @@ sequenceDiagram
     "api_key": "your-secure-key"
   },
   "logging": {
-    "level": "INFO",
-    "database_path": "sessions.db"
+    "level": "INFO"
   },
   "mcp_servers": [
     {

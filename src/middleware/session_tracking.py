@@ -127,6 +127,9 @@ def create_db_session() -> Generator[Session, None, None]:
     session = Session(engine)
     try:
         yield session
+
+        # Notify dashboard clients that the sessions database changed
+        events.fire_and_forget({"type": "sessions_db_changed"})
     finally:
         session.close()
 

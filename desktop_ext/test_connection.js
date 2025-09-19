@@ -196,12 +196,6 @@ async function main() {
 
     console.log('\n' + '='.repeat(50));
     console.log('✅ Connection tests completed!');
-    console.log('\n📋 Next steps:');
-    console.log('   1. Start your Open Edison server: make run');
-    console.log('   2. Install DXT CLI: npm install -g @anthropic-ai/dxt');
-    console.log('   3. Package extension: dxt pack');
-    console.log('   4. Install in Claude Desktop');
-    console.log('   5. Configure with your server URL and API key');
 }
 
 if (require.main === module) {

@@ -109,3 +109,37 @@ def detect_claude_code_config_path() -> Path | None:
 def get_default_claude_code_config_path() -> Path:
     # Prefer top-level ~/.claude.json as default create target
     return (Path.home() / ".claude.json").resolve()
+
+
+def detect_claude_desktop_config_path() -> Path | None:
+    """Detect Claude Desktop user-level config file.
+
+    macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+    Linux: ~/.config/Claude/claude_desktop_config.json
+    """
+    home = Path.home()
+    candidates: list[Path] = []
+    if is_macos():
+        candidates.append(
+            (
+                home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+            ).resolve()
+        )
+    else:
+        # Linux path per docs
+        candidates.append((home / ".config" / "Claude" / "claude_desktop_config.json").resolve())
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def get_default_claude_desktop_config_path() -> Path:
+    """Return the default path to write Claude Desktop config if creating new."""
+    home = Path.home()
+    if is_macos():
+        return (
+            home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        ).resolve()
+    # Linux default
+    return (home / ".config" / "Claude" / "claude_desktop_config.json").resolve()
