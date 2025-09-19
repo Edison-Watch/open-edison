@@ -57,15 +57,39 @@ export function App(): React.JSX.Element {
         if (!showUnknown) return base
         return base + unknownSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)
     }, [filtered, unknownSessions, showUnknown])
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        try {
+            const saved = localStorage.getItem('app_theme')
+            if (saved === 'light' || saved === 'dark') {
+                return saved
+            }
+        } catch { /* ignore */ }
+        // Fallback to system preference
+        return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    })
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme)
     }, [theme])
 
+    // Save theme state to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem('app_theme', theme)
+        } catch { /* ignore */ }
+    }, [theme])
+
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager'>('sessions')
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager'>(() => {
+        try {
+            const saved = localStorage.getItem('app_view')
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager') {
+                return saved
+            }
+        } catch { /* ignore */ }
+        return 'sessions'
+    })
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
@@ -76,6 +100,13 @@ export function App(): React.JSX.Element {
         }
         setView(newView)
     }
+
+    // Save view state to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem('app_view', view)
+        } catch { /* ignore */ }
+    }, [view])
 
     // MCP Server Status
     const [mcpStatus, setMcpStatus] = useState<'checking' | 'online' | 'reduced' | 'offline'>('checking')
@@ -329,6 +360,28 @@ export function App(): React.JSX.Element {
                 } else if (data?.type === 'mcp_approved_once') {
                     const msg = `Approved ${data.kind} '${data.name}'`
                     setUiToast({ message: msg, type: 'success' })
+                } else if (data?.type === 'server_startup' || data?.type === 'localstorage_reset') {
+                    // Reset localStorage when server starts or when explicitly requested
+                    try {
+                        // Clear all localStorage items used by the app
+                        localStorage.removeItem('json_editor_needs_permission_update')
+                        localStorage.removeItem('json_editor_needs_config_update')
+                        localStorage.removeItem('api_key')
+                        
+                        // Show a toast notification
+                        const message = data?.type === 'server_startup' 
+                            ? 'Server restarted' 
+                            : 'localStorage reset'
+                        setUiToast({ message, type: 'success' })
+                        
+                        // Reload the page to ensure clean state
+                        setTimeout(() => {
+                            window.location.reload()
+                        }, 1000)
+                    } catch (error) {
+                        console.error('Server restarted, but failed to reset localStorage:', error)
+                        setUiToast({ message: 'Server restarted, but failed to reset localStorage', type: 'error' })
+                    }
                 }
             } catch { /* ignore */ }
         }
@@ -371,14 +424,18 @@ export function App(): React.JSX.Element {
         <div className="mx-auto max-w-[1400px] p-6 space-y-4">
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <h1 className="m-0 text-2xl font-bold">Open Edison Sessions</h1>
-                    <p className="m-0 text-sm text-app-muted">Live view of recent MCP sessions from the local SQLite store.</p>
+                    <h1 className="m-0 text-2xl font-bold">Open Edison Dashboard</h1>
+                    <p className="m-0 text-sm text-app-muted">
+                        {view === 'sessions' && 'Live view of recent MCP sessions from the local SQLite store.'}
+                        {view === 'configs' && 'Direct JSON editing for configuration and permission files.'}
+                        {view === 'manager' && 'Manage MCP servers, tools, and permissions with a guided interface.'}
+                    </p>
                 </div>
                 <div className="flex gap-2 items-center">
                     <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Configs</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Configuration Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
                     </div>
                     <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
                         {theme === 'light' ? 'Dark' : 'Light'} mode
@@ -482,7 +539,7 @@ export function App(): React.JSX.Element {
                     )}
                 </div>
             ) : view === 'configs' ? (
-                <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} />
+                <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} theme={theme} />
             ) : (
                 <ConfigurationManager projectRoot={projectRoot} />
             )}
@@ -658,7 +715,7 @@ function SessionTable({ sessions }: { sessions: Session[] }) {
 }
 */
 
-function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void }) {
+function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' }) {
     const files = useMemo(() => (
         [
             {
@@ -870,6 +927,13 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
 
     const updatePermissions = async () => {
         try {
+            // Check if there are unsaved changes and save them first
+            const hasUnsaved = content[active] !== originalContent[active]
+            if (hasUnsaved) {
+                setToast({ message: 'Saving changes before updating permissions…', type: 'success' })
+                await saveToDisk()
+            }
+            
             setToast({ message: 'Updating permissions…', type: 'success' })
             const file = files.find(f => f.key === active)!
             // Clear permission caches after successful save (only for permission files)
@@ -908,8 +972,15 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
 
 
     const updateConfig = async () => {
-        setToast({ message: 'Updating open-edison configuration', type: 'success' })
         try {
+            // Check if there are unsaved changes and save them first
+            const hasUnsaved = content[active] !== originalContent[active]
+            if (hasUnsaved) {
+                setToast({ message: 'Saving changes before updating configuration…', type: 'success' })
+                await saveToDisk()
+            }
+            
+            setToast({ message: 'Updating open-edison configuration', type: 'success' })
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
@@ -993,7 +1064,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange }: { projectRoot: str
                             height="520px"
                             defaultLanguage="json"
                             language="json"
-                            theme="vs-dark"
+                            theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                             options={{ minimap: { enabled: false }, fontSize: 12, wordWrap: 'on', scrollBeyondLastLine: false }}
                             value={val}
                             onChange={(value) => setContent(prev => ({ ...prev, [active]: value ?? '' }))}

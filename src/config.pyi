@@ -17,6 +17,8 @@ class ServerConfig:
     host: str
     port: int
     api_key: str
+    ssl_cert_file: str | None
+    ssl_key_file: str | None
 
 class LoggingConfig:
     level: str

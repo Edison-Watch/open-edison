@@ -273,11 +273,7 @@ class SingleUserMCP(FastMCP[Any]):
                     server_config.oauth_client_name,
                 )
                 if oauth_auth:
-                    client = FastMCPClient(
-                        remote_url,
-                        auth=oauth_auth,
-                        timeout=client_timeout,
-                    )
+                    client = FastMCPClient(remote_url, auth=oauth_auth, timeout=client_timeout)
                     log.info(
                         f"🔐 Created remote client with OAuth authentication for {server_name}"
                     )

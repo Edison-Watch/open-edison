@@ -2,9 +2,9 @@
 
 > The Secure MCP Control Panel
 
-Connect AI to your data/software securely without risk of data exfiltration. Gain visibility, block threats, and get alerts on the data your agent is reading/writing.
+Connect AI to your data/software with additional security controls to help reduce data exfiltration risks. Gain visibility, monitor potential threats, and get alerts on the data your agent is reading/writing.
 
-OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can cause agent hijacking & data exfiltration by malicious actors.
+OpenEdison helps address the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can increase risks of agent hijacking & data exfiltration by malicious actors.
 
 **Join our Discord** for feedback, feature requests, and to discuss MCP security for your use case: [discord.gg/tXjATaKgTV](https://discord.gg/tXjATaKgTV)
 
@@ -28,8 +28,8 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
 
 ## Features ✨
 
-- 🛑 **Data leak blocker** - Edison automatically blocks any data leaks, even if your AI gets jailbroken
-- 🕰️ **Deterministic execution** - Deterministic execution. Guaranteed data exfiltration blocker.
+- 🛑 **Data leak monitoring** - Edison detects and blocks potential data leaks through configurable security controls
+- 🕰️ **Controlled execution** - Provides structured execution controls to reduce data exfiltration risks.
 - 🗂️ **Easily configurable** - Easy to configure and manage your MCP servers
 - 📊 **Visibility into agent interactions** - Track and monitor your agents and their interactions with connected software/data via MCP calls
 - 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
@@ -37,7 +37,7 @@ OpenEdison solves the [lethal trifecta problem](https://simonwillison.net/2025/J
 
 ## About Edison.watch 🏢
 
-Edison helps you gain observability, control, and policy enforcement for all AI interactions with systems of records, existing company software and data. Prevent AI from causing data leakage, lightning-fast setup for cross-system governance.
+Edison helps you gain observability, control, and policy enforcement for AI interactions with systems of records, existing company software and data. Reduce risks of AI-caused data leakage with streamlined setup for cross-system governance.
 
 ## Quick Start 🚀
 
@@ -189,6 +189,73 @@ Or add to your MCP client config:
 </details>
 
 <details>
+<summary>🤖 Connect to ChatGPT (Plus/Pro)</summary>
+
+Open-Edison comes preconfigured with ngrok for easy ChatGPT integration. Follow these steps to connect:
+
+### 1. Set up ngrok Account
+
+1. Visit [https://dashboard.ngrok.com](https://dashboard.ngrok.com) to sign up for a free account
+2. Get your authtoken from the "Your Authtoken" page
+3. Create a domain name in the "Domains" page
+4. Set these values in your `ngrok.yml` file:
+
+```yaml
+version: 3
+
+agent:
+  authtoken: YOUR_NGROK_AUTH_TOKEN
+
+endpoints:
+  - name: open-edison-mcp
+    url: https://YOUR_DOMAIN.ngrok-free.app
+    upstream:
+      url: http://localhost:3000
+      protocol: http1
+```
+
+### 2. Start ngrok Tunnel
+
+```bash
+make ngrok
+```
+
+This will start the ngrok tunnel and make Open-Edison accessible via your custom domain.
+
+### 3. Enable Developer Mode in ChatGPT
+
+1. Click on your profile icon in ChatGPT
+2. Select **Settings**
+3. Go to **"Connectors"** in the settings menu
+4. Select **"Advanced Settings"**
+5. Enable **"Developer Mode (beta)"**
+
+### 4. Add Open-Edison to ChatGPT
+
+1. Click on your profile icon in ChatGPT
+2. Select **Settings**
+3. Go to **"Connectors"** in the settings menu
+4. Select **"Create"** next to "Browse connections"
+5. Set a name (e.g., "Open-Edison")
+6. Use your ngrok URL as the MCP Server URL (e.g., `https://your-domain.ngrok-free.app/mcp/`)
+7. Select **"No authentication"** in the Authentication menu
+8. Tick the **"I trust this application"** checkbox
+9. Press **Create**
+
+### 5. Use Open-Edison in ChatGPT
+
+Every time you start a new chat:
+
+1. Click on the plus sign in the prompt text box ("Ask anything")
+2. Hover over **"... More"**
+3. Click on **"Developer Mode"**
+4. **"Developer Mode"** and your connector name (e.g., "Open-Edison") will appear at the bottom of the prompt textbox
+
+You can now use Open-Edison's MCP tools directly in your ChatGPT conversations! Do not forget to repeat step 5 everytime you start a new chat.
+
+</details>
+
+<details>
 <summary>🧭 Usage</summary>
 
 ### API Endpoints
@@ -245,7 +312,7 @@ Each MCP server configuration includes:
 
 </details>
 
-## 🔐 How Edison prevents data leakages
+## 🔐 How Edison reduces data leakages
 
 <details>
 <summary>🔱 The lethal trifecta, agent lifecycle management</summary>
@@ -264,7 +331,7 @@ The configuration allows you to classify these risks across **tools**, **resourc
 
 In addition to trifecta, we track Access Control Level (ACL) for each tool call,
 that is, each tool has an ACL level (one of PUBLIC, PRIVATE, or SECRET), and we track the highest ACL level for each session.
-If a write operation is attempted to a lower ACL level, it is blocked.
+If a write operation is attempted to a lower ACL level, it can be blocked based on your configuration.
 
 ### 🧰 Tool Permissions (`tool_permissions.json`)
 
