@@ -169,24 +169,16 @@ class OpenEdisonProxy:
             db_path = Path(db_cfg)
             if db_path.is_absolute() and db_path.exists():
                 return db_path
-            # Check relative to config dir
-            try:
-                cfg_dir = _get_cfg_dir()
-            except Exception:
-                cfg_dir = Path.cwd()
-            rel1 = cfg_dir / db_path
-            if rel1.exists():
-                return rel1
-            # Also check relative to cwd as a fallback
-            rel2 = Path.cwd() / db_path
-            if rel2.exists():
-                return rel2
-
             raise FileNotFoundError(f"Database file not found at {db_path}")
 
         async def _serve_db() -> FileResponse:  # type: ignore[override]
             db_file = _resolve_db_path()
-            return FileResponse(str(db_file), media_type="application/octet-stream")
+            resp = FileResponse(str(db_file), media_type="application/octet-stream")
+            # Ensure the browser always fetches the latest DB file
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+            return resp
 
         # Provide multiple paths the SPA might attempt (both edison.db legacy and sessions.db canonical)
         for name in ("edison.db", "sessions.db"):
@@ -223,8 +215,14 @@ class OpenEdisonProxy:
             json_path = _resolve_json_path(filename)
             if not json_path.exists():
                 # Return empty object for missing files to avoid hard failures in UI
-                return JSONResponse(content={}, media_type="application/json")
-            return FileResponse(str(json_path), media_type="application/json")
+                resp = JSONResponse(content={}, media_type="application/json")
+            else:
+                resp = FileResponse(str(json_path), media_type="application/json")
+            # Prevent caching of config and permissions JSONs
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+            return resp
 
         def _json_endpoint_factory(name: str) -> Callable[[], Awaitable[Response]]:
             async def endpoint() -> Response:

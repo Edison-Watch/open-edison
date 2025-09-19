@@ -14,7 +14,10 @@ export function useSessions(dbPath: string) {
       setError(null)
       try {
         const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
-        const fileResp = await fetch(`/@fs${dbPath}`)
+        const fileResp = await fetch(`/@fs${dbPath}`, {
+          cache: 'no-cache',
+          headers: { 'Cache-Control': 'no-cache' }
+        })
         if (!fileResp.ok) throw new Error(`Cannot read DB at ${dbPath}`)
         const buf = new Uint8Array(await fileResp.arrayBuffer())
         const db = new SQL.Database(buf as any as BufferSource)
