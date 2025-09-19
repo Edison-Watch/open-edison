@@ -102,7 +102,7 @@ artifacts = [
 
 [tool.hatch.build.targets.sdist.force-include]
 # Ensure the built DXT is included even if untracked by VCS
-"desktop_ext/desktop_ext.dxt" = "desktop_ext/open-edison-connector.dxt"
+"desktop_ext/open-edison-connector.dxt" = "desktop_ext/open-edison-connector.dxt"
 
 
 [tool.hatch.build.targets.sdist.hooks.custom]

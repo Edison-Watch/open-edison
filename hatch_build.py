@@ -21,8 +21,9 @@ class BuildHook(BuildHookInterface):  # type: ignore
         if version == "editable":
             return
 
-        # For wheel and sdist builds, ensure frontend assets are present
+        # For wheel and sdist builds, ensure frontend assets and canonical DXT are present
         self._ensure_frontend_assets()
+        self._ensure_canonical_dxt()
 
     def _ensure_frontend_assets(self) -> None:
         """Ensure frontend assets are available for packaging."""
@@ -49,4 +50,30 @@ class BuildHook(BuildHookInterface):  # type: ignore
         raise RuntimeError(
             "Packaged dashboard (src/frontend_dist) missing and frontend/dist not found. "
             "Run 'make build_package' to generate assets before packaging/uvx."
+        )
+
+    def _ensure_canonical_dxt(self) -> None:
+        """Ensure the desktop extension DXT exists at the canonical path.
+
+        Canonical path: desktop_ext/open-edison-connector.dxt
+        If absent but desktop_ext/desktop_ext.dxt exists, copy it to the canonical path.
+        Otherwise, fail with a clear message.
+        """
+        project_root = Path(self.root)
+        canonical = project_root / "desktop_ext" / "open-edison-connector.dxt"
+        legacy = project_root / "desktop_ext" / "desktop_ext.dxt"
+
+        if canonical.exists():
+            return
+
+        if legacy.exists():
+            shutil.copyfile(legacy, canonical)
+            self.app.display_info(
+                "Copied desktop_ext/desktop_ext.dxt -> desktop_ext/open-edison-connector.dxt"
+            )
+            return
+
+        raise RuntimeError(
+            "Required desktop extension missing: desktop_ext/open-edison-connector.dxt. "
+            "Either commit it or provide desktop_ext/desktop_ext.dxt so it can be copied."
         )
