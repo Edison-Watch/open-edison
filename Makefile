@@ -133,7 +133,7 @@ deadcode: check_uv ## Find unused code with Vulture (fails on findings)
 
 # Verify built distributions contain the Claude Desktop DXT
 .PHONY: verify_dxt_in_artifacts
-verify_dxt_in_artifacts: build_dist ## Build dists and assert desktop_ext/open-edison-connector.dxt is present
+verify_dxt_in_artifacts: desktop_ext build_dist ## Build dists and assert desktop_ext/open-edison-connector.dxt is present
 	@echo "$(YELLOW)🔎 Verifying DXT presence in wheel and sdist...$(RESET)"
 	@$(PYTHON) scripts/verify_dxt_in_artifacts.py
 	@echo "$(GREEN)✅ DXT verified in artifacts.$(RESET)"
@@ -391,12 +391,14 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 ########################################################
 
 .PHONY: build_package
-build_package: check_uv clean_dist ## Build frontend, package into src/frontend_dist, then build Python wheel
+build_package: check_uv clean_dist ## Build frontend, desktop extension, then build Python wheel
 	@echo "$(YELLOW)🏗️  Building frontend (vite) and packaging Python wheel...$(RESET)"
 	@cd frontend && npm install && npm run build
 	@echo "$(YELLOW)📦 Syncing built dashboard to src/frontend_dist...$(RESET)"
 	@rm -rf src/frontend_dist && mkdir -p src/frontend_dist
 	@cp -R frontend/dist/* src/frontend_dist/
+	@echo "$(YELLOW)📦 Building desktop extension DXT...$(RESET)"
+	@$(MAKE) desktop_ext
 	@echo "$(YELLOW)📦 Building Python wheel...$(RESET)"
 	@uv build
 	@echo "$(GREEN)✅ build_package complete. Wheel contains packaged dashboard (frontend_dist).$(RESET)"
