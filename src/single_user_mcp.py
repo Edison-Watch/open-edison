@@ -549,20 +549,6 @@ class SingleUserMCP(FastMCP[Any]):
         }
         return risk_levels.get(risk_count, "CRITICAL")
 
-    def _calculate_config_hash(self, config: MCPServerConfig) -> str:
-        """
-        Calculate a hash of the server configuration (command and args).
-
-        Args:
-            config: The MCP server configuration
-
-        Returns:
-            Hash string representing the configuration
-        """
-        # Create a string representation of the configuration that affects server behavior
-        config_str = f"{config.command}|{'|'.join(config.args)}"
-        return hashlib.sha256(config_str.encode()).hexdigest()
-
     def _setup_demo_tools(self) -> None:
         """Set up built-in demo tools for testing."""
 
