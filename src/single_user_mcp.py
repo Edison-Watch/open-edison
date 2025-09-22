@@ -7,11 +7,14 @@ Handles MCP protocol communication with running servers using a unified composit
 
 import asyncio
 import dataclasses
+import json
 import time
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
 from fastmcp.server.server import add_resource_prefix, has_resource_prefix
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import apply_transformations_to_tools
@@ -19,7 +22,13 @@ from loguru import logger as log
 from mcp.server.lowlevel.server import LifespanResultT
 
 from src import events
-from src.config import Config, MCPServerConfig
+from src.config import (
+    Config,
+    MCPServerConfig,
+    clear_json_file_cache,
+    ensure_permissions_file,
+    get_config_dir,
+)
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
@@ -646,11 +655,294 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(
             f"Time taken to initialize Single User MCP server: {time.perf_counter() - start_time:.1f} seconds"
         )
+        # Reconcile permissions with mounted servers so JSONs reflect reality
+        try:
+            summary = await self.reconcile_permissions()
+            log.info(
+                "🔏 Permissions reconciled: "
+                + f"added_missing={summary.get('added_missing_total', 0)}, "
+                + f"removed_stale={summary.get('removed_stale_total', 0)}"
+            )
+        except Exception:
+            log.exception("Failed to reconcile permissions after initialization")
         # Rebuild tool schema cache after initialization/remount
         try:
             await self.refresh_tool_schemas_cache()
         except Exception:
             log.exception("Failed to refresh tool schemas after initialization")
+
+    async def reconcile_permissions(self) -> dict[str, Any]:  # noqa: C901
+        """Reconcile permissions JSON files with currently mounted servers and their objects.
+
+        Steps:
+        1) Scan current tools/resources/prompts from mounted servers; collect canonical identifiers
+        2) Compare against configured permissions; find missing and stale entries
+        3) Update tool_permissions.json, resource_permissions.json, prompt_permissions.json to add
+           missing entries (using current runtime defaults) and remove stale ones for mounted servers
+
+        Returns a summary dict with counts and lists of changes.
+        """
+        mounted_names: set[str] = set(mounted_servers.keys())
+
+        # ---- Discover actual items per type for mounted servers ----
+        actual_tools_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        actual_prompts_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        actual_resources_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+
+        # Enumerate using async gathers of list methods
+        tasks: list[list[Tool | Prompt | Resource]] = [
+            self._tool_manager.list_tools(),  # type: ignore[attr-defined]
+            self._prompt_manager.list_prompts(),  # type: ignore[attr-defined]
+            self._resource_manager.list_resources(),  # type: ignore[attr-defined]
+        ]
+        tools_list: list[Tool]
+        prompts_list: list[Prompt]
+        resources_list: list[Resource]
+        tools_list, prompts_list, resources_list = await asyncio.gather(*tasks)  # type: ignore
+        assert all(isinstance(i, list) for i in (tools_list, prompts_list, resources_list))  # type: ignore
+
+        # We also remove the builtin tools
+        tools_list = [t for t in tools_list if not t.key.startswith("builtin_")]
+        resources_list = [r for r in resources_list if not r.key.startswith("info://builtin/")]
+        prompts_list = [p for p in prompts_list if not p.key.startswith("builtin_")]
+
+        for tool in tools_list:
+            server: str
+            item: str
+            server, item = tool.key.split("_", 1)
+            if server in mounted_names:
+                actual_tools_by_server.setdefault(server, set()).add(item)
+            else:
+                raise ValueError(f"Server {server} not found in {mounted_names}")
+
+        for prompt in prompts_list:
+            server: str
+            item: str
+            server, item = prompt.key.split("_", 1)
+            if server in mounted_names:
+                actual_prompts_by_server.setdefault(server, set()).add(item)
+            else:
+                raise ValueError(f"Server {server} not found in {mounted_names}")
+
+        # Resources (resource://prefix/path/to/resource)
+        for res in resources_list:
+            server: str
+            item: str
+            rkey: str = res.key  # type: ignore
+            if not rkey.startswith("resource://"):
+                raise ValueError(f"Resource {rkey} does not start with resource://")
+            rest: str = rkey[len("resource://") :]
+            server = rest.split("/", 1)[0]
+            if not server or server not in mounted_names:
+                raise ValueError(f"Server {server} not found in {mounted_names}")
+            item_id: str = str(res.uri)
+            if not item_id:
+                raise ValueError(f"Resource {rkey} has no URI")
+            actual_resources_by_server.setdefault(server, set()).add(item_id)
+
+        # ---- Load current permissions (flattened via Permissions) ----
+        perms = Permissions()
+
+        configured_tools_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        for flat in (k for k in perms.tool_permissions if k):  # type: ignore
+            server: str
+            item: str
+            if "_" not in str(flat):
+                continue
+            s, item = str(flat).split("_", 1)
+            if s in mounted_names:
+                configured_tools_by_server.setdefault(s, set()).add(item)
+
+        configured_prompts_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        for flat in (k for k in perms.prompt_permissions if k):
+            if "_" not in str(flat):
+                continue
+            s, item = str(flat).split("_", 1)
+            if s in mounted_names:
+                configured_prompts_by_server.setdefault(s, set()).add(item)
+
+        configured_resources_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        for flat in (k for k in perms.resource_permissions if k):
+            if "_" not in str(flat):
+                continue
+            s = flat.split("://", 1)[1].split("/", 1)[0]
+            item = flat.split("://", 1)[1].split("/", 1)[1]
+            if s in mounted_names:
+                configured_resources_by_server.setdefault(s, set()).add(item)
+
+        # ---- Compute diffs ----
+        missing_tools: dict[str, set[str]] = {}
+        missing_prompts: dict[str, set[str]] = {}
+        missing_resources: dict[str, set[str]] = {}
+        stale_tools: dict[str, set[str]] = {}
+        stale_prompts: dict[str, set[str]] = {}
+        stale_resources: dict[str, set[str]] = {}
+
+        for s in mounted_names:
+            # Tools
+            if actual_tools_by_server.get(s):
+                m = actual_tools_by_server[s] - configured_tools_by_server.get(s, set())
+                if m:
+                    missing_tools[s] = m
+                    for item in sorted(m):
+                        log.warning(f"Permissions missing for tool: {s}_{item}")
+            if configured_tools_by_server.get(s):
+                st = configured_tools_by_server[s] - actual_tools_by_server.get(s, set())
+                if st:
+                    stale_tools[s] = st
+                    for item in sorted(st):
+                        log.error(f"Permission configured for non-existent tool: {s}_{item}")
+
+            # Prompts
+            if actual_prompts_by_server.get(s):
+                m = actual_prompts_by_server[s] - configured_prompts_by_server.get(s, set())
+                if m:
+                    missing_prompts[s] = m
+                    for item in sorted(m):
+                        log.warning(f"Permissions missing for prompt: {s}_{item}")
+            if configured_prompts_by_server.get(s):
+                st = configured_prompts_by_server[s] - actual_prompts_by_server.get(s, set())
+                if st:
+                    stale_prompts[s] = st
+                    for item in sorted(st):
+                        log.error(f"Permission configured for non-existent prompt: {s}_{item}")
+
+            # Resources
+            if actual_resources_by_server.get(s):
+                m = actual_resources_by_server[s] - configured_resources_by_server.get(s, set())
+                if m:
+                    missing_resources[s] = m
+                    for item in sorted(m):
+                        log.warning(f"Permissions missing for resource: {s}_{item}")
+            if configured_resources_by_server.get(s):
+                st = configured_resources_by_server[s] - actual_resources_by_server.get(s, set())
+                if st:
+                    stale_resources[s] = st
+                    for item in sorted(st):
+                        log.error(f"Permission configured for non-existent resource: {s}_{item}")
+
+        # ---- Apply fixes to JSON files ----
+        cfg_dir = get_config_dir()
+
+        def load_nested(filename: str) -> tuple[str, dict[str, Any]]:
+            path = ensure_permissions_file(cfg_dir / filename)
+            with open(path, encoding="utf-8") as f:
+                obj: Any = json.load(f)
+            if not isinstance(obj, dict):
+                data: dict[str, Any] = {"_metadata": {}}
+            else:
+                data = cast(dict[str, Any], obj)
+            return str(path), data
+
+        def save_nested(path: str, data: dict[str, Any]) -> None:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        added_missing_total = 0
+        removed_stale_total = 0
+
+        # Tools file
+        tools_path, tools_json = load_nested("tool_permissions.json")
+        for s, items in missing_tools.items():
+            section = tools_json.get(s)
+            if not isinstance(section, dict):
+                section = {}
+            for item in sorted(items):
+                if item not in section:
+                    # Use current runtime default to mirror behavior for unknowns
+                    section[item] = {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": True,
+                        "acl": "SECRET",
+                    }
+                    added_missing_total += 1
+            tools_json[s] = section
+        for s, items in stale_tools.items():
+            section = tools_json.get(s)
+            if isinstance(section, dict):
+                for item in sorted(items):
+                    if item in section:
+                        del section[item]
+                        removed_stale_total += 1
+                tools_json[s] = section
+        save_nested(tools_path, tools_json)
+
+        # Resources file
+        resources_path, resources_json = load_nested("resource_permissions.json")
+        for s, items in missing_resources.items():
+            section = resources_json.get(s)
+            if not isinstance(section, dict):
+                section = {}
+            for item in sorted(items):
+                if item not in section:
+                    section[item] = {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": True,
+                    }
+                    added_missing_total += 1
+            resources_json[s] = section
+        for s, items in stale_resources.items():
+            section = resources_json.get(s)
+            if isinstance(section, dict):
+                for item in sorted(items):
+                    if item in section:
+                        del section[item]
+                        removed_stale_total += 1
+                resources_json[s] = section
+        save_nested(resources_path, resources_json)
+
+        # Prompts file
+        prompts_path, prompts_json = load_nested("prompt_permissions.json")
+        for s, items in missing_prompts.items():
+            section = prompts_json.get(s)
+            if not isinstance(section, dict):
+                section = {}
+            for item in sorted(items):
+                if item not in section:
+                    section[item] = {
+                        "enabled": True,
+                        "write_operation": True,
+                        "read_private_data": True,
+                        "read_untrusted_public_data": True,
+                        "acl": "SECRET",
+                    }
+                    added_missing_total += 1
+            prompts_json[s] = section
+        for s, items in stale_prompts.items():
+            section = prompts_json.get(s)
+            if isinstance(section, dict):
+                for item in sorted(items):
+                    if item in section:
+                        del section[item]
+                        removed_stale_total += 1
+                prompts_json[s] = section
+        save_nested(prompts_path, prompts_json)
+
+        # Invalidate caches so subsequent reads see the updates
+        try:
+            clear_json_file_cache()
+            Permissions.clear_permissions_file_cache()
+        except Exception:
+            log.debug("Failed to clear permissions/config JSON caches after reconciliation")
+
+        return {
+            "added_missing_total": added_missing_total,
+            "removed_stale_total": removed_stale_total,
+            "missing": {
+                "tools": {k: sorted(v) for k, v in missing_tools.items()},
+                "resources": {k: sorted(v) for k, v in missing_resources.items()},
+                "prompts": {k: sorted(v) for k, v in missing_prompts.items()},
+            },
+            "stale": {
+                "tools": {k: sorted(v) for k, v in stale_tools.items()},
+                "resources": {k: sorted(v) for k, v in stale_resources.items()},
+                "prompts": {k: sorted(v) for k, v in stale_prompts.items()},
+            },
+        }
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

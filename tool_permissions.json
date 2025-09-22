@@ -1,255 +1,80 @@
 {
-    "_metadata": {
-        "description": "Tool security classifications for Open Edison data access tracker",
-        "last_updated": "2025-08-07"
+  "_metadata": {
+    "description": "Tool security classifications for Open Edison data access tracker",
+    "last_updated": "2025-08-07"
+  },
+  "builtin": {
+    "echo": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
     },
-    "builtin": {
-        "echo": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        },
-        "get_server_info": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        },
-        "get_security_status": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        },
-        "get_available_tools": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        },
-        "tools_changed": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        }
+    "get_server_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
     },
-    "filesystem": {
-        "read_file": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "read_text_file": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "read_media_file": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "read_multiple_files": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "write_file": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        },
-        "edit_file": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "create_directory": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "list_directory": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "list_directory_with_sizes": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "directory_tree": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "move_file": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "search_files": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "get_file_info": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        },
-        "list_allowed_directories": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC"
-        }
+    "get_security_status": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
     },
-    "fetch": {
-        "fetch": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC",
-            "description": "Fetch content from a URL (considered untrusted public data)"
-        }
+    "get_available_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
     },
-    "sqlite": {
-        "db_info": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Get information about the database",
-            "acl": "PRIVATE"
-        },
-        "query": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Execute a raw SQL query against the database with optional parameter values",
-            "acl": "PRIVATE"
-        },
-        "list_tables": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "List all user tables in the SQLite database (excludes system tables)",
-            "acl": "PRIVATE"
-        },
-        "get_table_schema": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Get the schema information for a specific table including column details",
-            "acl": "PRIVATE"
-        },
-        "create_record": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Insert a new record into a table with specified data",
-            "acl": "PRIVATE"
-        },
-        "read_records": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Read records from a table with optional conditions, limit, and offset",
-            "acl": "PRIVATE"
-        },
-        "update_records": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Update records in a table based on specified conditions",
-            "acl": "PRIVATE"
-        },
-        "delete_records": {
-            "enabled": true,
-            "write_operation": true,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "description": "Delete records from a table based on specified conditions",
-            "acl": "PRIVATE"
-        }
-    },
-    "test_server": {
-        "test_server/*": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": false,
-            "acl": "PRIVATE"
-        }
-    },
-    "atlassian": {
-        "getAccessibleAtlassianResources": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": true,
-            "read_untrusted_public_data": true,
-            "acl": "PUBLIC"
-        }
-    },
-    "zapier": {
-        "add_tools": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC",
-            "description": "Adds a new tool to the tool registry. Caution: Do not disable it is required for zapier to work properly"
-        },
-        "edit_tools": {
-            "enabled": true,
-            "write_operation": false,
-            "read_private_data": false,
-            "read_untrusted_public_data": false,
-            "acl": "PUBLIC",
-            "description": "Edit your existing MCP provider actions. TODO: Unknown side-effects"
-        }
+    "tools_changed": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
     }
+  },
+  "filesystem": {},
+  "fetch": {},
+  "sqlite": {},
+  "test_server": {
+    "test_server/*": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "PRIVATE"
+    }
+  },
+  "atlassian": {
+    "getAccessibleAtlassianResources": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": true,
+      "acl": "PUBLIC"
+    }
+  },
+  "zapier": {
+    "add_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "edit_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    }
+  }
 }
