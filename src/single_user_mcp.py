@@ -13,15 +13,12 @@ from typing import Any, TypedDict
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
 from fastmcp.server.server import add_resource_prefix, has_resource_prefix
-
-# Low level FastMCP imports
 from fastmcp.tools.tool import Tool
-from fastmcp.tools.tool_transform import (
-    apply_transformations_to_tools,
-)
+from fastmcp.tools.tool_transform import apply_transformations_to_tools
 from loguru import logger as log
 from mcp.server.lowlevel.server import LifespanResultT
 
+from src import events
 from src.config import Config, MCPServerConfig
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
@@ -166,6 +163,14 @@ class SingleUserMCP(FastMCP[Any]):
                 f"❌ Server {prefix} appears to expose no tools, resources, templates, or prompts. "
                 f"This likely indicates a misconfiguration."
             )
+            events.fire_and_forget(
+                {
+                    "type": "mcp_server_warning",
+                    "server": prefix,
+                    "code": "no_objects",
+                    "message": "Server exposes no tools/resources/templates/prompts. Likely misconfiguration.",
+                }
+            )
             return
 
         # Validate and normalize all results
@@ -181,6 +186,14 @@ class SingleUserMCP(FastMCP[Any]):
             log.error(
                 f"❌ Server {prefix} has no tools, resources, templates, or prompts after validation. "
                 f"This likely indicates a misconfiguration."
+            )
+            events.fire_and_forget(
+                {
+                    "type": "mcp_server_warning",
+                    "server": prefix,
+                    "code": "empty_after_validation",
+                    "message": "Server returned no tools/resources/templates/prompts after validation.",
+                }
             )
             return
 
@@ -305,6 +318,14 @@ class SingleUserMCP(FastMCP[Any]):
             # Handle remote servers (with or without OAuth)
             if not remote_url:
                 log.error(f"❌ Remote server {server_name} has no URL")
+                events.fire_and_forget(
+                    {
+                        "type": "mcp_server_warning",
+                        "server": server_name,
+                        "code": "missing_url",
+                        "message": "Remote server has no URL configured.",
+                    }
+                )
                 return
 
             if oauth_info.status == OAuthStatus.AUTHENTICATED:
