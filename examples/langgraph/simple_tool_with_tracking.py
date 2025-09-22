@@ -42,7 +42,11 @@ def run_bind_tools_variant() -> None:
     from langchain_core.tools import tool  # type: ignore[reportMissingTypeStubs]
     from langchain_openai import ChatOpenAI  # type: ignore[reportMissingTypeStubs]
 
-    edison = Edison(api_base=_get_api_base(), api_key=_get_api_key())
+    edison = Edison(
+        api_base=_get_api_base(),
+        api_key=_get_api_key(),
+        permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
+    )
 
     with edison.session() as sid:
 
@@ -66,7 +70,11 @@ def run_bind_tools_variant() -> None:
 
 def run_direct_fallback() -> None:
     """Fallback that doesn't require LangGraph/OpenAI; still exercises tracking."""
-    edison = Edison(api_base=_get_api_base(), api_key=_get_api_key())
+    edison = Edison(
+        api_base=_get_api_base(),
+        api_key=_get_api_key(),
+        permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
+    )
 
     with edison.session() as sid:
 

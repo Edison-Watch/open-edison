@@ -1,0 +1,25 @@
+{
+    "client": {
+        "cleanse_text": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "add": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        },
+        "multiply": {
+            "enabled": true,
+            "write_operation": false,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC"
+        }
+    }
+}

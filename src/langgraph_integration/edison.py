@@ -1,4 +1,5 @@
 import inspect
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -16,7 +17,11 @@ _session_ctx: ContextVar[str | None] = ContextVar("edison_session_id")
 
 class Edison:
     def __init__(
-        self, api_base: str | None = None, api_key: str | None = None, timeout_s: float = 30.0
+        self,
+        api_base: str | None = None,
+        api_key: str | None = None,
+        timeout_s: float = 30.0,
+        permissions_path: str | None = None,
     ):
         # Management API base (FastAPI), not MCP. Default to localhost:3001
         base = api_base or "http://localhost:3001"
@@ -26,6 +31,10 @@ class Edison:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
         # Start background worker for end events
         worker.start(self.api_base, headers)
+        # Load per-session overrides (client.*) from example file, if provided
+        self._overrides: dict[str, Any] | None = (
+            self._load_permissions_overrides(permissions_path) if permissions_path else None
+        )
 
     @contextmanager
     def session(self, session_id: str | None = None):
@@ -77,6 +86,8 @@ class Edison:
                         "args_summary": summarize_args(args, kwargs),
                         "timeout_s": self.timeout_s,
                     }
+                    if self._overrides:
+                        begin["overrides"] = self._overrides
                     call_id = await self._begin(begin)
                     start = time.perf_counter()
                     try:
@@ -116,6 +127,8 @@ class Edison:
                     "args_summary": summarize_args(args, kwargs),
                     "timeout_s": self.timeout_s,
                 }
+                if self._overrides:
+                    begin["overrides"] = self._overrides
                 call_id = self._begin_sync(begin)
                 start = time.perf_counter()
                 try:
@@ -203,3 +216,19 @@ class Edison:
         if data.get("approved") is False:
             raise PermissionError(data.get("error") or "blocked by policy")
         return str(data.get("call_id"))
+
+    def _load_permissions_overrides(self, json_path: str) -> dict[str, Any] | None:
+        try:
+            with open(json_path, encoding="utf-8") as f:
+                data: Any = json.load(f)
+            if not isinstance(data, dict):
+                return None
+            client_section: Any = data.get("client")  # type: ignore[index]
+            if not isinstance(client_section, dict):
+                return None
+            mapped: dict[str, Any] = {}
+            for k, v in client_section.items():  # type: ignore[assignment]
+                mapped[f"client.{k}"] = v
+            return mapped
+        except Exception:
+            return None

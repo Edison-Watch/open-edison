@@ -37,7 +37,11 @@ def _approve_once(session_id: str, tool_name: str) -> None:
 
 
 def main() -> None:
-    edison = Edison(api_base=_get_api_base(), api_key=_get_api_key())
+    edison = Edison(
+        api_base=_get_api_base(),
+        api_key=_get_api_key(),
+        permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
+    )
 
     with edison.session() as sid:
 
