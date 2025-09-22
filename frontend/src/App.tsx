@@ -443,6 +443,21 @@ export function App(): React.JSX.Element {
                 } else if (data?.type === 'mcp_approved_once') {
                     const msg = `Approved ${data.kind} '${data.name}'`
                     setUiToast({ message: msg, type: 'success' })
+                } else if (data?.type === 'mcp_server_warning') {
+                    const server = (data?.server || '').toString()
+                    const code = (data?.code || '').toString()
+                    let detail: string
+                    if (code === 'no_objects' || code === 'empty_after_validation') {
+                        detail = 'Server exposes no tools/resources/templates/prompts. Likely misconfiguration of the server in config.json'
+                    } else if (code === 'missing_url') {
+                        detail = 'Remote server has no URL configured. Check config.json'
+                    } else {
+                        detail = data?.message || `MCP server warning (${code})`
+                    }
+                    const prefix = server ? `Error in setting up '${server}': ` : 'Server setup error: '
+                    const msg = `${prefix}${detail}`
+                    setUiToast({ message: msg, type: 'error' })
+                    // Removed tile highlight dispatch
                 } else if (data?.type === 'server_startup' || data?.type === 'localstorage_reset') {
                     // Reset localStorage when server starts or when explicitly requested
                     try {
@@ -2566,9 +2581,10 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                 s => (s.name || '').trim().toLowerCase() === srvName.toLowerCase()
                             )
                             const enabled = !!existing?.enabled
+
                             // API key defaults removed; manage via config.json env
                             return (
-                                <div key={def.name} className="border border-app-border rounded p-3 bg-app-bg/50">
+                                <div key={def.name} className="rounded p-3 bg-app-bg/50 border border-app-border">
                                     <details open>
                                         <summary className="flex items-start justify-between gap-2 cursor-pointer select-none">
                                             <div>
