@@ -78,3 +78,13 @@ export type OAuthRefreshResponse = {
 }
 
 
+export type ToolSchemaEntry = {
+  input_schema?: unknown | null
+  output_schema?: unknown | null
+}
+
+export type ToolSchemasResponse = {
+  tool_schemas: Record<string, Record<string, ToolSchemaEntry>>
+}
+
+

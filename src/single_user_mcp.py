@@ -66,6 +66,9 @@ class SingleUserMCP(FastMCP[Any]):
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
 
+        # Cache for tool schemas: { server_name: { tool_name: { input_schema, output_schema } } }
+        self._tool_schemas: dict[str, dict[str, dict[str, Any | None]]] = {}
+
         # Add built-in demo tools
         self._setup_demo_tools()
         self._setup_demo_resources()
@@ -322,6 +325,111 @@ class SingleUserMCP(FastMCP[Any]):
             for name, mounted in mounted_servers.items()
         ]
 
+    def get_tool_schemas(self) -> dict[str, dict[str, dict[str, Any | None]]]:
+        """Return a shallow copy of cached tool schemas keyed by server and tool name.
+
+        The mapping shape is:
+          { server_name: { tool_name: { "input_schema": dict|None, "output_schema": dict|None } } }
+        """
+        # Return a shallow copy to avoid accidental external mutation
+        return {
+            srv: {tn: {**schemas} for tn, schemas in tools.items()}
+            for srv, tools in self._tool_schemas.items()
+        }
+
+    def _extract_tool_schemas(self, tool: Any) -> tuple[Any | None, Any | None]:
+        """Best-effort extraction of input/output JSON Schemas from a tool object.
+
+        Handles local FunctionTool and remote ProxyTool cases. Returns (input_schema, output_schema),
+        each as a JSON-serializable dict or None if unavailable.
+        """
+        input_schema: Any | None = None
+        output_schema: Any | None = None
+
+        # 1) Pydantic model-based tools (FunctionTool): try input_model/output_model/result_model
+        try:
+            input_model = getattr(tool, "input_model", None)
+            if input_model is not None:
+                if hasattr(input_model, "model_json_schema"):
+                    input_schema = input_model.model_json_schema()
+                elif hasattr(input_model, "schema"):
+                    input_schema = input_model.schema()  # type: ignore[assignment]
+        except Exception:
+            pass
+
+        try:
+            # Prefer output_model, but some frameworks use result_model
+            output_model = getattr(tool, "output_model", None) or getattr(
+                tool, "result_model", None
+            )
+            if output_model is not None:
+                if hasattr(output_model, "model_json_schema"):
+                    output_schema = output_model.model_json_schema()
+                elif hasattr(output_model, "schema"):
+                    output_schema = output_model.schema()  # type: ignore[assignment]
+        except Exception:
+            pass
+
+        # 2) Proxy/remote tool descriptors may expose dict-like schemas directly
+        try:
+            for attr in ("input_schema", "inputSchema", "parameters_schema", "parameters"):
+                val = getattr(tool, attr, None)
+                if val is not None:
+                    input_schema = val
+                    break
+        except Exception:
+            pass
+
+        try:
+            for attr in ("output_schema", "outputSchema", "result_schema", "response_schema"):
+                val = getattr(tool, attr, None)
+                if val is not None:
+                    output_schema = val
+                    break
+        except Exception:
+            pass
+
+        return input_schema, output_schema
+
+    async def refresh_tool_schemas_cache(self) -> None:
+        """Rebuild the cached tool schemas for all mounted servers.
+
+        This should be called after (re)initialization so that schema data reflects
+        the current set of mounted servers and their tools.
+        """
+        try:
+            tools = await self.list_all_servers_tools_parallel()
+        except Exception:
+            log.exception("Failed to list tools while refreshing schemas cache")
+            self._tool_schemas = {}
+            return
+
+        schemas: dict[str, dict[str, dict[str, Any | None]]] = {}
+        for t in tools:
+            try:
+                key = getattr(t, "key", None)
+                if not key or not isinstance(key, str):
+                    continue
+                # Expect format: "<server>_<tool>" for mounted items. Skip builtins without prefix.
+                if "_" not in key:
+                    continue
+                server_name, tool_name = key.split("_", 1)
+                in_schema, out_schema = self._extract_tool_schemas(t)
+                if server_name not in schemas:
+                    schemas[server_name] = {}
+                schemas[server_name][tool_name] = {
+                    "input_schema": in_schema,
+                    "output_schema": out_schema,
+                }
+            except Exception:
+                # Do not block caching due to a single tool failure
+                log.debug(
+                    f"Skipping schema extraction for tool due to error: {getattr(t, 'key', 'unknown')}"
+                )
+                continue
+
+        self._tool_schemas = schemas
+
     async def mount_server(self, server_name: str) -> bool:
         """
         Mount a server by name if not already mounted.
@@ -522,6 +630,11 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(
             f"Time taken to initialize Single User MCP server: {time.perf_counter() - start_time:.1f} seconds"
         )
+        # Rebuild tool schema cache after initialization/remount
+        try:
+            await self.refresh_tool_schemas_cache()
+        except Exception:
+            log.exception("Failed to refresh tool schemas after initialization")
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

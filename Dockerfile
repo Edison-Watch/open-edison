@@ -48,6 +48,7 @@ COPY README.md LICENSE Makefile ./
 COPY main.py ./
 
 # Install dependencies without enforcing frontend during editable build
+RUN mkdir -p desktop_ext
 RUN uv sync
 
 # Now copy application code and built dashboard

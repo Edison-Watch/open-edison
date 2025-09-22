@@ -2,10 +2,77 @@ import React, { useEffect, useMemo, useState } from 'react'
 import './index.css'
 import Editor from '@monaco-editor/react'
 import { useSessions } from './hooks'
-import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus } from './types'
+import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus, ToolSchemasResponse, ToolSchemaEntry } from './types'
 import { Timeline } from './components/Timeline'
 import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
+
+// Module-level cache of tool schemas, refreshed on reinitialize
+let TOOL_SCHEMAS: Record<string, Record<string, ToolSchemaEntry>> = {}
+
+function _typeTextFromSchema(s: any): string {
+    if (!s || typeof s !== 'object') return 'any'
+    const t = s.type
+    if (Array.isArray(t)) {
+        const noNull = t.filter((x) => x !== 'null')
+        return noNull.length > 0 ? noNull.join('|') : 'any'
+    }
+    if (typeof t === 'string') {
+        if (t === 'array') {
+            const items = s.items || {}
+            return `array<${_typeTextFromSchema(items)}>`
+        }
+        return t
+    }
+    if (s.oneOf && Array.isArray(s.oneOf)) {
+        return `oneOf<${s.oneOf.map((x: any) => _typeTextFromSchema(x)).join('|')}>`
+    }
+    if (s.anyOf && Array.isArray(s.anyOf)) {
+        return `anyOf<${s.anyOf.map((x: any) => _typeTextFromSchema(x)).join('|')}>`
+    }
+    if (s.enum && Array.isArray(s.enum)) {
+        return `enum<${s.enum.map((x: any) => JSON.stringify(x)).join(', ')}>`
+    }
+    return 'any'
+}
+
+function summarizeJsonSchema(schema: unknown): { entries: Array<{ name: string; typeText: string; optional: boolean; description?: string }> } | null {
+    const sch: any = schema as any
+    if (!sch || typeof sch !== 'object') return null
+    // Prefer object with properties
+    const props = sch.properties && typeof sch.properties === 'object' ? sch.properties : null
+    if (!props) return null
+    const required: string[] = Array.isArray(sch.required) ? sch.required : []
+    const entries: Array<{ name: string; typeText: string; optional: boolean; description?: string }> = []
+    for (const [name, propSchema] of Object.entries<any>(props)) {
+        const typeText = _typeTextFromSchema(propSchema)
+        const optional = !required.includes(name)
+        const description: string | undefined = typeof propSchema?.description === 'string' ? propSchema.description : undefined
+        entries.push({ name, typeText, optional, description })
+    }
+    if (entries.length === 0) return null
+    return { entries }
+}
+
+async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<string, Record<string, ToolSchemaEntry>>> {
+    try {
+        const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
+            cache: 'no-cache',
+            headers: { 'Cache-Control': 'no-cache' }
+        })
+        if (!configResponse.ok) return {}
+        const configData = await configResponse.json()
+        const apiKey = configData?.server?.api_key || ''
+        const headers: Record<string, string> = { 'Accept': 'application/json' }
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+        const resp = await fetch('/mcp/tool-schemas', { method: 'GET', headers })
+        if (!resp.ok) return {}
+        const data = await resp.json() as ToolSchemasResponse
+        return data.tool_schemas || {}
+    } catch {
+        return {}
+    }
+}
 
 
 export function App(): React.JSX.Element {
@@ -144,6 +211,7 @@ export function App(): React.JSX.Element {
             setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
         }
     }
+
     const denyItem = async (item: PendingApproval) => {
         try {
             await fetch(`/api/approve_or_deny`, {
@@ -158,6 +226,8 @@ export function App(): React.JSX.Element {
             setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
         }
     }
+
+    // Tool schemas cache lives at module level; no component state needed here
 
     useEffect(() => {
         const checkMcpStatus = async () => {
@@ -240,6 +310,8 @@ export function App(): React.JSX.Element {
         }
 
         checkMcpStatus()
+        // Preload tool schemas on app load (best-effort)
+        fetchToolSchemasExternal(projectRoot).then((schemas) => { TOOL_SCHEMAS = schemas; setReloadCounter((prev: number) => prev + 1) })
         // Check status every 5 seconds
         const interval = setInterval(checkMcpStatus, 5000)
         return () => clearInterval(interval)
@@ -378,13 +450,13 @@ export function App(): React.JSX.Element {
                         localStorage.removeItem('json_editor_needs_permission_update')
                         localStorage.removeItem('json_editor_needs_config_update')
                         localStorage.removeItem('api_key')
-                        
+
                         // Show a toast notification
-                        const message = data?.type === 'server_startup' 
-                            ? 'Server restarted' 
+                        const message = data?.type === 'server_startup'
+                            ? 'Server restarted'
                             : 'localStorage reset'
                         setUiToast({ message, type: 'success' })
-                        
+
                         // Reload the page to ensure clean state
                         setTimeout(() => {
                             window.location.reload()
@@ -598,134 +670,6 @@ export function App(): React.JSX.Element {
     )
 }
 
-// Removed local Timeline (now imported)
-
-/* Removed local SessionTable (now imported)
-function SessionTable({ sessions }: { sessions: Session[] }) {
-    const [openId, setOpenId] = useState<string | null>(null)
-    return (
-        <div className="card">
-            <table className="w-full border-collapse">
-                <thead>
-                    <tr>
-                        <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Date/Time</th>
-                        <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Session</th>
-                        <th colSpan={3} className="border-b border-app-border py-1 text-center text-xs text-app-muted align-bottom">Data access</th>
-                        <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Risk</th>
-                        <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom">Tool calls</th>
-                        <th rowSpan={2} className="border-b border-app-border py-2 text-left align-bottom"></th>
-                    </tr>
-                    <tr>
-                        <th className="border-b border-app-border py-1 text-left">Private</th>
-                        <th className="border-b border-app-border py-1 text-left">Untrusted</th>
-                        <th className="border-b border-app-border py-1 text-left">External</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {sessions.map((s) => {
-                        const isOpen = openId === s.session_id
-                        const firstTs = s.tool_calls[0]?.timestamp
-                        const sec = getSecurityFlags(s.data_access_summary as any)
-                        return (
-                            <React.Fragment key={s.session_id}>
-                                <tr className={isOpen ? 'bg-app-bg/30' : ''}>
-                                    <td className="border-b border-app-border py-2 whitespace-nowrap">{firstTs ? formatDate(firstTs) : 'Unknown'}</td>
-                                    <td className="border-b border-app-border py-2 max-w-[260px]">
-                                        <div className="truncate" title={s.session_id}>{shortenMiddle(s.session_id, 6, 4)}</div>
-                                        <div className="text-xs text-app-muted truncate" title={`Correlation: ${s.correlation_id}`}>{shortenMiddle(s.correlation_id, 4, 4)}</div>
-                                    </td>
-                                    <td className="border-b border-app-border py-2">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${sec.privateData ? 'bg-blue-400' : 'bg-app-border'}`} title={sec.privateData ? 'Private data access' : 'No private data access'} />
-                                    </td>
-                                    <td className="border-b border-app-border py-2">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${sec.untrusted ? 'bg-amber-400' : 'bg-app-border'}`} title={sec.untrusted ? 'Untrusted content exposure' : 'No untrusted exposure'} />
-                                    </td>
-                                    <td className="border-b border-app-border py-2">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${sec.external ? 'bg-rose-400' : 'bg-app-border'}`} title={sec.external ? 'External communication' : 'No external communication'} />
-                                    </td>
-                                    <td className="border-b border-app-border py-2">
-                                        {(() => { const r = riskLevel(sec); return <span className={r.colorClass}>{r.label}</span> })()}
-                                    </td>
-                                    <td className="border-b border-app-border py-2">{s.tool_calls.length}</td>
-                                    <td className="border-b border-app-border py-2">
-                                        <button className="button" onClick={() => setOpenId(isOpen ? null : s.session_id)}>
-                                            {isOpen ? 'Hide' : 'Show'}
-                                        </button>
-                                    </td>
-                                </tr>
-                                {isOpen && (
-                                    <tr>
-                                        <td colSpan={8} className="py-3">
-                                            <div style={{ overflowX: 'auto' }}>
-                                                <div className="mb-3 flex flex-wrap gap-2">
-                                                    <span className="text-xs text-app-muted">Security:</span>
-                                                    {sec.privateData && (
-                                                        <span className="inline-flex items-center text-xs border border-blue-400/30 text-blue-400 rounded-full px-2 py-0.5">Private data access</span>
-                                                    )}
-                                                    {sec.untrusted && (
-                                                        <span className="inline-flex items-center text-xs border border-amber-400/30 text-amber-400 rounded-full px-2 py-0.5">Untrusted content</span>
-                                                    )}
-                                                    {sec.external && (
-                                                        <span className="inline-flex items-center text-xs border border-rose-400/30 text-rose-400 rounded-full px-2 py-0.5">External comms</span>
-                                                    )}
-                                                    {!sec.privateData && !sec.untrusted && !sec.external && (
-                                                        <span className="inline-flex items-center text-xs border border-app-border text-app-muted rounded-full px-2 py-0.5">None</span>
-                                                    )}
-                                                </div>
-                                                {s.tool_calls.length > 0 && (
-                                                    <table className="w-full border-collapse">
-                                                        <thead>
-                                                            <tr>
-                                                                <th className="border-b border-app-border py-2 text-left">Time</th>
-                                                                <th className="border-b border-app-border py-2 text-left">Tool</th>
-                                                                <th className="border-b border-app-border py-2 text-left">Status</th>
-                                                                <th className="border-b border-app-border py-2 text-left">Duration (ms)</th>
-                                                                <th className="border-b border-app-border py-2 text-left min-w-[240px]">Parameters</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {s.tool_calls.map((tc) => (
-                                                                <tr key={tc.id}>
-                                                                    <td className="border-b border-app-border py-2 whitespace-nowrap">{formatDate(tc.timestamp)}</td>
-                                                                    <td className="border-b border-app-border py-2">{tc.tool_name}</td>
-                                                                    <td className="border-b border-app-border py-2">{tc.status ?? 'pending'}</td>
-                                                                    <td className="border-b border-app-border py-2">{tc.duration_ms ?? ''}</td>
-                                                                    <td className="border-b border-app-border py-2 text-xs font-mono">
-                                                                        <code className="text-xs">{JSON.stringify(tc.parameters ?? {}, null, 0)}</code>
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                )}
-
-                                                {Object.keys(s.data_access_summary ?? {}).length > 0 && (
-                                                    <details className="mt-3">
-                                                        <summary className="cursor-pointer">Data access summary</summary>
-                                                        <pre style={{
-                                                            background: 'var(--bg)',
-                                                            border: '1px solid var(--border)',
-                                                            borderRadius: 8,
-                                                            padding: 12,
-                                                            overflow: 'auto',
-                                                            fontSize: 12,
-                                                        }}>{JSON.stringify(s.data_access_summary, null, 2)}</pre>
-                                                    </details>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </React.Fragment>
-                        )
-                    })}
-                </tbody>
-            </table>
-        </div>
-    )
-}
-*/
-
 function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' }) {
     const files = useMemo(() => (
         [
@@ -803,18 +747,18 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                 const configFlags = localStorage.getItem('json_editor_needs_config_update')
                 if (configFlags && content.config) {
                     const flags = JSON.parse(configFlags)
-                    
+
                     if (flags.config) {
                         const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
                             cache: 'no-cache',
                             headers: { 'Cache-Control': 'no-cache' }
                         })
-                        
+
                         if (configResponse.ok) {
                             const savedConfig = await configResponse.json()
                             const currentConfig = JSON.parse(content.config)
                             const configsMatch = JSON.stringify(savedConfig) === JSON.stringify(currentConfig)
-                            
+
                             if (configsMatch) {
                                 // Configurations match, clear the flag
                                 console.log('🔄 Configurations match, clearing config update flag')
@@ -827,7 +771,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
             } catch (e) {
                 console.warn('⚠️ Failed to validate config update flag:', e)
             }
-            
+
             // Refresh the state
             setUpdateFlagsState(getUpdateFlags())
         }
@@ -979,7 +923,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                 setToast({ message: 'Saving changes before updating permissions…', type: 'success' })
                 await saveToDisk()
             }
-            
+
             setToast({ message: 'Updating permissions…', type: 'success' })
             const file = files.find(f => f.key === active)!
             // Clear permission caches after successful save (only for permission files)
@@ -1025,7 +969,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                 setToast({ message: 'Saving changes before updating configuration…', type: 'success' })
                 await saveToDisk()
             }
-            
+
             setToast({ message: 'Updating open-edison configuration', type: 'success' })
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
@@ -1206,7 +1150,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [promptPerms, setPromptPerms] = useState<PromptPerms | null>(null)
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-    const [viewMode, setViewMode] = useState<'section' | 'tiles'>('section')
+    // Single layout mode
     const [needsReinitialize, setNeedsReinitialize] = useState(false)
 
     // OAuth state
@@ -1234,17 +1178,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [backendApiKeyInput, setBackendApiKeyInput] = useState<string>('')
     const [savingBackendKey, setSavingBackendKey] = useState(false)
 
-    // Persist view mode across reloads
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem('cm_view_mode')
-            if (saved === 'section' || saved === 'tiles') setViewMode(saved)
-        } catch { /* ignore */ }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-    useEffect(() => {
-        try { localStorage.setItem('cm_view_mode', viewMode) } catch { /* ignore */ }
-    }, [viewMode])
+    // Removed tiles view; single layout only
     useEffect(() => {
         const k = (config as any)?.['edison-watch-api-key'] || ''
         setApiKeyInput(k)
@@ -1734,9 +1668,14 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             const names = Array.isArray(result.mounted_servers) ? result.mounted_servers.join(', ') : ''
             setToast({ message: `Saved and reinitialized ${count} servers${names ? `: ${names}` : ''}`, type: 'success' })
 
-            // Refresh OAuth status after successful reinitialization
+            // Refresh OAuth status and tool schemas after successful reinitialization
             console.log('🔐 Refreshing OAuth status after reinitialization...')
             await loadOAuthStatus()
+            // Refresh tool schemas (best effort)
+            try {
+                const schemas = await fetchToolSchemasExternal(projectRoot)
+                TOOL_SCHEMAS = schemas
+            } catch { /* ignore */ }
 
             // Reset config update flags in localStorage after manual save/reinitialize
             try {
@@ -2345,12 +2284,55 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                     </select>
                                                 </div>
                                             </div>
-                                            {/* Validate & import permissions if this server has no entries yet */}
-                                            {(!toolPerms?.[groupName] && !resourcePerms?.[groupName] && !promptPerms?.[groupName]) && (
-                                                <div className="mt-2">
-                                                    <button className="button" onClick={() => validateAndImport(groupName)}>Validate & import</button>
-                                                </div>
-                                            )}
+                                            {/* Collapsible schemas for Tools only */}
+                                            {title.toLowerCase().startsWith('tools') && (() => {
+                                                const serverSchemas = TOOL_SCHEMAS[groupName] || {}
+                                                const schemaEntry = serverSchemas[itemName] || null
+                                                const pretty = (obj: unknown) => { try { return JSON.stringify(obj, null, 2) } catch { return String(obj ?? '') } }
+                                                const copy = async (txt: string) => { try { await navigator.clipboard.writeText(txt) } catch { /* ignore */ } }
+                                                return (
+                                                    <>
+                                                        {schemaEntry?.input_schema && (() => {
+                                                            const summary = summarizeJsonSchema(schemaEntry.input_schema)
+                                                            return (
+                                                                <details className="mt-2">
+                                                                    <summary className="text-xs cursor-pointer select-none text-app-muted">Input schema</summary>
+                                                                    <div className="mt-2 relative">
+                                                                        {summary ? (
+                                                                            <div className="space-y-1">
+                                                                                {summary.entries.map((e) => (
+                                                                                    <div key={e.name} className="text-xs border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                                            <span className="font-mono">{e.name}</span>
+                                                                                            <span className="text-[10px] px-1.5 py-0.5 rounded border border-app-border bg-app-bg">{e.typeText}</span>
+                                                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${e.optional ? 'text-app-muted border border-app-border' : 'bg-green-600 text-white'}`}>{e.optional ? 'optional' : 'required'}</span>
+                                                                                        </div>
+                                                                                        {e.description && <div className="mt-1 text-xs text-app-muted">{e.description}</div>}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="relative">
+                                                                                <pre className="text-xs whitespace-pre overflow-auto max-h-48 border border-app-border rounded p-2 bg-app-bg/50">{pretty(schemaEntry.input_schema)}</pre>
+                                                                                <button className="button absolute top-1 right-1 text-[10px] px-2 py-0.5" onClick={() => copy(pretty(schemaEntry.input_schema as any))}>Copy</button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </details>
+                                                            )
+                                                        })()}
+                                                        {schemaEntry?.output_schema && (
+                                                            <details className="mt-2">
+                                                                <summary className="text-xs cursor-pointer select-none text-app-muted">Output schema</summary>
+                                                                <div className="mt-2 relative">
+                                                                    <pre className="text-xs whitespace-pre overflow-auto max-h-48 border border-app-border rounded p-2 bg-app-bg/50">{pretty(schemaEntry.output_schema)}</pre>
+                                                                    <button className="button absolute top-1 right-1 text-[10px] px-2 py-0.5" onClick={() => copy(pretty(schemaEntry.output_schema as any))}>Copy</button>
+                                                                </div>
+                                                            </details>
+                                                        )}
+                                                    </>
+                                                )
+                                            })()}
                                         </div>
                                     ))}
                                 </div>
@@ -2475,6 +2457,55 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                                 </select>
                                             </div>
                                         </div>
+                                        {/* Collapsible schemas for Tools only (non-collapsible inner layout) */}
+                                        {title.toLowerCase().startsWith('tools') && (() => {
+                                            const serverSchemas = TOOL_SCHEMAS[groupName] || {}
+                                            const schemaEntry = serverSchemas[itemName] || null
+                                            const pretty = (obj: unknown) => { try { return JSON.stringify(obj, null, 2) } catch { return String(obj ?? '') } }
+                                            const copy = async (txt: string) => { try { await navigator.clipboard.writeText(txt) } catch { /* ignore */ } }
+                                            return (
+                                                <>
+                                                    {schemaEntry?.input_schema && (() => {
+                                                        const summary = summarizeJsonSchema(schemaEntry.input_schema)
+                                                        return (
+                                                            <details className="mt-2">
+                                                                <summary className="text-xs cursor-pointer select-none text-app-muted">Input schema</summary>
+                                                                <div className="mt-2 relative">
+                                                                    {summary ? (
+                                                                        <div className="space-y-1">
+                                                                            {summary.entries.map((e) => (
+                                                                                <div key={e.name} className="text-xs border border-app-border rounded px-2 py-1 bg-app-bg/50">
+                                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                                        <span className="font-mono">{e.name}</span>
+                                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-app-border bg-app-bg">{e.typeText}</span>
+                                                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${e.optional ? 'text-app-muted border border-app-border' : 'bg-green-600 text-white'}`}>{e.optional ? 'optional' : 'required'}</span>
+                                                                                    </div>
+                                                                                    {e.description && <div className="mt-1 text-xs text-app-muted">{e.description}</div>}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="relative">
+                                                                            <pre className="text-xs whitespace-pre overflow-auto max-h-48 border border-app-border rounded p-2 bg-app-bg/50">{pretty(schemaEntry.input_schema)}</pre>
+                                                                            <button className="button absolute top-1 right-1 text-[10px] px-2 py-0.5" onClick={() => copy(pretty(schemaEntry.input_schema as any))}>Copy</button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </details>
+                                                        )
+                                                    })()}
+                                                    {schemaEntry?.output_schema && (
+                                                        <details className="mt-2">
+                                                            <summary className="text-xs cursor-pointer select-none text-app-muted">Output schema</summary>
+                                                            <div className="mt-2 relative">
+                                                                <pre className="text-xs whitespace-pre overflow-auto max-h-48 border border-app-border rounded p-2 bg-app-bg/50">{pretty(schemaEntry.output_schema)}</pre>
+                                                                <button className="button absolute top-1 right-1 text-[10px] px-2 py-0.5" onClick={() => copy(pretty(schemaEntry.output_schema as any))}>Copy</button>
+                                                            </div>
+                                                        </details>
+                                                    )}
+                                                </>
+                                            )
+                                        })()}
                                     </div>
                                 ))}
                             </div>
@@ -2513,10 +2544,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         <div className="text-xs text-app-muted">Click a tile to edit. Toggle enable and set API keys as needed.</div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
-                            <button className={`px-3 py-1 text-xs ${viewMode === 'section' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => setViewMode('section')}>Section</button>
-                            <button className={`px-3 py-1 text-xs ${viewMode === 'tiles' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => setViewMode('tiles')}>Tiles</button>
-                        </div>
+                        {/* Tiles view removed; single layout */}
                         <button
                             className={`button ${needsReinitialize ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
                             disabled={saving}
@@ -2527,7 +2555,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
                     </div>
                 </div>
-                {viewMode === 'section' ? (
+                {true ? (
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {Array.from(new Set([
                             ...((config.mcp_servers || []).map(s => (s.name || '').trim())),
@@ -2721,7 +2749,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     <>
                         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {defaults.map(def => {
-                                const existing = (config.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === (def.name || '').trim().toLowerCase())
+                                const existing = (config?.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === (def.name || '').trim().toLowerCase())
                                 const enabled = !!existing?.enabled
                                 const selected = selectedServer === def.name
                                 return (
@@ -2743,19 +2771,20 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         {selectedServer && (
                             <div className="mt-4 space-y-3">
                                 {(() => {
-                                    const srv = (config.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === selectedServer.toLowerCase())
+                                    const serverName = selectedServer || ''
+                                    const srv = (config?.mcp_servers || []).find(s => (s.name || '').trim().toLowerCase() === serverName.toLowerCase())
                                     const enabled = !!srv?.enabled
                                     return (
                                         <div className="flex items-center gap-2 text-xs">
                                             <span className="text-app-muted">Server status</span>
-                                            <Toggle checked={enabled} onChange={(v) => toggleServer(selectedServer, v)} />
+                                            <Toggle checked={enabled} onChange={(v) => toggleServer(serverName, v)} />
                                             <span>{enabled ? 'Enabled' : 'Disabled'}</span>
                                         </div>
                                     )
                                 })()}
-                                {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer), setToolPerms, false, false)}
-                                {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer), setResourcePerms, false, false)}
-                                {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer), setPromptPerms, false, false)}
+                                {renderPermGroup(`Tools — ${selectedServer}`, filterPerms(toolPerms, selectedServer || ''), setToolPerms, false, false)}
+                                {renderPermGroup(`Resources — ${selectedServer}`, filterPerms(resourcePerms, selectedServer || ''), setResourcePerms, false, false)}
+                                {renderPermGroup(`Prompts — ${selectedServer}`, filterPerms(promptPerms, selectedServer || ''), setPromptPerms, false, false)}
                             </div>
                         )}
                     </>
@@ -2793,13 +2822,13 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 </div>
             </div>
 
-            {viewMode === 'section' && (
+            {
                 <>
                     {renderPermGroup('Tools', toolPerms, setToolPerms, true, true)}
                     {renderPermGroup('Resources', resourcePerms, setResourcePerms, true, true)}
                     {renderPermGroup('Prompts', promptPerms, setPromptPerms, true, true)}
                 </>
-            )}
+            }
 
             {/* Toast Notification */}
             {toast && (
