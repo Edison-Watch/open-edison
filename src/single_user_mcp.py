@@ -7,7 +7,6 @@ Handles MCP protocol communication with running servers using a unified composit
 
 import asyncio
 import dataclasses
-import hashlib
 import time
 from typing import Any, TypedDict
 
