@@ -39,6 +39,7 @@ from src.config import (
     resolve_json_path_with_bootstrap,
 )
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
+from src.langgraph_integration.tracking_api import get_tracking_router
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
 )
@@ -354,6 +355,13 @@ class OpenEdisonProxy:
             return RedirectResponse(url="/dashboard")
 
         app.add_api_route("/", _root_redirect, methods=["GET"])  # type: ignore[arg-type]
+
+        # Include tracking API (auth-required)
+        try:
+            app.include_router(get_tracking_router(), dependencies=[Depends(self.verify_api_key)])
+            log.info("Tracking API mounted at /track (auth required)")
+        except Exception as e:  # noqa: BLE001
+            log.error(f"Failed to mount tracking API: {e}")
 
         return app
 
