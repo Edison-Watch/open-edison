@@ -6,6 +6,7 @@ Handles MCP protocol communication with running servers using a unified composit
 """
 
 import asyncio
+import hashlib
 import time
 from typing import Any, TypedDict
 
@@ -481,23 +482,37 @@ class SingleUserMCP(FastMCP[Any]):
         start_time = time.perf_counter()
         # Get all enabled servers
         enabled_servers = [s for s in Config().mcp_servers if s.enabled]
-        log.info(
-            f"Found {len(enabled_servers)} enabled servers: {[s.name for s in enabled_servers]}"
-        )
 
         # Figure out which servers are to be unmounted
         enabled_server_names = {s.name for s in enabled_servers}
         servers_to_unmount = [s for s in mounted_servers if s not in enabled_server_names]
 
-        # Figure out which servers are to be mounted
+        # Figure out which servers are to be mounted (new servers)
         servers_to_mount = [s.name for s in enabled_servers if s.name not in mounted_servers]
+
+        # Figure out which servers need to be remounted due to config changes
+        servers_to_remount: list[str] = []
+        for server_config in enabled_servers:
+            if server_config.name in mounted_servers:
+                # Check if the configuration has changed
+                current_config = mounted_servers[server_config.name]["config"]
+                current_hash = self._calculate_config_hash(current_config)
+                new_hash = self._calculate_config_hash(server_config)
+                if current_hash != new_hash:
+                    log.debug(f"🔄 Server {server_config.name} configuration changed, will remount")
+                    servers_to_remount.append(server_config.name)
 
         # Unmount those servers (quick)
         for server_name in servers_to_unmount:
             await self.unmount(server_name)
 
-        # Mount those servers (async gathered bc import does network roundtrip)
-        mount_tasks = [self.mount_server(server_name) for server_name in servers_to_mount]
+        # Unmount servers that need remounting due to config changes
+        for server_name in servers_to_remount:
+            await self.unmount(server_name)
+
+        # Mount new servers and remount changed servers
+        all_servers_to_mount = servers_to_mount + servers_to_remount
+        mount_tasks = [self.mount_server(server_name) for server_name in all_servers_to_mount]
         await asyncio.gather(*mount_tasks)
 
         log.info("✅ Single User MCP server initialized with composite proxy")
@@ -529,6 +544,20 @@ class SingleUserMCP(FastMCP[Any]):
             2: "HIGH",
         }
         return risk_levels.get(risk_count, "CRITICAL")
+
+    def _calculate_config_hash(self, config: MCPServerConfig) -> str:
+        """
+        Calculate a hash of the server configuration (command and args).
+
+        Args:
+            config: The MCP server configuration
+
+        Returns:
+            Hash string representing the configuration
+        """
+        # Create a string representation of the configuration that affects server behavior
+        config_str = f"{config.command}|{'|'.join(config.args)}"
+        return hashlib.sha256(config_str.encode()).hexdigest()
 
     def _setup_demo_tools(self) -> None:
         """Set up built-in demo tools for testing."""

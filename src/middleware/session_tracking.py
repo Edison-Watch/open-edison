@@ -406,15 +406,8 @@ class SessionTrackingMiddleware(Middleware):
                 # Persist immediately so UI shows blocked entry
                 _persist_session_to_db(session)
                 # Return formatted SecurityError message (includes ASCII art)
-                return ToolResult(
-                    content=[
-                        {
-                            "type": "text",
-                            "text": str(e),
-                        }
-                    ],
-                    structured_content=None,
-                )
+                raise ToolError(str(e)) from e
+
             # Approved: apply effects and proceed
             session.data_access_tracker.apply_effects_after_manual_approval(
                 "tool", context.message.name
@@ -437,42 +430,6 @@ class SessionTrackingMiddleware(Middleware):
             _persist_session_to_db(session)
 
             return result
-        except NotFoundError as e:
-            new_tool_call.status = "error"
-            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
-
-            _persist_session_to_db(session)
-
-            # Return concise not-found message similar to ToolError handling
-            log.warning(f"Tool not found: {context.message.name}: {e}")
-            return ToolResult(
-                content=[
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Tool '{context.message.name}' not found. Please check the tool name or mounted servers."
-                        ),
-                    }
-                ],
-                structured_content=None,
-            )
-        except ToolError as e:
-            new_tool_call.status = "error"
-            new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
-
-            _persist_session_to_db(session)
-
-            # Convert tool errors to a concise ToolResult rather than bubbling a stack trace
-            log.warning(f"Tool failed: {context.message.name}: {e}")
-            return ToolResult(
-                content=[
-                    {
-                        "type": "text",
-                        "text": (f"Tool '{context.message.name}' failed: {str(e)}"),
-                    }
-                ],
-                structured_content=None,
-            )
         except Exception:
             new_tool_call.status = "error"
             new_tool_call.duration_ms = (time.perf_counter() - start_time) * 1000.0
