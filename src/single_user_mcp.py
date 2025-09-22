@@ -31,6 +31,45 @@ from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 from src.permissions import Permissions, PermissionsError
 
 
+# ---- Module-level helpers for schema extraction ----
+def _safe_model_json_schema(model: Any) -> Any | None:
+    try:
+        if hasattr(model, "model_json_schema"):
+            return model.model_json_schema()
+        if hasattr(model, "schema"):
+            return model.schema()  # type: ignore[no-any-return]
+    except Exception:
+        return None
+    return None
+
+
+def _first_attr(obj: Any, names: tuple[str, ...]) -> Any | None:
+    for attr in names:
+        try:
+            val = getattr(obj, attr, None)
+        except Exception:
+            val = None
+        if val is not None:
+            return val
+    return None
+
+
+def _extract_schemas_from_models(obj: Any) -> tuple[Any | None, Any | None]:
+    input_model = getattr(obj, "input_model", None)
+    output_model = getattr(obj, "output_model", None) or getattr(obj, "result_model", None)
+    in_schema = _safe_model_json_schema(input_model) if input_model is not None else None
+    out_schema = _safe_model_json_schema(output_model) if output_model is not None else None
+    return in_schema, out_schema
+
+
+def _extract_schemas_from_attrs(obj: Any) -> tuple[Any | None, Any | None]:
+    in_schema = _first_attr(obj, ("input_schema", "inputSchema", "parameters_schema", "parameters"))
+    out_schema = _first_attr(
+        obj, ("output_schema", "outputSchema", "result_schema", "response_schema")
+    )
+    return in_schema, out_schema
+
+
 class MountedServerInfo(TypedDict):
     """Type definition for mounted server information."""
 
@@ -338,58 +377,14 @@ class SingleUserMCP(FastMCP[Any]):
         }
 
     def _extract_tool_schemas(self, tool: Any) -> tuple[Any | None, Any | None]:
-        """Best-effort extraction of input/output JSON Schemas from a tool object.
+        """Best-effort extraction of input/output JSON Schemas from a tool object."""
 
-        Handles local FunctionTool and remote ProxyTool cases. Returns (input_schema, output_schema),
-        each as a JSON-serializable dict or None if unavailable.
-        """
-        input_schema: Any | None = None
-        output_schema: Any | None = None
+        def _coalesce(a: Any | None, b: Any | None) -> Any | None:
+            return a if a is not None else b
 
-        # 1) Pydantic model-based tools (FunctionTool): try input_model/output_model/result_model
-        try:
-            input_model = getattr(tool, "input_model", None)
-            if input_model is not None:
-                if hasattr(input_model, "model_json_schema"):
-                    input_schema = input_model.model_json_schema()
-                elif hasattr(input_model, "schema"):
-                    input_schema = input_model.schema()  # type: ignore[assignment]
-        except Exception:
-            pass
-
-        try:
-            # Prefer output_model, but some frameworks use result_model
-            output_model = getattr(tool, "output_model", None) or getattr(
-                tool, "result_model", None
-            )
-            if output_model is not None:
-                if hasattr(output_model, "model_json_schema"):
-                    output_schema = output_model.model_json_schema()
-                elif hasattr(output_model, "schema"):
-                    output_schema = output_model.schema()  # type: ignore[assignment]
-        except Exception:
-            pass
-
-        # 2) Proxy/remote tool descriptors may expose dict-like schemas directly
-        try:
-            for attr in ("input_schema", "inputSchema", "parameters_schema", "parameters"):
-                val = getattr(tool, attr, None)
-                if val is not None:
-                    input_schema = val
-                    break
-        except Exception:
-            pass
-
-        try:
-            for attr in ("output_schema", "outputSchema", "result_schema", "response_schema"):
-                val = getattr(tool, attr, None)
-                if val is not None:
-                    output_schema = val
-                    break
-        except Exception:
-            pass
-
-        return input_schema, output_schema
+        in1, out1 = _extract_schemas_from_models(tool)
+        in2, out2 = _extract_schemas_from_attrs(tool)
+        return _coalesce(in1, in2), _coalesce(out1, out2)
 
     async def refresh_tool_schemas_cache(self) -> None:
         """Rebuild the cached tool schemas for all mounted servers.
