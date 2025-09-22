@@ -657,11 +657,20 @@ class SingleUserMCP(FastMCP[Any]):
         )
         # Reconcile permissions with mounted servers so JSONs reflect reality
         try:
+            log.debug("Reconciling permissions")
             summary = await self.reconcile_permissions()
             log.info(
-                "🔏 Permissions reconciled: "
-                + f"added_missing={summary.get('added_missing_total', 0)}, "
-                + f"removed_stale={summary.get('removed_stale_total', 0)}"
+                "🔏 Permissions reconciled "
+                + (
+                    f"with {summary.get('added_missing_total', 0)} added items, "
+                    if summary.get("added_missing_total", 0) > 0
+                    else ""
+                )
+                + (
+                    f"and {summary.get('removed_stale_total', 0)} removed items"
+                    if summary.get("removed_stale_total", 0) > 0
+                    else ""
+                )
             )
         except Exception:
             log.exception("Failed to reconcile permissions after initialization")
@@ -699,16 +708,20 @@ class SingleUserMCP(FastMCP[Any]):
         prompts_list: list[Prompt]
         resources_list: list[Resource]
         tools_list, prompts_list, resources_list = await asyncio.gather(*tasks)  # type: ignore
-        assert all(isinstance(i, list) for i in (tools_list, prompts_list, resources_list))  # type: ignore
+        assert isinstance(tools_list, list)
+        assert isinstance(prompts_list, list)
+        assert isinstance(resources_list, list)
 
         # We also remove the builtin tools
-        tools_list = [t for t in tools_list if not t.key.startswith("builtin_")]
-        resources_list = [r for r in resources_list if not r.key.startswith("info://builtin/")]
-        prompts_list = [p for p in prompts_list if not p.key.startswith("builtin_")]
+        tools_list = [t for t in tools_list if not t.key.startswith("builtin_")]  # type: ignore
+        resources_list = [r for r in resources_list if not r.key.startswith("info://builtin/")]  # type: ignore
+        prompts_list = [p for p in prompts_list if not p.key.startswith("builtin_")]  # type: ignore
+
+        # For typing
+        server: str
+        item: str
 
         for tool in tools_list:
-            server: str
-            item: str
             server, item = tool.key.split("_", 1)
             if server in mounted_names:
                 actual_tools_by_server.setdefault(server, set()).add(item)
@@ -716,8 +729,6 @@ class SingleUserMCP(FastMCP[Any]):
                 raise ValueError(f"Server {server} not found in {mounted_names}")
 
         for prompt in prompts_list:
-            server: str
-            item: str
             server, item = prompt.key.split("_", 1)
             if server in mounted_names:
                 actual_prompts_by_server.setdefault(server, set()).add(item)
@@ -726,16 +737,14 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Resources (resource://prefix/path/to/resource)
         for res in resources_list:
-            server: str
-            item: str
-            rkey: str = res.key  # type: ignore
+            rkey: str = str(getattr(res, "key", ""))
             if not rkey.startswith("resource://"):
                 raise ValueError(f"Resource {rkey} does not start with resource://")
             rest: str = rkey[len("resource://") :]
             server = rest.split("/", 1)[0]
             if not server or server not in mounted_names:
                 raise ValueError(f"Server {server} not found in {mounted_names}")
-            item_id: str = str(res.uri)
+            item_id: str = str(getattr(res, "uri", ""))
             if not item_id:
                 raise ValueError(f"Resource {rkey} has no URI")
             actual_resources_by_server.setdefault(server, set()).add(item_id)
@@ -744,29 +753,44 @@ class SingleUserMCP(FastMCP[Any]):
         perms = Permissions()
 
         configured_tools_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        invalid_tools: set[str] = set()
         for flat in (k for k in perms.tool_permissions if k):  # type: ignore
-            server: str
-            item: str
-            if "_" not in str(flat):
+            flat_str = str(flat)
+            if "_" not in flat_str:
+                invalid_tools.add(flat_str)
                 continue
-            s, item = str(flat).split("_", 1)
+            s, item = flat_str.split("_", 1)
+            if not item:
+                invalid_tools.add(flat_str)
+                continue
             if s in mounted_names:
                 configured_tools_by_server.setdefault(s, set()).add(item)
 
         configured_prompts_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        invalid_prompts: set[str] = set()
         for flat in (k for k in perms.prompt_permissions if k):
-            if "_" not in str(flat):
+            flat_str = str(flat)
+            if "_" not in flat_str:
+                invalid_prompts.add(flat_str)
                 continue
-            s, item = str(flat).split("_", 1)
+            s, item = flat_str.split("_", 1)
+            if not item:
+                invalid_prompts.add(flat_str)
+                continue
             if s in mounted_names:
                 configured_prompts_by_server.setdefault(s, set()).add(item)
 
         configured_resources_by_server: dict[str, set[str]] = {s: set() for s in mounted_names}
+        invalid_resources: set[str] = set()
         for flat in (k for k in perms.resource_permissions if k):
-            if "_" not in str(flat):
+            flat_str = str(flat)
+            if "_" not in flat_str:
+                invalid_resources.add(flat_str)
                 continue
-            s = flat.split("://", 1)[1].split("/", 1)[0]
-            item = flat.split("://", 1)[1].split("/", 1)[1]
+            s, item = flat_str.split("_", 1)
+            if not item or "://" not in item:
+                invalid_resources.add(flat_str)
+                continue
             if s in mounted_names:
                 configured_resources_by_server.setdefault(s, set()).add(item)
 
@@ -792,6 +816,13 @@ class SingleUserMCP(FastMCP[Any]):
                     stale_tools[s] = st
                     for item in sorted(st):
                         log.error(f"Permission configured for non-existent tool: {s}_{item}")
+            # Mark malformed tool keys as stale
+            for flat_str in invalid_tools:
+                if flat_str.startswith(f"{s}_"):
+                    stale_tools[s] = stale_tools.get(s, set()) | {flat_str.split("_", 1)[1]}
+                    log.warning(
+                        f"Permission configured for non-existent tool: {s}_{flat_str.split('_', 1)[1]}"
+                    )
 
             # Prompts
             if actual_prompts_by_server.get(s):
@@ -806,6 +837,13 @@ class SingleUserMCP(FastMCP[Any]):
                     stale_prompts[s] = st
                     for item in sorted(st):
                         log.error(f"Permission configured for non-existent prompt: {s}_{item}")
+            # Mark malformed prompt keys as stale
+            for flat_str in invalid_prompts:
+                if flat_str.startswith(f"{s}_"):
+                    stale_prompts[s] = stale_prompts.get(s, set()) | {flat_str.split("_", 1)[1]}
+                    log.warning(
+                        f"Permission configured for non-existent prompt: {s}_{flat_str.split('_', 1)[1]}"
+                    )
 
             # Resources
             if actual_resources_by_server.get(s):
@@ -820,6 +858,13 @@ class SingleUserMCP(FastMCP[Any]):
                     stale_resources[s] = st
                     for item in sorted(st):
                         log.error(f"Permission configured for non-existent resource: {s}_{item}")
+            # Mark malformed resource keys as stale
+            for flat_str in invalid_resources:
+                if flat_str.startswith(f"{s}_"):
+                    stale_resources[s] = stale_resources.get(s, set()) | {flat_str.split("_", 1)[1]}
+                    log.warning(
+                        f"Permission configured for non-existent resource: {s}_{flat_str.split('_', 1)[1]}"
+                    )
 
         # ---- Apply fixes to JSON files ----
         cfg_dir = get_config_dir()
@@ -844,9 +889,8 @@ class SingleUserMCP(FastMCP[Any]):
         # Tools file
         tools_path, tools_json = load_nested("tool_permissions.json")
         for s, items in missing_tools.items():
-            section = tools_json.get(s)
-            if not isinstance(section, dict):
-                section = {}
+            section = tools_json.get(s, {})
+            assert isinstance(section, dict), "Section is not a dict"
             for item in sorted(items):
                 if item not in section:
                     # Use current runtime default to mirror behavior for unknowns
@@ -872,9 +916,8 @@ class SingleUserMCP(FastMCP[Any]):
         # Resources file
         resources_path, resources_json = load_nested("resource_permissions.json")
         for s, items in missing_resources.items():
-            section = resources_json.get(s)
-            if not isinstance(section, dict):
-                section = {}
+            section = resources_json.get(s, {})
+            assert isinstance(section, dict), "Section is not a dict"
             for item in sorted(items):
                 if item not in section:
                     section[item] = {
@@ -886,21 +929,20 @@ class SingleUserMCP(FastMCP[Any]):
                     added_missing_total += 1
             resources_json[s] = section
         for s, items in stale_resources.items():
-            section = resources_json.get(s)
-            if isinstance(section, dict):
-                for item in sorted(items):
-                    if item in section:
-                        del section[item]
-                        removed_stale_total += 1
-                resources_json[s] = section
+            section = resources_json.get(s, {})
+            assert isinstance(section, dict), "Section is not a dict"
+            for item in sorted(items):
+                if item in section:
+                    del section[item]
+                    removed_stale_total += 1
+            resources_json[s] = section
         save_nested(resources_path, resources_json)
 
         # Prompts file
         prompts_path, prompts_json = load_nested("prompt_permissions.json")
         for s, items in missing_prompts.items():
-            section = prompts_json.get(s)
-            if not isinstance(section, dict):
-                section = {}
+            section = prompts_json.get(s, {})
+            assert isinstance(section, dict), "Section is not a dict"
             for item in sorted(items):
                 if item not in section:
                     section[item] = {
@@ -913,22 +955,22 @@ class SingleUserMCP(FastMCP[Any]):
                     added_missing_total += 1
             prompts_json[s] = section
         for s, items in stale_prompts.items():
-            section = prompts_json.get(s)
-            if isinstance(section, dict):
-                for item in sorted(items):
-                    if item in section:
-                        del section[item]
-                        removed_stale_total += 1
-                prompts_json[s] = section
+            section = prompts_json.get(s, {})
+            assert isinstance(section, dict), "Section is not a dict"
+            for item in sorted(items):
+                if item in section:
+                    del section[item]
+                    removed_stale_total += 1
+            prompts_json[s] = section
         save_nested(prompts_path, prompts_json)
 
         # Invalidate caches so subsequent reads see the updates
-        try:
-            clear_json_file_cache()
-            Permissions.clear_permissions_file_cache()
-        except Exception:
-            log.debug("Failed to clear permissions/config JSON caches after reconciliation")
+        clear_json_file_cache()
+        Permissions.clear_permissions_file_cache()
 
+        log.debug(
+            f"Done with reconciliation, found {added_missing_total} added items and {removed_stale_total} removed items"
+        )
         return {
             "added_missing_total": added_missing_total,
             "removed_stale_total": removed_stale_total,
