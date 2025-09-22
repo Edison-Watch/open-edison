@@ -6,6 +6,7 @@ Handles MCP protocol communication with running servers using a unified composit
 """
 
 import asyncio
+import dataclasses
 import hashlib
 import time
 from typing import Any, TypedDict
@@ -496,9 +497,12 @@ class SingleUserMCP(FastMCP[Any]):
             if server_config.name in mounted_servers:
                 # Check if the configuration has changed
                 current_config = mounted_servers[server_config.name]["config"]
-                current_hash = self._calculate_config_hash(current_config)
-                new_hash = self._calculate_config_hash(server_config)
-                if current_hash != new_hash:
+                # This is a copy
+                cmp_cur_config: MCPServerConfig = dataclasses.replace(  # type: ignore
+                    current_config,  # type: ignore
+                    enabled=server_config.enabled,  # type: ignore
+                )
+                if cmp_cur_config != server_config:
                     log.debug(f"🔄 Server {server_config.name} configuration changed, will remount")
                     servers_to_remount.append(server_config.name)
 
