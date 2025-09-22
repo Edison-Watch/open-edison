@@ -19,8 +19,11 @@ _lock = asyncio.Lock()
 # Track if server startup event has been sent
 _startup_event_sent = False
 
-# One-time approvals for (session_id, kind, name)
+# One-time approvals/denials for (session_id, kind, name)
+# Event objects are loop-bound; to support cross-loop signaling (FastAPI vs MCP),
+# we also track a simple decision map that waiters poll frequently.
 _approvals: dict[str, asyncio.Event] = {}
+_decisions: dict[str, bool] = {}
 _approvals_lock = asyncio.Lock()
 
 
@@ -142,26 +145,68 @@ async def approve_once(session_id: str, kind: str, name: str) -> None:
         if ev is None:
             ev = asyncio.Event()
             _approvals[key] = ev
+        # Record decision for cross-loop polling
+        _decisions[key] = True
         ev.set()
 
 
-async def wait_for_approval(session_id: str, kind: str, name: str, timeout_s: float = 30.0) -> bool:
-    """Wait up to timeout for approval. Consumes the approval if granted."""
+async def deny_once(session_id: str, kind: str, name: str) -> None:
+    """Deny a single pending operation for this session/kind/name.
+
+    This unblocks exactly one waiter if present and records a negative decision.
+    """
     key = _approval_key(session_id, kind, name)
     async with _approvals_lock:
         ev = _approvals.get(key)
         if ev is None:
             ev = asyncio.Event()
             _approvals[key] = ev
-    try:
-        await asyncio.wait_for(ev.wait(), timeout=timeout_s)
-        return True
-    except TimeoutError:
-        return False
-    finally:
-        # Consume the event so it does not auto-approve future waits
+        # Record decision for cross-loop polling
+        _decisions[key] = False
+        ev.set()
+
+
+async def wait_for_approval(session_id: str, kind: str, name: str, timeout_s: float = 30.0) -> bool:
+    """Wait up to timeout for a decision and return it (True=approved, False=denied).
+
+    Uses a short-tick loop to support cross-loop decisions recorded via _decisions.
+    Always consumes the decision/event to avoid auto-applying to future waits.
+    """
+    key = _approval_key(session_id, kind, name)
+    tick_s = 0.1
+    # Ensure an Event exists for same-loop fast-path wakeups
+    async with _approvals_lock:
+        ev = _approvals.get(key)
+        if ev is None:
+            ev = asyncio.Event()
+            _approvals[key] = ev
+
+    # Poll for decision with small sleeps; also allow same-loop ev wakeups
+    remaining = timeout_s
+    while remaining > 0:
+        # Check if a decision has been recorded (approve or deny)
         async with _approvals_lock:
-            _approvals.pop(key, None)
+            if key in _decisions:
+                decision = bool(_decisions.pop(key))
+                _approvals.pop(key, None)
+                return decision
+            # Capture current event reference for this loop iteration
+            ev_ref = _approvals.get(key)
+
+        # Wait on the event for up to tick_s (fast-path when running in same loop)
+        try:
+            await asyncio.wait_for(ev_ref.wait(), timeout=tick_s)  # type: ignore[union-attr]
+        except TimeoutError:
+            # No wakeup this tick; fall through to check decision again
+            pass
+        finally:
+            remaining -= tick_s
+
+    # Timeout reached without decision
+    async with _approvals_lock:
+        _approvals.pop(key, None)
+        _decisions.pop(key, None)
+    return False
 
 
 async def sse_stream(queue: asyncio.Queue[str]) -> AsyncIterator[bytes]:
