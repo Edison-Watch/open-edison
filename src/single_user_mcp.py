@@ -31,6 +31,45 @@ from src.oauth_manager import OAuthManager, OAuthStatus, get_oauth_manager
 from src.permissions import Permissions, PermissionsError
 
 
+# ---- Module-level helpers for schema extraction ----
+def _safe_model_json_schema(model: Any) -> Any | None:
+    try:
+        if hasattr(model, "model_json_schema"):
+            return model.model_json_schema()
+        if hasattr(model, "schema"):
+            return model.schema()  # type: ignore[no-any-return]
+    except Exception:
+        return None
+    return None
+
+
+def _first_attr(obj: Any, names: tuple[str, ...]) -> Any | None:
+    for attr in names:
+        try:
+            val = getattr(obj, attr, None)
+        except Exception:
+            val = None
+        if val is not None:
+            return val
+    return None
+
+
+def _extract_schemas_from_models(obj: Any) -> tuple[Any | None, Any | None]:
+    input_model = getattr(obj, "input_model", None)
+    output_model = getattr(obj, "output_model", None) or getattr(obj, "result_model", None)
+    in_schema = _safe_model_json_schema(input_model) if input_model is not None else None
+    out_schema = _safe_model_json_schema(output_model) if output_model is not None else None
+    return in_schema, out_schema
+
+
+def _extract_schemas_from_attrs(obj: Any) -> tuple[Any | None, Any | None]:
+    in_schema = _first_attr(obj, ("input_schema", "inputSchema", "parameters_schema", "parameters"))
+    out_schema = _first_attr(
+        obj, ("output_schema", "outputSchema", "result_schema", "response_schema")
+    )
+    return in_schema, out_schema
+
+
 class MountedServerInfo(TypedDict):
     """Type definition for mounted server information."""
 
@@ -65,6 +104,9 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
+
+        # Cache for tool schemas: { server_name: { tool_name: { input_schema, output_schema } } }
+        self._tool_schemas: dict[str, dict[str, dict[str, Any | None]]] = {}
 
         # Add built-in demo tools
         self._setup_demo_tools()
@@ -322,6 +364,67 @@ class SingleUserMCP(FastMCP[Any]):
             for name, mounted in mounted_servers.items()
         ]
 
+    def get_tool_schemas(self) -> dict[str, dict[str, dict[str, Any | None]]]:
+        """Return a shallow copy of cached tool schemas keyed by server and tool name.
+
+        The mapping shape is:
+          { server_name: { tool_name: { "input_schema": dict|None, "output_schema": dict|None } } }
+        """
+        # Return a shallow copy to avoid accidental external mutation
+        return {
+            srv: {tn: {**schemas} for tn, schemas in tools.items()}
+            for srv, tools in self._tool_schemas.items()
+        }
+
+    def _extract_tool_schemas(self, tool: Any) -> tuple[Any | None, Any | None]:
+        """Best-effort extraction of input/output JSON Schemas from a tool object."""
+
+        def _coalesce(a: Any | None, b: Any | None) -> Any | None:
+            return a if a is not None else b
+
+        in1, out1 = _extract_schemas_from_models(tool)
+        in2, out2 = _extract_schemas_from_attrs(tool)
+        return _coalesce(in1, in2), _coalesce(out1, out2)
+
+    async def refresh_tool_schemas_cache(self) -> None:
+        """Rebuild the cached tool schemas for all mounted servers.
+
+        This should be called after (re)initialization so that schema data reflects
+        the current set of mounted servers and their tools.
+        """
+        try:
+            tools = await self.list_all_servers_tools_parallel()
+        except Exception:
+            log.exception("Failed to list tools while refreshing schemas cache")
+            self._tool_schemas = {}
+            return
+
+        schemas: dict[str, dict[str, dict[str, Any | None]]] = {}
+        for t in tools:
+            try:
+                key = getattr(t, "key", None)
+                if not key or not isinstance(key, str):
+                    continue
+                # Expect format: "<server>_<tool>" for mounted items. Skip builtins without prefix.
+                if "_" not in key:
+                    continue
+                server_name, tool_name = key.split("_", 1)
+                in_schema, out_schema = self._extract_tool_schemas(t)
+                if server_name not in schemas:
+                    schemas[server_name] = {}
+                schemas[server_name][tool_name] = {
+                    "input_schema": in_schema,
+                    "output_schema": out_schema,
+                }
+            except Exception:
+                # Do not block caching due to a single tool failure
+                log.debug(
+                    f"Skipping schema extraction for tool due to error: {getattr(t, 'key', 'unknown')}"
+                )
+                continue
+
+        self._tool_schemas = schemas
+
     async def mount_server(self, server_name: str) -> bool:
         """
         Mount a server by name if not already mounted.
@@ -522,6 +625,11 @@ class SingleUserMCP(FastMCP[Any]):
         log.debug(
             f"Time taken to initialize Single User MCP server: {time.perf_counter() - start_time:.1f} seconds"
         )
+        # Rebuild tool schema cache after initialization/remount
+        try:
+            await self.refresh_tool_schemas_cache()
+        except Exception:
+            log.exception("Failed to refresh tool schemas after initialization")
 
     def _calculate_risk_level(self, trifecta: dict[str, bool]) -> str:
         """

@@ -508,6 +508,12 @@ class OpenEdisonProxy:
             dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
+            "/mcp/tool-schemas",
+            self.get_tool_schemas,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
+        app.add_api_route(
             "/mcp/mount/{server_name}",
             self.mount_mcp_server,
             methods=["POST"],
@@ -636,6 +642,7 @@ class OpenEdisonProxy:
                 "status": "ok",
                 "total_final_mounted": len(mounted),
                 "mounted_servers": names,
+                "schemas_refreshed": True,
             }
 
         except Exception as e:
@@ -644,6 +651,27 @@ class OpenEdisonProxy:
                 status_code=500,
                 detail=f"Failed to reinitialize MCP servers: {str(e)}",
             ) from e
+
+    async def get_tool_schemas(self) -> dict[str, Any]:
+        """Return cached tool schemas keyed by server and tool name.
+
+        Response shape:
+        {
+          "tool_schemas": {
+              "server": {
+                  "tool": { "input_schema": dict|None, "output_schema": dict|None },
+                  ...
+              },
+              ...
+          }
+        }
+        """
+        try:
+            schemas = self.single_user_mcp.get_tool_schemas()
+            return {"tool_schemas": schemas}
+        except Exception as e:  # noqa: BLE001
+            log.error(f"Failed to get tool schemas: {e}")
+            raise HTTPException(status_code=500, detail="Failed to get tool schemas") from e
 
     async def mount_mcp_server(self, server_name: str) -> dict[str, Any]:
         """Mount a single MCP server by name (auth required)."""
