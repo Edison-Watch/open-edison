@@ -6,7 +6,7 @@ Handles MCP protocol communication with running servers using a unified composit
 """
 
 import asyncio
-import hashlib
+import dataclasses
 import time
 from typing import Any, TypedDict
 
@@ -496,9 +496,12 @@ class SingleUserMCP(FastMCP[Any]):
             if server_config.name in mounted_servers:
                 # Check if the configuration has changed
                 current_config = mounted_servers[server_config.name]["config"]
-                current_hash = self._calculate_config_hash(current_config)
-                new_hash = self._calculate_config_hash(server_config)
-                if current_hash != new_hash:
+                # This is a copy
+                cmp_cur_config: MCPServerConfig = dataclasses.replace(  # type: ignore
+                    current_config,  # type: ignore
+                    enabled=server_config.enabled,  # type: ignore
+                )
+                if cmp_cur_config != server_config:
                     log.debug(f"🔄 Server {server_config.name} configuration changed, will remount")
                     servers_to_remount.append(server_config.name)
 
@@ -544,20 +547,6 @@ class SingleUserMCP(FastMCP[Any]):
             2: "HIGH",
         }
         return risk_levels.get(risk_count, "CRITICAL")
-
-    def _calculate_config_hash(self, config: MCPServerConfig) -> str:
-        """
-        Calculate a hash of the server configuration (command and args).
-
-        Args:
-            config: The MCP server configuration
-
-        Returns:
-            Hash string representing the configuration
-        """
-        # Create a string representation of the configuration that affects server behavior
-        config_str = f"{config.command}|{'|'.join(config.args)}"
-        return hashlib.sha256(config_str.encode()).hexdigest()
 
     def _setup_demo_tools(self) -> None:
         """Set up built-in demo tools for testing."""

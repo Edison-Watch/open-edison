@@ -62,7 +62,8 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@supabase/mcp-server-supabase@latest"
+                "@supabase/mcp-server-supabase@latest",
+                "--project-ref=<project-ref>"
             ],
             "env": {
                 "SUPABASE_ACCESS_TOKEN": "your-supabase-access-token"
@@ -81,25 +82,12 @@
             "enabled": false
         },
         {
-            "name": "figma",
-            "command": "npx",
-            "args": [
-                "-y",
-                "figma-developer-mcp",
-                "--stdio"
-            ],
-            "env": {
-                "FIGMA_API_KEY": "your-figma-api-key"
-            },
-            "enabled": false
-        },
-        {
             "name": "figma_dev_mode",
             "command": "npx",
             "args": [
                 "-y",
                 "mcp-remote",
-                "http://127.0.0.1:3845/sse"
+                "http://127.0.0.1:3845/mcp"
             ],
             "env": {},
             "enabled": false
@@ -109,23 +97,9 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@automatalabs/mcp-server-playwright"
+                "@playwright/mcp@latest"
             ],
             "env": {},
-            "enabled": false
-        },
-        {
-            "name": "google_drive",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-gdrive"
-            ],
-            "env": {
-                "GOOGLE_CLIENT_ID": "your-client-id",
-                "GOOGLE_CLIENT_SECRET": "your-client-secret",
-                "GOOGLE_REFRESH_TOKEN": "your-refresh-token"
-            },
             "enabled": false
         },
         {
