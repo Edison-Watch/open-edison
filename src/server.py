@@ -326,28 +326,6 @@ class OpenEdisonProxy:
 
         app.add_api_route("/api/approve", _approve, methods=["POST"])  # type: ignore[arg-type]
 
-        # Deny endpoint to explicitly reject an item once
-        async def _deny(body: _ApprovalBody) -> dict[str, Any]:  # type: ignore[override]
-            try:
-                await events.deny_once(body.session_id, body.kind, body.name)
-                # Notify listeners (best effort)
-                events.fire_and_forget(
-                    {
-                        "type": "mcp_denied_once",
-                        "session_id": body.session_id,
-                        "kind": body.kind,
-                        "name": body.name,
-                    }
-                )
-                return {"status": "ok"}
-            except HTTPException:
-                raise
-            except Exception as e:  # noqa: BLE001
-                log.error(f"Denial failed: {e}")
-                raise HTTPException(status_code=500, detail="Failed to deny item") from e
-
-        app.add_api_route("/api/deny", _deny, methods=["POST"])  # type: ignore[arg-type]
-
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
             target = rest.strip("/")

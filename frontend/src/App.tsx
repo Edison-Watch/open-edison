@@ -144,19 +144,8 @@ export function App(): React.JSX.Element {
             setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
         }
     }
-    const denyItem = async (item: PendingApproval) => {
-        try {
-            await fetch(`/api/deny`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name })
-            })
-            setUiToast({ message: `Denied ${item.kind} '${item.name}'`, type: 'success' })
-        } catch {
-            setUiToast({ message: `Failed to deny ${item.kind} '${item.name}'`, type: 'error' })
-        } finally {
-            setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
-        }
+    const denyItem = (item: PendingApproval) => {
+        setPendingApprovals(prev => prev.filter(p => p.id !== item.id))
     }
 
     useEffect(() => {
@@ -378,13 +367,13 @@ export function App(): React.JSX.Element {
                         localStorage.removeItem('json_editor_needs_permission_update')
                         localStorage.removeItem('json_editor_needs_config_update')
                         localStorage.removeItem('api_key')
-
+                        
                         // Show a toast notification
-                        const message = data?.type === 'server_startup'
-                            ? 'Server restarted'
+                        const message = data?.type === 'server_startup' 
+                            ? 'Server restarted' 
                             : 'localStorage reset'
                         setUiToast({ message, type: 'success' })
-
+                        
                         // Reload the page to ensure clean state
                         setTimeout(() => {
                             window.location.reload()
@@ -944,7 +933,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                 setToast({ message: 'Saving changes before updating permissions…', type: 'success' })
                 await saveToDisk()
             }
-
+            
             setToast({ message: 'Updating permissions…', type: 'success' })
             const file = files.find(f => f.key === active)!
             // Clear permission caches after successful save (only for permission files)
@@ -990,7 +979,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                 setToast({ message: 'Saving changes before updating configuration…', type: 'success' })
                 await saveToDisk()
             }
-
+            
             setToast({ message: 'Updating open-edison configuration', type: 'success' })
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()

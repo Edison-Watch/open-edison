@@ -57,18 +57,7 @@ self.addEventListener('notificationclick', (event) => {
         }
 
         if (action === 'deny') {
-            const body = {
-                session_id: payload.sessionId,
-                kind: payload.kind,
-                name: payload.name
-            };
-            event.waitUntil(
-                fetch('/api/deny', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                }).catch(() => { })
-            );
+            // No-op; could notify page if desired
             return;
         }
 
