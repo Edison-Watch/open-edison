@@ -40,9 +40,173 @@
       "acl": "PUBLIC"
     }
   },
-  "filesystem": {},
-  "fetch": {},
-  "sqlite": {},
+  "filesystem": {
+    "create_directory": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "directory_tree": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "edit_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "get_file_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_allowed_directories": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_directory": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_directory_with_sizes": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "move_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_media_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_multiple_files": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_text_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "search_files": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "write_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    }
+  },
+  "fetch": {
+    "fetch": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    }
+  },
+  "sqlite": {
+    "create_record": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "db_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "delete_records": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "get_table_schema": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_tables": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "query": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_records": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "update_records": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    }
+  },
   "test_server": {
     "test_server/*": {
       "enabled": true,
