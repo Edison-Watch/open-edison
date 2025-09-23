@@ -386,6 +386,18 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 	@cp -R frontend/dist/* src/frontend_dist/
 	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
 
+.PHONY: gui_dev gui_pack frontend_pack
+gui_dev: ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
+	@cd gui && npm run dev
+
+gui_pack: ## Build the desktop app for distribution
+	@echo "$(YELLOW)🏗️  Building desktop app (Electron) for distribution...$(RESET)"
+	@cd gui && npm install && npm run build
+	@echo "$(YELLOW)📦 Building Electron distribution packages...$(RESET)"
+	@cd gui && npm run dist
+	@echo "$(GREEN)✅ Desktop app packaged to gui/release/.$(RESET)"
+
 ########################################################
 # Package Build (Python wheel + packaged frontend)
 ########################################################
