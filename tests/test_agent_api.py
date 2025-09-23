@@ -25,7 +25,7 @@ class TestAgentAPI(TestTemplate):
             "/agent/begin",
             json={
                 "session_id": "sess-test-abc",
-                "name": "multiply",
+                "name": "agent_multiply",
                 "args_summary": '{"args":[6,7]}',
                 "timeout_s": 0.1,
             },

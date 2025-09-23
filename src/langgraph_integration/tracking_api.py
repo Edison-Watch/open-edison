@@ -30,9 +30,7 @@ from src.telemetry import record_tool_call  # type: ignore[reportMissingImports]
 
 class _BeginBody(BaseModel):
     session_id: str | None = Field(default=None, description="Session id; server will mint if None")
-    name: str = Field(
-        ..., description="Function/tool name (will be treated as client.<name> if no prefix)"
-    )
+    name: str = Field(..., description="Function/tool name (treated as agent_<name> if no prefix)")
     args_summary: str | None = Field(default=None, description="Redacted/summary of args")
     timeout_s: float | None = Field(30.0, description="Approval wait timeout in seconds")
     overrides: dict[str, dict[str, Any]] | None = Field(
@@ -62,9 +60,9 @@ class _EndResponse(BaseModel):
 
 
 def _normalize_name(raw: str) -> str:
-    if raw.startswith("agent."):
+    if raw.startswith("agent_"):
         return raw
-    return f"agent.{raw}"
+    return f"agent_{raw}"
 
 
 agent_router = APIRouter(prefix="/agent", tags=["agent"])

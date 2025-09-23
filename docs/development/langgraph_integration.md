@@ -19,7 +19,7 @@ All routes are API-key protected (same dependency as other management endpoints)
 
 - Begin request: `{ session_id?: str, name: str, args_summary?: str, timeout_s?: float }`
   - `session_id` may be omitted; the server will mint one if not provided.
-  - Name is normalized to `agent.<function_name>`.
+- Name is normalized to `agent_<function_name>`.
   - Response: `{ ok: bool, session_id: str, call_id: str|null, approved: bool|null, error: str|null }`.
 - End request: `{ session_id: str, call_id: str, status: "ok"|"error", duration_ms?: float, result_summary?: str }`.
 
@@ -37,8 +37,8 @@ All routes are API-key protected (same dependency as other management endpoints)
 
 ### Permissions and Naming
 
-- Tracked functions are treated as tools named `agent.<function_name>`.
-- Configure permissions under an `agent` section in `tool_permissions.json`.
+- Tracked functions are treated as tools named `agent_<function_name>`.
+- Configure permissions under an `agent` section in `tool_permissions.json` using the same `agent_<name>` keys.
 - Server reuses `DataAccessTracker` for lethal-trifecta and other policy checks.
 
 ### Data Model and Persistence

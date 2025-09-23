@@ -34,10 +34,6 @@ class Edison:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
         # Start background worker for end events
         worker.start(self.api_base, headers)
-        # Load per-session overrides (client.*) from example file, if provided
-        self._overrides: dict[str, Any] | None = (
-            self._load_permissions_overrides(permissions_path) if permissions_path else None
-        )
         # Best-effort healthchecks
         if healthcheck:
             try:
@@ -106,6 +102,11 @@ class Edison:
             except Exception as e:  # noqa: BLE001
                 log.error(f"Failed to call /mcp/status: {e}")
 
+    @staticmethod
+    def _normalize_agent_name(raw: str | None) -> str:
+        base = raw or "tracked"
+        return base if base.startswith("agent_") else f"agent_{base}"
+
     def track(
         self, session_id: str | None = None, name: str | None = None
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -118,7 +119,7 @@ class Edison:
         """
 
         def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            fname = name or getattr(func, "__name__", "tracked")
+            fname = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
 
             if inspect.iscoroutinefunction(func):
 
@@ -133,8 +134,6 @@ class Edison:
                         "args_summary": self._build_args_preview(args, kwargs),
                         "timeout_s": self.timeout_s,
                     }
-                    if self._overrides:
-                        begin["overrides"] = self._overrides
                     call_id = await self._begin(begin)
                     start = time.perf_counter()
                     try:
@@ -176,8 +175,6 @@ class Edison:
                     "args_summary": self._build_args_preview(args, kwargs),
                     "timeout_s": self.timeout_s,
                 }
-                if self._overrides:
-                    begin["overrides"] = self._overrides
                 call_id = self._begin_sync(begin)
                 start = time.perf_counter()
                 try:
@@ -280,22 +277,6 @@ class Edison:
         if data.get("approved") is False:
             raise PermissionError(data.get("error") or "blocked by policy")
         return str(data.get("call_id"))
-
-    def _load_permissions_overrides(self, json_path: str) -> dict[str, Any] | None:
-        try:
-            with open(json_path, encoding="utf-8") as f:
-                data: Any = json.load(f)
-            if not isinstance(data, dict):
-                return None
-            client_section: Any = data.get("client")  # type: ignore[index]
-            if not isinstance(client_section, dict):
-                return None
-            mapped: dict[str, Any] = {}
-            for k, v in client_section.items():  # type: ignore[assignment]
-                mapped[f"client.{k}"] = v
-            return mapped
-        except Exception:
-            return None
 
     def _build_args_preview(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
         """Serialize args/kwargs to a JSON-ish string capped at 1,000,000 chars.
