@@ -29,6 +29,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [logLevel, setLogLevel] = useState('info');
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -73,7 +74,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   // Add log entry
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev, { timestamp, message }]);
+    setLogs(prev => [...prev, { timestamp, message, type: 'stderr' }]);
   };
 
   // Server control functions
@@ -139,9 +140,32 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     addLog('Import functionality not yet implemented');
   };
 
-  // Initialize and periodic status check
+  // Check for Open Edison installation
+  const checkOpenEdisonInstall = async () => {
+    try {
+      if (window.electronAPI) {
+        const isInstalled = await window.electronAPI.getInstallationStatus();
+        
+        if (!isInstalled) {
+          setShowWelcome(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking Open Edison installation:', error);
+      setShowWelcome(true);
+    }
+  };
+
+  // Check Open Edison installation first, then start server monitoring
   useEffect(() => {
-    checkServerStatus();
+    const initializeApp = async () => {
+      // Check installation first
+      await checkOpenEdisonInstall();
+      // Then start server status monitoring
+      checkServerStatus();
+    };
+    
+    initializeApp();
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -204,6 +228,79 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
+      {/* Welcome Modal */}
+      {showWelcome && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
+            textAlign: 'center'
+          }}>
+            <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
+              Welcome to Open Edison! 🎉
+            </h2>
+            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              This is your first time using Open Edison! We've automatically created your application 
+              support folder and initialized it with default configuration files.
+            </p>
+            <p style={{ color: '#7f8c8d', marginBottom: '2rem', lineHeight: '1.6' }}>
+              You can now import server configuration files using the "Import Servers" section below, 
+              or configure your MCP servers directly in the application support folder.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowWelcome(false)}
+                style={{
+                  background: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                Get Started
+              </button>
+              <button
+                onClick={() => {
+                  setShowWelcome(false);
+                  // Scroll to import section
+                  document.getElementById('import-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                style={{
+                  background: '#9b59b6',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                Import Files
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Server Control Section */}
       <div style={{
         background: 'white',
@@ -346,7 +443,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       </div>
 
       {/* Import Servers Section */}
-      <div style={{
+      <div id="import-section" style={{
         background: 'white',
         borderRadius: '8px',
         padding: '2rem',

@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('backend-log')
   },
   
+  // Application support folder methods
+  getApplicationSupportPath: () => ipcRenderer.invoke('get-application-support-path'),
+  checkPathExists: (path: string) => ipcRenderer.invoke('check-path-exists', path),
+  getInstallationStatus: () => ipcRenderer.invoke('get-installation-status'),
+  
   // Platform info
   platform: process.platform,
   
@@ -31,6 +36,9 @@ declare global {
       restartBackend: () => Promise<boolean>
       onBackendLog: (callback: (log: { type: string; message: string }) => void) => void
       removeBackendLogListener: () => void
+      getApplicationSupportPath: () => Promise<string>
+      checkPathExists: (path: string) => Promise<boolean>
+      getInstallationStatus: () => Promise<boolean>
       platform: string
       appVersion: string
     }

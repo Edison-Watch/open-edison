@@ -45,22 +45,23 @@ async function startBackend(): Promise<void> {
     
     // Try different methods to start the backend
     const startMethods = [
-      // Method 0: Try uv open-edison (recommended for uv users)
-      () => spawn('uv', ['run', 'open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 1: Try uvx open-edison (recommended for uv users)
-      () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 1: Try uvx open-edison (recommended for uv users)
-      () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 2: Try open-edison command (if installed globally)
-      () => spawn('open-edison', [], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 3: Try python -m src.cli
-      () => spawn('python', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 4: Try python3 -m src.cli
-      () => spawn('python3', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 5: Try direct python execution
-      () => spawn('python', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // Method 6: Try python3 direct execution
-      () => spawn('python3', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true })
+      () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 0: Try uv open-edison (recommended for uv users)
+      // () => spawn('uv', ['run', 'open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 1: Try uvx open-edison (recommended for uv users)
+      // () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 1: Try uvx open-edison (recommended for uv users)
+      // () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 2: Try open-edison command (if installed globally)
+      // () => spawn('open-edison', [], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 3: Try python -m src.cli
+      // () => spawn('python', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 4: Try python3 -m src.cli
+      // () => spawn('python3', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 5: Try direct python execution
+      // () => spawn('python', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // // Method 6: Try python3 direct execution
+      // () => spawn('python3', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true })
     ]
 
     let methodIndex = 0
@@ -73,7 +74,7 @@ async function startBackend(): Promise<void> {
         
         backendProcess.stdout?.on('data', (data) => {
           const message = data.toString()
-          console.log('_OpenEdison:_', message)
+          console.log('Api-OpenEdison:', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stdout', message })
@@ -82,7 +83,7 @@ async function startBackend(): Promise<void> {
 
         backendProcess.stderr?.on('data', (data) => {
           const message = data.toString()
-          console.log('OpenEdison:', message)
+          console.log('Mcp-OpenEdison:', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stderr', message })
@@ -286,6 +287,16 @@ app.whenReady().then(() => {
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
   console.log('Electron app ready, starting services...')
+
+  // // Add a small delay to ensure any previous processes have finished
+  // await new Promise(resolve => setTimeout(resolve, 500))
+  
+  isOpenEdisonInstalled = await checkOpenEdisonInstall()
+  if (!isOpenEdisonInstalled) {
+    console.log('Open Edison not installed, will show welcome message in UI')
+  } else {
+    console.log('Open Edison installation found')
+  }
   
   // Start backend server
   await startBackend()
@@ -365,4 +376,138 @@ ipcMain.handle('restart-backend', async () => {
   }
   await startBackend()
   return isBackendRunning
+})
+
+// Get application support path
+ipcMain.handle('get-application-support-path', async () => {
+  const appSupportPath = app.getPath('userData')
+  return appSupportPath
+})
+
+// Check if path exists
+ipcMain.handle('check-path-exists', async (event, path: string) => {
+  try {
+    const fs = require('fs')
+    return fs.existsSync(path)
+  } catch (error) {
+    console.error('Error checking path existence:', error)
+    return false
+  }
+})
+
+// Check Open Edison installation and initialize if needed
+const checkOpenEdisonInstall = async (): Promise<boolean> => {
+  try {
+    const appSupportPath = app.getPath('userData')
+    console.log('App support path:', appSupportPath)
+    const fs = require('fs')
+    const path = require('path')
+    
+    const folderExists = fs.existsSync(appSupportPath)
+    
+    if (!folderExists) {
+      console.log('Open Edison installation not found, initializing...')
+      
+      // Create the application support directory
+      fs.mkdirSync(appSupportPath, { recursive: true })
+      console.log(`Created application support directory: ${appSupportPath}`)
+      
+      // Copy initial JSON files from the app bundle
+      await copyInitialConfigFiles(appSupportPath)
+      
+      console.log('Open Edison installation initialized with default configuration')
+      return false // Still show welcome message for first-time setup
+    }
+    
+    console.log('Open Edison installation found')
+    return true
+  } catch (error) {
+    console.error('Error checking Open Edison installation:', error)
+    return false
+  }
+}
+
+// Copy initial configuration files to the installation directory
+const copyInitialConfigFiles = async (targetDir: string) => {
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    
+    // List of initial configuration files to copy
+    const configFiles = [
+      'config.json',
+      'tool_permissions.json', 
+      'resource_permissions.json',
+      'prompt_permissions.json'
+    ]
+    
+    // Get the app's resource path (where the bundled files are)
+    const appPath = process.resourcesPath || __dirname
+    const sourceDir = path.join(appPath, '..', '..') // Go up to the app bundle root
+    
+    for (const fileName of configFiles) {
+      const sourcePath = path.join(sourceDir, fileName)
+      const targetPath = path.join(targetDir, fileName)
+      
+      try {
+        // Check if source file exists
+        if (fs.existsSync(sourcePath)) {
+          fs.copyFileSync(sourcePath, targetPath)
+          console.log(`Copied ${fileName} to ${targetPath}`)
+        } else {
+          // If file doesn't exist in bundle, create a default one
+          await createDefaultConfigFile(fileName, targetPath)
+        }
+      } catch (copyError) {
+        console.warn(`Failed to copy ${fileName}: ${copyError}`)
+        // Create default file as fallback
+        await createDefaultConfigFile(fileName, targetPath)
+      }
+    }
+  } catch (error) {
+    console.error('Error copying initial configuration files:', error)
+  }
+}
+
+// Create default configuration files
+const createDefaultConfigFile = async (fileName: string, targetPath: string) => {
+  const fs = require('fs')
+  
+  let defaultContent = '{}'
+  
+  // Set default content based on file type
+  switch (fileName) {
+    case 'config.json':
+      defaultContent = JSON.stringify({
+        "server": {
+          "host": "localhost",
+          "port": 3000
+        },
+        "mcp_servers": {},
+        "logging": {
+          "level": "INFO"
+        }
+      }, null, 2)
+      break
+    case 'tool_permissions.json':
+    case 'resource_permissions.json':
+    case 'prompt_permissions.json':
+      defaultContent = JSON.stringify({}, null, 2)
+      break
+  }
+  
+  try {
+    fs.writeFileSync(targetPath, defaultContent)
+    console.log(`Created default ${fileName} at ${targetPath}`)
+  } catch (error) {
+    console.error(`Failed to create default ${fileName}: ${error}`)
+  }
+}
+
+// Store installation status globally
+let isOpenEdisonInstalled = false
+
+// IPC handler to get installation status
+ipcMain.handle('get-installation-status', async () => {
+  return isOpenEdisonInstalled
 })

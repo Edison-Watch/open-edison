@@ -1,5 +1,5 @@
 {
-  "name": "open-edison-desktop",
+  "name": "Open Edison",
   "version": "0.1.0",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
@@ -34,7 +34,7 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.edison.watch.open-edison",
+    "appId": "com.edison.watch.open-edison-desktop",
     "productName": "Open Edison",
     "directories": {
       "output": "release"
