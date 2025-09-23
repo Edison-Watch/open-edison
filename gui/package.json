@@ -1,0 +1,58 @@
+{
+  "name": "Open Edison",
+  "version": "0.1.0",
+  "description": "Open Edison Desktop Application",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "build": "vite build && node scripts/fix-asset-paths.js",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"vite build --watch\" \"wait-on dist/main.js && electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --publish=never",
+    "start": "NODE_ENV=production electron .",
+    "first-install": "electron . --force-first-install",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "author": "Open Edison Team",
+  "dependencies": {
+    "electron": "^32.3.3",
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "@types/electron": "^1.4.38",
+    "@types/node": "^20.19.17",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron-builder": "^24.9.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.edison.watch.open-edison-desktop",
+    "productName": "Open Edison",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

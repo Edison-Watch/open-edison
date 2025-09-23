@@ -219,7 +219,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             f"Skipping verification for remote server '{server.name}' pending OAuth",
                             style="bold fg:ansiyellow",
                         )
-                        return True
+                        return False  # OAuth required but not available = verification failed
 
         # Remote servers
         if server.is_remote_server():
@@ -274,8 +274,10 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             server.name, remote_url
                         )
                     # If OAuth is needed or we are already authenticated, don't initiate browser flows here
-                    if oauth_info.status in (OAuthStatus.NEEDS_AUTH, OAuthStatus.AUTHENTICATED):
+                    if oauth_info.status == OAuthStatus.AUTHENTICATED:
                         return True
+                    if oauth_info.status == OAuthStatus.NEEDS_AUTH:
+                        return False  # OAuth needed but not available = verification failed
                     # NOT_REQUIRED: quick unauthenticated ping
                     # TODO: In debug mode, do not suppress child process output.
                     questionary.print(
@@ -341,7 +343,15 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             async def _list_tools_only() -> Any:
                 return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-            await asyncio.wait_for(_list_tools_only(), timeout=30.0)
+            result = await asyncio.wait_for(_list_tools_only(), timeout=30.0)
+
+            # Check if empty results and treat as failed
+            if not result or len(result) == 0:
+                log.debug(
+                    f"Remote server {server.name} returned empty results, treating as failed"
+                )
+                return False
+
             return True
         except Exception as e:
             questionary.print(
@@ -355,7 +365,21 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                         result = obj.shutdown()  # type: ignore[attr-defined]
                         await asyncio.wait_for(result, timeout=2.0)  # type: ignore[func-returns-value]
 
-    return asyncio.run(_verify_async())
+    try:
+        # Try to get the current event loop
+        asyncio.get_running_loop()
+        # If we're already in an event loop, we need to run the coroutine differently
+        import concurrent.futures
+
+        def run_in_thread():
+            return asyncio.run(_verify_async())
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(_verify_async())
 
 
 def authorize_server_oauth(server: MCPServerConfig) -> bool:
@@ -430,7 +454,21 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
             print("[OAuth] Authorization failed:", e)
             return False
 
-    return asyncio.run(_authorize_async())
+    try:
+        # Try to get the current event loop
+        asyncio.get_running_loop()
+        # If we're already in an event loop, we need to run the coroutine differently
+        import concurrent.futures
+
+        def run_in_thread():
+            return asyncio.run(_authorize_async())
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(_authorize_async())
 
 
 def has_oauth_tokens(server: MCPServerConfig) -> bool:
