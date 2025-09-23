@@ -10,7 +10,6 @@ Notes:
 - Requires the OE management API running on http://localhost:3001 (default)
 """
 
-import os
 import re
 import urllib.parse
 
@@ -65,10 +64,7 @@ def _http_fetch(url: str, max_chars: int = 4000) -> str:
 
 
 def build_agent() -> None:
-    edison = Edison(
-        api_base=(os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")).rstrip("/"),
-        api_key=os.getenv("OPEN_EDISON_API_KEY", "dev-api-key-change-me"),
-    )
+    edison = Edison()
 
     @tool  # type: ignore[misc]
     @edison.track()  # type: ignore[misc]

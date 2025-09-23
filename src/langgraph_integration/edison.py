@@ -1,5 +1,6 @@
 import inspect
 import json
+import os
 import time
 import uuid
 from collections.abc import Callable
@@ -27,9 +28,11 @@ class Edison:
         healthcheck_timeout_s: float = 3.0,
     ):
         # Management API base (FastAPI), not MCP. Default to localhost:3001
-        base = api_base or "http://localhost:3001"
+        base = api_base or os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")
         self.api_base: str = base.rstrip("/")
-        self.api_key: str | None = api_key
+        self.api_key: str | None = api_key or os.getenv(
+            "OPEN_EDISON_API_KEY", "dev-api-key-change-me"
+        )
         self.timeout_s: float = timeout_s
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
         # Start background worker for end events

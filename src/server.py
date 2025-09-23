@@ -357,11 +357,8 @@ class OpenEdisonProxy:
         app.add_api_route("/", _root_redirect, methods=["GET"])  # type: ignore[arg-type]
 
         # Include agent API alias for decorator/bgw use (auth-required)
-        try:
-            app.include_router(get_agent_router(), dependencies=[Depends(self.verify_api_key)])
-            log.info("Agent API mounted at /agent (auth required)")
-        except Exception as e:  # noqa: BLE001
-            log.error(f"Failed to mount agent API: {e}")
+        app.include_router(get_agent_router(), dependencies=[Depends(self.verify_api_key)])
+        log.info("Agent API mounted at /agent (auth required)")
 
         return app
 
