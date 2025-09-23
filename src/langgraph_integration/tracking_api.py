@@ -24,7 +24,6 @@ from src.middleware.session_tracking import (  # type: ignore[reportMissingImpor
     create_db_session,
     get_session_from_db,
 )
-from src.permissions import ToolPermission  # type: ignore[reportMissingImports]
 from src.telemetry import record_tool_call  # type: ignore[reportMissingImports]
 
 
@@ -33,10 +32,6 @@ class _BeginBody(BaseModel):
     name: str = Field(..., description="Function/tool name (treated as agent_<name> if no prefix)")
     args_summary: str | None = Field(default=None, description="Redacted/summary of args")
     timeout_s: float | None = Field(30.0, description="Approval wait timeout in seconds")
-    overrides: dict[str, dict[str, Any]] | None = Field(
-        default=None,
-        description="Optional per-session tool overrides under exact tool names (e.g., client.multiply)",
-    )
 
 
 class _BeginResponse(BaseModel):
@@ -90,16 +85,6 @@ async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
             timestamp=datetime.now(),
         )
         session.tool_calls.append(pending_call)
-
-        # Apply optional per-session overrides once
-        if body.overrides:
-            try:
-                assert session.data_access_tracker is not None
-                session.data_access_tracker.tool_overrides = {
-                    k: ToolPermission(**v) for k, v in body.overrides.items()
-                }
-            except Exception:
-                pass
 
         # Apply gating. If blocked, persist blocked and return approved=False
         try:

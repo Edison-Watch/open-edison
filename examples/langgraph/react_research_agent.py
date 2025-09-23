@@ -82,6 +82,8 @@ def build_agent() -> None:
         api_base=(os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")).rstrip("/"),
         api_key=os.getenv("OPEN_EDISON_API_KEY", "dev-api-key-change-me"),
     )
+    # Ensure a single session for the whole run
+    Edison.set_session_id("react_research_demo_session")
 
     @tool  # type: ignore[misc]
     @edison.track()  # type: ignore[misc]

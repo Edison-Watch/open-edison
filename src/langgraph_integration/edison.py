@@ -3,9 +3,10 @@ import json
 import time
 import uuid
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import suppress
 from contextvars import ContextVar
 from functools import wraps
+from threading import Thread
 from typing import Any
 
 import httpx
@@ -22,7 +23,6 @@ class Edison:
         api_base: str | None = None,
         api_key: str | None = None,
         timeout_s: float = 30.0,
-        permissions_path: str | None = None,
         healthcheck: bool = True,
         healthcheck_timeout_s: float = 3.0,
     ):
@@ -34,33 +34,29 @@ class Edison:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
         # Start background worker for end events
         worker.start(self.api_base, headers)
-        # Best-effort healthchecks
+        # Best-effort healthchecks (background)
         if healthcheck:
-            try:
-                self._healthcheck(healthcheck_timeout_s)
-            except Exception as e:  # noqa: BLE001
-                log.debug(f"Edison healthcheck raised: {e}")
+            Thread(target=self._healthcheck, args=(healthcheck_timeout_s,), daemon=True).start()
 
-    @contextmanager
-    def session(self, session_id: str | None = None):
-        """Set the session context. Auto-mint UUIDv4 if None."""
-        sid = session_id or str(uuid.uuid4())
-        token = _session_ctx.set(sid)
-        try:
-            yield sid
-        finally:
-            _session_ctx.reset(token)
+    @classmethod
+    def get_session_id(cls) -> str:
+        current = _session_ctx.get(None)
+        if current:
+            return current
+        sid = str(uuid.uuid4())
+        _session_ctx.set(sid)
+        return sid
 
     def _resolve_session_id(self, override: str | None) -> str:
         if override:
             return override
-        current = _session_ctx.get(None)
-        if current:
-            return current
-        # Auto-mint and set contextvar for continuity
-        sid = str(uuid.uuid4())
-        _session_ctx.set(sid)
-        return sid
+        return Edison.get_session_id()
+
+    @classmethod  # noqa
+    def set_session_id(cls, session_id: str) -> str:
+        """Set the ContextVar for the current context."""
+        _session_ctx.set(session_id)
+        return session_id
 
     def _http_headers(self) -> dict[str, str] | None:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
@@ -74,33 +70,29 @@ class Edison:
         """
         try:
             resp = httpx.get(f"{self.api_base}/health", timeout=timeout_s)
-            if resp.status_code >= 400:
-                log.error(
-                    f"Open Edison management API unreachable or unhealthy at {self.api_base} (/health HTTP {resp.status_code})"
-                )
-            else:
+            if resp.status_code < 400:
                 log.debug("Edison /health OK")
+            else:
+                log.error(f"/health HTTP {resp.status_code}")
         except Exception as e:  # noqa: BLE001
-            log.error(f"Failed to reach Open Edison at {self.api_base}/health: {e}")
+            log.error(f"/health error: {e}")
 
-        # Validate API key if present
-        if self.api_key:
-            try:
-                r2 = httpx.get(
-                    f"{self.api_base}/mcp/status",
-                    headers=self._http_headers(),
-                    timeout=timeout_s,
-                )
-                if r2.status_code == 401:
-                    log.error("Open Edison API key invalid (401 on /mcp/status)")
-                elif r2.status_code >= 400:
-                    log.error(
-                        f"Open Edison /mcp/status returned HTTP {r2.status_code}: {r2.text[:200]}"
-                    )
-                else:
-                    log.debug("Edison /mcp/status OK (auth)")
-            except Exception as e:  # noqa: BLE001
-                log.error(f"Failed to call /mcp/status: {e}")
+        if not self.api_key:
+            log.warning("Edison /mcp/status skipped (no API key)")
+        try:
+            r2 = httpx.get(
+                f"{self.api_base}/mcp/status",
+                headers=self._http_headers(),
+                timeout=timeout_s,
+            )
+            if r2.status_code == 401:
+                log.error("/mcp/status 401 (invalid API key)")
+            elif r2.status_code >= 400:
+                log.error(f"/mcp/status HTTP {r2.status_code}")
+            else:
+                log.debug("Edison /mcp/status OK (auth)")
+        except Exception:  # noqa: BLE001
+            log.exception("/mcp/status error")
 
     @staticmethod
     def _normalize_agent_name(raw: str | None) -> str:
@@ -135,31 +127,27 @@ class Edison:
                         "timeout_s": self.timeout_s,
                     }
                     call_id = await self._begin(begin)
+
+                    def _send_end(status: str, duration_ms: float, summary: str) -> None:
+                        worker.enqueue_end(
+                            {
+                                "session_id": sid,
+                                "call_id": call_id,
+                                "status": status,
+                                "duration_ms": duration_ms,
+                                "result_summary": summary,
+                            }
+                        )
+
                     start = time.perf_counter()
                     try:
                         result = await func(*args, **kwargs)
                         duration = (time.perf_counter() - start) * 1000.0
-                        worker.enqueue_end(
-                            {
-                                "session_id": sid,
-                                "call_id": call_id,
-                                "status": "ok",
-                                "duration_ms": duration,
-                                "result_summary": self._build_result_preview(result),
-                            }
-                        )
+                        _send_end("ok", duration, self._build_result_preview(result))
                         return result
                     except Exception as e:  # noqa: BLE001
                         duration = (time.perf_counter() - start) * 1000.0
-                        worker.enqueue_end(
-                            {
-                                "session_id": sid,
-                                "call_id": call_id,
-                                "status": "error",
-                                "duration_ms": duration,
-                                "result_summary": str(e),
-                            }
-                        )
+                        _send_end("error", duration, str(e))
                         raise
 
                 return _aw
@@ -176,31 +164,27 @@ class Edison:
                     "timeout_s": self.timeout_s,
                 }
                 call_id = self._begin_sync(begin)
+
+                def _send_end(status: str, duration_ms: float, summary: str) -> None:
+                    worker.enqueue_end(
+                        {
+                            "session_id": sid,
+                            "call_id": call_id,
+                            "status": status,
+                            "duration_ms": duration_ms,
+                            "result_summary": summary,
+                        }
+                    )
+
                 start = time.perf_counter()
                 try:
                     result = func(*args, **kwargs)
                     duration = (time.perf_counter() - start) * 1000.0
-                    worker.enqueue_end(
-                        {
-                            "session_id": sid,
-                            "call_id": call_id,
-                            "status": "ok",
-                            "duration_ms": duration,
-                            "result_summary": self._build_result_preview(result),
-                        }
-                    )
+                    _send_end("ok", duration, self._build_result_preview(result))
                     return result
                 except Exception as e:  # noqa: BLE001
                     duration = (time.perf_counter() - start) * 1000.0
-                    worker.enqueue_end(
-                        {
-                            "session_id": sid,
-                            "call_id": call_id,
-                            "status": "error",
-                            "duration_ms": duration,
-                            "result_summary": str(e),
-                        }
-                    )
+                    _send_end("error", duration, str(e))
                     raise
 
             return _sw
@@ -215,28 +199,18 @@ class Edison:
         """
         wrapped: list[Any] = []
         for t in tools:
-            try:
-                # Plain callables (not LangChain tools)
-                if callable(t) and not hasattr(t, "invoke"):
-                    wrapped.append(self.track()(t))
-                    continue
+            # Plain callables (not LangChain tools)
+            if callable(t) and not hasattr(t, "invoke"):
+                wrapped.append(self.track()(t))
+                continue
 
-                # Runnable tools (LangChain BaseTool/StructuredTool et al.)
-                try:
-                    invoke = t.invoke  # type: ignore[attr-defined]
-                except Exception:
-                    wrapped.append(t)
-                    continue
-                if callable(invoke):
-                    try:
-                        # Some tool types (e.g., pydantic models) are immutable; fall back if assignment fails
-                        t.invoke = self.track()(invoke)  # type: ignore[attr-defined]
-                        wrapped.append(t)
-                    except Exception:
-                        wrapped.append(t)
-                else:
-                    wrapped.append(t)
-            except Exception:
+            # Runnable tools (LangChain BaseTool/StructuredTool et al.)
+            invoke = getattr(t, "invoke", None)
+            if callable(invoke):
+                with suppress(Exception):
+                    t.invoke = self.track()(invoke)  # type: ignore[attr-defined]
+                wrapped.append(t)
+            else:
                 wrapped.append(t)
         return wrapped
 

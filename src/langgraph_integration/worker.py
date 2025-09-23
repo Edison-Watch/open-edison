@@ -1,3 +1,4 @@
+import contextvars
 import threading
 import time
 from contextlib import suppress
@@ -22,7 +23,11 @@ def start(api_base: str, headers: dict[str, str] | None) -> None:
     _api_base = api_base.rstrip("/")
     _headers = headers
     _stop_flag.clear()
-    _worker_thread = threading.Thread(target=_run, name="edison-tracking-worker", daemon=True)
+    # Capture current ContextVars so the worker inherits the session context
+    ctx = contextvars.copy_context()
+    _worker_thread = threading.Thread(
+        target=lambda: ctx.run(_run), name="edison-tracking-worker", daemon=True
+    )
     _worker_thread.start()
 
 
