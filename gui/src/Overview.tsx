@@ -8,19 +8,27 @@ interface ServerStatus {
 interface LogEntry {
   timestamp: string;
   message: string;
+  type: string;
 }
 
-const Overview: React.FC = () => {
+interface OverviewProps {
+  logs: LogEntry[];
+  setLogs: React.Dispatch<React.SetStateAction<LogEntry[]>>;
+  logsExpanded: boolean;
+  setLogsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLogsExpanded }) => {
   const [serverApiStatus, setServerApiStatus] = useState<ServerStatus>({ running: false, port: 3001 });
   const [serverMcpStatus, setServerMcpStatus] = useState<ServerStatus>({ running: false, port: 3000 });
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [showStdout, setShowStdout] = useState(false);
+  const [showApi, setShowApi] = useState(false);
+  const [showMcp, setShowMcp] = useState(true);
   const [verboseLogs, setVerboseLogs] = useState(false);
   const [logLevel, setLogLevel] = useState('info');
   const [showDate, setShowDate] = useState(false);
-  const [showOrigin, setShowOrigin] = useState(false);
+  const [showStream, setShowStream] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -138,47 +146,61 @@ const Overview: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for backend logs
+  // Listen for API logs when showApi is enabled
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.onBackendLog((log) => {
-        // Only show stderr by default, or stdout if checkbox is checked
-        if (log.type === 'stderr' || (log.type === 'stdout' && showStdout)) {
+    if (showApi && window.electronAPI) {
+      const handleApiLog = (log: any) => {
+        if (log.type === 'stdout') {
           const timestamp = new Date().toLocaleTimeString();
-          let message = log.message.trim();
-          
-          // Apply verbose logs setting
-          if (verboseLogs && log.type === 'stderr') {
-            // Keep the full message with timestamp and level info
-            message = message;
-          } else if (log.type === 'stderr') {
-            // Extract just the message part (after the last "-")
-            const lastDashIndex = message.lastIndexOf(' - ');
-            if (lastDashIndex !== -1) {
-              message = message.substring(lastDashIndex + 3);
-            }
-          }
-          
-          // Add origin prefix if enabled
-          if (showOrigin) {
-            message = `[${log.type.toUpperCase()}] ${message}`;
-          }
-          
           const logEntry = {
-            timestamp: showDate ? timestamp : '',
-            message
+            timestamp,
+            message: log.message.trim(),
+            type: 'api'
           };
           setLogs(prev => [...prev, logEntry]);
         }
-      });
-    }
+      };
 
-    return () => {
-      if (window.electronAPI) {
-        window.electronAPI.removeBackendLogListener();
+      window.electronAPI.onBackendLog(handleApiLog);
+      
+      return () => {
+        if (window.electronAPI) {
+          window.electronAPI.removeBackendLogListener();
+        }
+      };
+    }
+  }, [showApi, setLogs]);
+
+  // Filter and format logs based on current settings
+  const filteredLogs = logs.filter(log => {
+    // Show MCP logs (stderr) by default, API logs (stdout) when showApi is checked
+    return (log.type === 'stderr' && showMcp) || (log.type === 'api' && showApi);
+  }).map(log => {
+    let message = log.message;
+    
+    // Apply verbose logs setting
+    if (verboseLogs && log.message.includes(' - ')) {
+      // Keep the full message with timestamp and level info
+      message = log.message;
+    } else if (log.message.includes(' - ')) {
+      // Extract just the message part (after the last "-")
+      const lastDashIndex = log.message.lastIndexOf(' - ');
+      if (lastDashIndex !== -1) {
+        message = log.message.substring(lastDashIndex + 3);
       }
+    }
+    
+    // Add stream prefix if enabled
+    if (showStream) {
+      const streamType = log.type === 'stderr' ? 'MCP' : 'API';
+      message = `[${streamType}] ${message}`;
+    }
+    
+    return {
+      timestamp: showDate ? log.timestamp : '',
+      message
     };
-  }, [showStdout, verboseLogs, showDate, showOrigin]);
+  });
 
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
@@ -217,18 +239,44 @@ const Overview: React.FC = () => {
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
-            Server Logs
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
+              Server Logs
+            </h2>
+            <button
+              onClick={() => setLogsExpanded(!logsExpanded)}
+              style={{
+                background: logsExpanded ? '#e74c3c' : '#3498db',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              {logsExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
               <input
                 type="checkbox"
-                checked={showStdout}
-                onChange={(e) => setShowStdout(e.target.checked)}
+                checked={showMcp}
+                onChange={(e) => setShowMcp(e.target.checked)}
                 style={{ marginRight: '0.5rem' }}
               />
-              Show stdout
+              Show MCP
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+              <input
+                type="checkbox"
+                checked={showApi}
+                onChange={(e) => setShowApi(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Show API
             </label>
             <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
               <input
@@ -251,11 +299,11 @@ const Overview: React.FC = () => {
             <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
               <input
                 type="checkbox"
-                checked={showOrigin}
-                onChange={(e) => setShowOrigin(e.target.checked)}
+                checked={showStream}
+                onChange={(e) => setShowStream(e.target.checked)}
                 style={{ marginRight: '0.5rem' }}
               />
-              Show origin
+              Show stream
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <label style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Level:</label>
@@ -285,12 +333,14 @@ const Overview: React.FC = () => {
           borderRadius: '6px',
           fontFamily: "'Monaco', 'Menlo', monospace",
           fontSize: '0.875rem',
-          maxHeight: '200px',
+          maxHeight: logsExpanded ? 'calc(100vh - 200px)' : '200px',
+          height: logsExpanded ? 'calc(100vh - 200px)' : 'auto',
           overflowY: 'auto',
-          whiteSpace: 'pre-wrap'
+          whiteSpace: 'pre-wrap',
+          transition: 'all 0.3s ease'
         }}>
-          {logs.length === 0 ? 'Server logs will appear here...' : 
-            logs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
+          {filteredLogs.length === 0 ? 'Server logs will appear here...' : 
+            filteredLogs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
           }
         </div>
       </div>

@@ -1,12 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Overview from './Overview';
+
+interface LogEntry {
+  timestamp: string;
+  message: string;
+  type: string;
+}
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'dashboard'>('overview');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsExpanded, setLogsExpanded] = useState(false);
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
   };
+
+  // Listen for backend logs at App level to persist across tab switches
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.onBackendLog((log) => {
+        // Only process stderr by default, stdout will be filtered in Overview component
+        if (log.type === 'stderr') {
+          const timestamp = new Date().toLocaleTimeString();
+          let message = log.message.trim();
+          
+          // Extract just the message part (after the last "-") for stderr
+          const lastDashIndex = message.lastIndexOf(' - ');
+          if (lastDashIndex !== -1) {
+            message = message.substring(lastDashIndex + 3);
+          }
+          
+          const logEntry = {
+            timestamp,
+            message,
+            type: log.type
+          };
+          setLogs(prev => [...prev, logEntry]);
+        }
+      });
+    }
+
+    return () => {
+      if (window.electronAPI) {
+        window.electronAPI.removeBackendLogListener();
+      }
+    };
+  }, []);
 
   return (
     <div style={{ height: '100vh', overflow: 'hidden' }}>
@@ -59,7 +99,7 @@ const App: React.FC = () => {
 
       {/* Content */}
       <div style={{ height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
-        {activeTab === 'overview' && <Overview />}
+        {activeTab === 'overview' && <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />}
         {activeTab === 'dashboard' && (
           <iframe
             src="http://localhost:5173"
