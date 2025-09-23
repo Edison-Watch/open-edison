@@ -73,7 +73,7 @@ async function startBackend(): Promise<void> {
         
         backendProcess.stdout?.on('data', (data) => {
           const message = data.toString()
-          console.log('Backend stdout:', message)
+          console.log('_OpenEdison:_', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stdout', message })
@@ -82,7 +82,7 @@ async function startBackend(): Promise<void> {
 
         backendProcess.stderr?.on('data', (data) => {
           const message = data.toString()
-          console.log('Backend stderr:', message)
+          console.log('OpenEdison:', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stderr', message })

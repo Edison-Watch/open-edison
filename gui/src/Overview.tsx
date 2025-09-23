@@ -17,6 +17,10 @@ const Overview: React.FC = () => {
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showStdout, setShowStdout] = useState(false);
+  const [verboseLogs, setVerboseLogs] = useState(false);
+  const [logLevel, setLogLevel] = useState('info');
+  const [showDate, setShowDate] = useState(false);
+  const [showOrigin, setShowOrigin] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -141,9 +145,28 @@ const Overview: React.FC = () => {
         // Only show stderr by default, or stdout if checkbox is checked
         if (log.type === 'stderr' || (log.type === 'stdout' && showStdout)) {
           const timestamp = new Date().toLocaleTimeString();
+          let message = log.message.trim();
+          
+          // Apply verbose logs setting
+          if (verboseLogs && log.type === 'stderr') {
+            // Keep the full message with timestamp and level info
+            message = message;
+          } else if (log.type === 'stderr') {
+            // Extract just the message part (after the last "-")
+            const lastDashIndex = message.lastIndexOf(' - ');
+            if (lastDashIndex !== -1) {
+              message = message.substring(lastDashIndex + 3);
+            }
+          }
+          
+          // Add origin prefix if enabled
+          if (showOrigin) {
+            message = `[${log.type.toUpperCase()}] ${message}`;
+          }
+          
           const logEntry = {
-            timestamp,
-            message: `[${log.type.toUpperCase()}] ${log.message.trim()}`
+            timestamp: showDate ? timestamp : '',
+            message
           };
           setLogs(prev => [...prev, logEntry]);
         }
@@ -155,7 +178,7 @@ const Overview: React.FC = () => {
         window.electronAPI.removeBackendLogListener();
       }
     };
-  }, [showStdout]);
+  }, [showStdout, verboseLogs, showDate, showOrigin]);
 
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
@@ -197,15 +220,63 @@ const Overview: React.FC = () => {
           <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
             Server Logs
           </h2>
-          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-            <input
-              type="checkbox"
-              checked={showStdout}
-              onChange={(e) => setShowStdout(e.target.checked)}
-              style={{ marginRight: '0.5rem' }}
-            />
-            Show stdout
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+              <input
+                type="checkbox"
+                checked={showStdout}
+                onChange={(e) => setShowStdout(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Show stdout
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+              <input
+                type="checkbox"
+                checked={verboseLogs}
+                onChange={(e) => setVerboseLogs(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Verbose logs
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+              <input
+                type="checkbox"
+                checked={showDate}
+                onChange={(e) => setShowDate(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Show date
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+              <input
+                type="checkbox"
+                checked={showOrigin}
+                onChange={(e) => setShowOrigin(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Show origin
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Level:</label>
+              <select
+                value={logLevel}
+                onChange={(e) => setLogLevel(e.target.value)}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  border: '1px solid #bdc3c7',
+                  fontSize: '0.875rem',
+                  background: 'white'
+                }}
+              >
+                <option value="debug">Debug</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+          </div>
         </div>
         <div style={{
           background: '#2c3e50',
@@ -219,7 +290,7 @@ const Overview: React.FC = () => {
           whiteSpace: 'pre-wrap'
         }}>
           {logs.length === 0 ? 'Server logs will appear here...' : 
-            logs.map((log, index) => `[${log.timestamp}] ${log.message}`).join('\n')
+            logs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
           }
         </div>
       </div>
