@@ -2,6 +2,7 @@ import inspect
 import json
 import os
 import time
+import traceback
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
@@ -126,7 +127,7 @@ class Edison:
                             headers=self._http_headers(),
                         )
                 except Exception:
-                    pass
+                    log.exception("Edison.track /agent/end async failed.")
 
             def _end_sync(
                 sid: str, call_id: str, status: str, duration_ms: float, summary: str
@@ -144,8 +145,8 @@ class Edison:
                         headers=self._http_headers(),
                         timeout=self.timeout_s,
                     )
-                except Exception as e:  # noqa: BLE001
-                    log.debug(f"Edison.track /agent/end sync failed: {e}")
+                except Exception:  # noqa: BLE001
+                    log.exception("Edison.track /agent/end sync failed.")
 
             if inspect.iscoroutinefunction(func):
 
@@ -168,9 +169,9 @@ class Edison:
                             sid, call_id, "ok", duration, self._build_result_preview(result)
                         )
                         return result
-                    except Exception as e:  # noqa: BLE001
+                    except Exception:  # noqa: BLE001
                         duration = (time.perf_counter() - start) * 1000.0
-                        await _end_async(sid, call_id, "error", duration, str(e))
+                        await _end_async(sid, call_id, "error", duration, traceback.format_exc())
                         raise
 
                 return _aw
@@ -192,9 +193,9 @@ class Edison:
                     duration = (time.perf_counter() - start) * 1000.0
                     _end_sync(sid, call_id, "ok", duration, self._build_result_preview(result))
                     return result
-                except Exception as e:  # noqa: BLE001
+                except Exception:  # noqa: BLE001
                     duration = (time.perf_counter() - start) * 1000.0
-                    _end_sync(sid, call_id, "error", duration, str(e))
+                    _end_sync(sid, call_id, "error", duration, traceback.format_exc())
                     raise
 
             return _sw
