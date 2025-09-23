@@ -17,7 +17,10 @@ import urllib.parse
 import httpx
 from bs4 import BeautifulSoup  # type: ignore[reportMissingTypeStubs]
 from dotenv import load_dotenv
-from langgraph.config import get_stream_writer  # type: ignore[reportMissingTypeStubs]
+from langchain_core.tools import tool  # type: ignore[reportMissingTypeStubs]
+from langchain_openai import ChatOpenAI  # type: ignore[reportMissingTypeStubs]
+from langgraph.prebuilt import create_react_agent  # type: ignore[reportMissingTypeStubs]
+from loguru import logger as log
 
 from src.langgraph_integration import Edison  # type: ignore[reportMissingTypeStubs]
 
@@ -25,8 +28,6 @@ load_dotenv()
 
 
 def _duckduckgo_search(query: str, max_results: int = 3) -> list[str]:
-    writer = get_stream_writer()
-    writer(f"[web_search] Searching: {query}")
     q = urllib.parse.quote_plus(query)
     url = f"https://duckduckgo.com/html/?q={q}"
     with httpx.Client(timeout=10.0, headers={"User-Agent": "Mozilla/5.0"}) as client:
@@ -35,23 +36,16 @@ def _duckduckgo_search(query: str, max_results: int = 3) -> list[str]:
     # Extract result URLs from DDG redirect links: href="/l/?uddg=<url-encoded>"
     urls: list[str] = []
     for m in re.finditer(r"href=\"/l/\?uddg=([^&\"]+)", html):
-        try:
-            enc = m.group(1)
-            decoded = urllib.parse.unquote(enc)
-            if decoded.startswith("http"):
-                urls.append(decoded)
-            if len(urls) >= max_results:
-                break
-        except Exception:
-            continue
-    if writer:
-        writer(f"[web_search] Found {len(urls)} results")
+        enc = m.group(1)
+        decoded = urllib.parse.unquote(enc)
+        if decoded.startswith("http"):
+            urls.append(decoded)
+        if len(urls) >= max_results:
+            break
     return urls
 
 
 def _http_fetch(url: str, max_chars: int = 4000) -> str:
-    writer = get_stream_writer()
-    writer(f"[fetch_url] Fetching: {url}")
     with httpx.Client(timeout=15.0, headers={"User-Agent": "Mozilla/5.0"}) as client:
         r = client.get(url, follow_redirects=True)
     # Prefer HTML-to-text when possible for readable terminal output
@@ -65,25 +59,16 @@ def _http_fetch(url: str, max_chars: int = 4000) -> str:
         # Collapse excessive whitespace
         text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
     except Exception:
+        log.warning("Error parsing URL result")
         text = body
-    if writer:
-        writer(
-            f"[fetch_url] Received {len(text)} chars (trimmed to {max(0, min(max_chars, len(text)))})"
-        )
     return text[: max(0, max_chars)]
 
 
 def build_agent() -> None:
-    from langchain_core.tools import tool  # type: ignore[reportMissingTypeStubs]
-    from langchain_openai import ChatOpenAI  # type: ignore[reportMissingTypeStubs]
-    from langgraph.prebuilt import create_react_agent  # type: ignore[reportMissingTypeStubs]
-
     edison = Edison(
         api_base=(os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")).rstrip("/"),
         api_key=os.getenv("OPEN_EDISON_API_KEY", "dev-api-key-change-me"),
     )
-    # Ensure a single session for the whole run
-    Edison.set_session_id("react_research_demo_session")
 
     @tool  # type: ignore[misc]
     @edison.track()  # type: ignore[misc]
@@ -99,35 +84,22 @@ def build_agent() -> None:
         return _http_fetch(url, max_chars=max_chars)
 
     llm = ChatOpenAI()  # type: ignore[reportUnknownVariableType]
-    agent = create_react_agent(model=llm, tools=[web_search, fetch_url])
+    agent = create_react_agent(model=llm, tools=[web_search, fetch_url])  # type: ignore[reportUnknownReturnType]
 
     # Demo conversation
     messages = [
         ("user", "Find the official CPython docs homepage and fetch its first 1000 characters."),
     ]
 
-    # Stream progress and results as they happen
-    def print_stream(stream):
-        for s in stream:
-            try:
-                message = s["messages"][-1]
-                pretty = getattr(message, "pretty_print", None)
-                if callable(pretty):
-                    pretty()
-                else:
-                    print(message)
-            except Exception:
-                print(s)
-
     inputs = {"messages": messages}
-    print_stream(agent.stream(inputs, stream_mode="values"))
+
+    # Run the agent and print the final assistant message content
+    result = agent.invoke(inputs)  # type: ignore[reportUnknownReturnType]
+    print(result["messages"][-1].content)
 
 
 def main() -> None:
-    try:
-        build_agent()
-    except Exception as e:  # noqa: BLE001
-        print("ReAct agent failed:", e)
+    build_agent()
 
 
 if __name__ == "__main__":

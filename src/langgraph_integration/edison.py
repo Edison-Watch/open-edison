@@ -120,6 +120,7 @@ class Edison:
                     sid = self._resolve_session_id(
                         kwargs.pop("__edison_session_id", None) or session_id
                     )
+                    log.debug(f"Edison.track begin (async): name={fname} sid={sid}")
                     begin = {
                         "session_id": sid,
                         "name": fname,
@@ -144,10 +145,16 @@ class Edison:
                         result = await func(*args, **kwargs)
                         duration = (time.perf_counter() - start) * 1000.0
                         _send_end("ok", duration, self._build_result_preview(result))
+                        log.debug(
+                            f"Edison.track end (async ok): name={fname} sid={sid} dur_ms={duration:.1f}"
+                        )
                         return result
                     except Exception as e:  # noqa: BLE001
                         duration = (time.perf_counter() - start) * 1000.0
                         _send_end("error", duration, str(e))
+                        log.debug(
+                            f"Edison.track end (async error): name={fname} sid={sid} dur_ms={duration:.1f} err={e}"
+                        )
                         raise
 
                 return _aw
@@ -157,6 +164,7 @@ class Edison:
                 sid = self._resolve_session_id(
                     kwargs.pop("__edison_session_id", None) or session_id
                 )
+                log.debug(f"Edison.track begin (sync): name={fname} sid={sid}")
                 begin = {
                     "session_id": sid,
                     "name": fname,
@@ -181,10 +189,16 @@ class Edison:
                     result = func(*args, **kwargs)
                     duration = (time.perf_counter() - start) * 1000.0
                     _send_end("ok", duration, self._build_result_preview(result))
+                    log.debug(
+                        f"Edison.track end (sync ok): name={fname} sid={sid} dur_ms={duration:.1f}"
+                    )
                     return result
                 except Exception as e:  # noqa: BLE001
                     duration = (time.perf_counter() - start) * 1000.0
                     _send_end("error", duration, str(e))
+                    log.debug(
+                        f"Edison.track end (sync error): name={fname} sid={sid} dur_ms={duration:.1f} err={e}"
+                    )
                     raise
 
             return _sw
