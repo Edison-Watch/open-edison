@@ -47,11 +47,6 @@ class Edison:
         _session_ctx.set(sid)
         return sid
 
-    def _resolve_session_id(self, override: str | None) -> str:
-        if override:
-            return override
-        return Edison.get_session_id()
-
     @classmethod  # noqa
     def set_session_id(cls, session_id: str) -> str:
         """Set the ContextVar for the current context."""
@@ -112,14 +107,15 @@ class Edison:
 
         def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             fname = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
+            # Bind a stable session id at decoration time (shared across tools created in the same context)
+            bound_sid = session_id or Edison.get_session_id()
 
             if inspect.iscoroutinefunction(func):
 
                 @wraps(func)
                 async def _aw(*args: Any, **kwargs: Any) -> Any:
-                    sid = self._resolve_session_id(
-                        kwargs.pop("__edison_session_id", None) or session_id
-                    )
+                    sid_override = kwargs.pop("__edison_session_id", None)
+                    sid = sid_override or bound_sid
                     log.debug(f"Edison.track begin (async): name={fname} sid={sid}")
                     begin = {
                         "session_id": sid,
@@ -161,9 +157,8 @@ class Edison:
 
             @wraps(func)
             def _sw(*args: Any, **kwargs: Any) -> Any:
-                sid = self._resolve_session_id(
-                    kwargs.pop("__edison_session_id", None) or session_id
-                )
+                sid_override = kwargs.pop("__edison_session_id", None)
+                sid = sid_override or bound_sid
                 log.debug(f"Edison.track begin (sync): name={fname} sid={sid}")
                 begin = {
                     "session_id": sid,
