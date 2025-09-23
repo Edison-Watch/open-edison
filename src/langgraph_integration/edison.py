@@ -13,8 +13,6 @@ from typing import Any
 import httpx
 from loguru import logger as log
 
-from src.langgraph_integration import worker
-
 _session_ctx: ContextVar[str | None] = ContextVar("edison_session_id")
 
 
@@ -34,9 +32,7 @@ class Edison:
             "OPEN_EDISON_API_KEY", "dev-api-key-change-me"
         )
         self.timeout_s: float = timeout_s
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
-        # Start background worker for end events
-        worker.start(self.api_base, headers)
+        # Headers are added per-request via _http_headers()
         # Best-effort healthchecks (background)
         if healthcheck:
             Thread(target=self._healthcheck, args=(healthcheck_timeout_s,), daemon=True).start()
@@ -100,103 +96,105 @@ class Edison:
     def track(
         self, session_id: str | None = None, name: str | None = None
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Decorator to track arbitrary functions with OE parity (gating + approvals + logging).
+        """Decorator to gate and log tool calls via the OE server.
 
-        - session id resolution: kwarg __edison_session_id -> decorator arg -> contextvar -> auto-mint
-        - name resolution: provided name or function.__name__
-        - pre-call: /agent/begin (await approval)
-        - post-call: /agent/end (queued via background worker)
+        Flow per call:
+        - Resolve session id
+        - POST /agent/begin (gating/approval)
+        - Execute function
+        - POST /agent/end (status, duration, result summary)
         """
 
         def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            fname = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
-            # Bind a stable session id at decoration time (shared across tools created in the same context)
+            tool_name = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
             bound_sid = session_id or Edison.get_session_id()
 
-            if inspect.iscoroutinefunction(func):
-
-                @wraps(func)
-                async def _aw(*args: Any, **kwargs: Any) -> Any:
-                    sid_override = kwargs.pop("__edison_session_id", None)
-                    sid = sid_override or bound_sid
-                    log.debug(f"Edison.track begin (async): name={fname} sid={sid}")
-                    begin = {
-                        "session_id": sid,
-                        "name": fname,
-                        "args_summary": self._build_args_preview(args, kwargs),
-                        "timeout_s": self.timeout_s,
-                    }
-                    call_id = await self._begin(begin)
-
-                    def _send_end(status: str, duration_ms: float, summary: str) -> None:
-                        worker.enqueue_end(
-                            {
+            async def _end_async(
+                sid: str, call_id: str, status: str, duration_ms: float, summary: str
+            ) -> None:
+                try:
+                    async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+                        await client.post(
+                            f"{self.api_base}/agent/end",
+                            json={
                                 "session_id": sid,
                                 "call_id": call_id,
                                 "status": status,
                                 "duration_ms": duration_ms,
                                 "result_summary": summary,
-                            }
+                            },
+                            headers=self._http_headers(),
                         )
+                except Exception:
+                    pass
 
+            def _end_sync(
+                sid: str, call_id: str, status: str, duration_ms: float, summary: str
+            ) -> None:
+                try:
+                    httpx.post(
+                        f"{self.api_base}/agent/end",
+                        json={
+                            "session_id": sid,
+                            "call_id": call_id,
+                            "status": status,
+                            "duration_ms": duration_ms,
+                            "result_summary": summary,
+                        },
+                        headers=self._http_headers(),
+                        timeout=self.timeout_s,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    log.debug(f"Edison.track /agent/end sync failed: {e}")
+
+            if inspect.iscoroutinefunction(func):
+
+                @wraps(func)
+                async def _aw(*args: Any, **kwargs: Any) -> Any:
+                    sid = kwargs.pop("__edison_session_id", None) or bound_sid
+                    call_id = await self._begin(
+                        {
+                            "session_id": sid,
+                            "name": tool_name,
+                            "args_summary": self._build_args_preview(args, kwargs),
+                            "timeout_s": self.timeout_s,
+                        }
+                    )
                     start = time.perf_counter()
                     try:
                         result = await func(*args, **kwargs)
                         duration = (time.perf_counter() - start) * 1000.0
-                        _send_end("ok", duration, self._build_result_preview(result))
-                        log.debug(
-                            f"Edison.track end (async ok): name={fname} sid={sid} dur_ms={duration:.1f}"
+                        await _end_async(
+                            sid, call_id, "ok", duration, self._build_result_preview(result)
                         )
                         return result
                     except Exception as e:  # noqa: BLE001
                         duration = (time.perf_counter() - start) * 1000.0
-                        _send_end("error", duration, str(e))
-                        log.debug(
-                            f"Edison.track end (async error): name={fname} sid={sid} dur_ms={duration:.1f} err={e}"
-                        )
+                        await _end_async(sid, call_id, "error", duration, str(e))
                         raise
 
                 return _aw
 
             @wraps(func)
             def _sw(*args: Any, **kwargs: Any) -> Any:
-                sid_override = kwargs.pop("__edison_session_id", None)
-                sid = sid_override or bound_sid
-                log.debug(f"Edison.track begin (sync): name={fname} sid={sid}")
-                begin = {
-                    "session_id": sid,
-                    "name": fname,
-                    "args_summary": self._build_args_preview(args, kwargs),
-                    "timeout_s": self.timeout_s,
-                }
-                call_id = self._begin_sync(begin)
-
-                def _send_end(status: str, duration_ms: float, summary: str) -> None:
-                    worker.enqueue_end(
-                        {
-                            "session_id": sid,
-                            "call_id": call_id,
-                            "status": status,
-                            "duration_ms": duration_ms,
-                            "result_summary": summary,
-                        }
-                    )
-
+                sid = kwargs.pop("__edison_session_id", None) or bound_sid
+                call_id = self._begin_sync(
+                    {
+                        "session_id": sid,
+                        "name": tool_name,
+                        "args_summary": self._build_args_preview(args, kwargs),
+                        "timeout_s": self.timeout_s,
+                    }
+                )
                 start = time.perf_counter()
                 try:
                     result = func(*args, **kwargs)
                     duration = (time.perf_counter() - start) * 1000.0
-                    _send_end("ok", duration, self._build_result_preview(result))
-                    log.debug(
-                        f"Edison.track end (sync ok): name={fname} sid={sid} dur_ms={duration:.1f}"
-                    )
+                    _end_sync(sid, call_id, "ok", duration, self._build_result_preview(result))
                     return result
                 except Exception as e:  # noqa: BLE001
                     duration = (time.perf_counter() - start) * 1000.0
-                    _send_end("error", duration, str(e))
-                    log.debug(
-                        f"Edison.track end (sync error): name={fname} sid={sid} dur_ms={duration:.1f} err={e}"
-                    )
+                    _end_sync(sid, call_id, "error", duration, str(e))
                     raise
 
             return _sw

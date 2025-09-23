@@ -13,15 +13,13 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.sql import select  # type: ignore[reportMissingImports]
 
 from src import events
 from src.middleware.data_access_tracker import SecurityError  # type: ignore[reportMissingImports]
 from src.middleware.session_tracking import (  # type: ignore[reportMissingImports]
     MCPSession,
-    MCPSessionModel,
     ToolCall,
-    create_db_session,
+    _persist_session_to_db,
     get_session_from_db,
 )
 from src.telemetry import record_tool_call  # type: ignore[reportMissingImports]
@@ -104,7 +102,7 @@ async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
             approved = await events.wait_for_approval(session_id, "tool", name, timeout_s=timeout)
             if not approved:
                 pending_call.status = "blocked"
-                _persist_session(session)
+                _persist_session_to_db(session)
                 return _BeginResponse(
                     ok=True, session_id=session_id, call_id=call_id, approved=False, error=str(e)
                 )
@@ -115,7 +113,7 @@ async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
 
         # Telemetry and persistence for pending call
         record_tool_call(name)
-        _persist_session(session)
+        _persist_session_to_db(session)
 
         return _BeginResponse(ok=True, session_id=session_id, call_id=call_id, approved=True)
     except HTTPException:
@@ -151,7 +149,7 @@ async def agent_end(body: _EndBody) -> Any:  # type: ignore[override]
             params["result_summary"] = body.result_summary
             found.parameters = params
 
-        _persist_session(session)
+        _persist_session_to_db(session)
         return _EndResponse(ok=True)
     except HTTPException:
         raise
@@ -173,51 +171,7 @@ async def agent_session(body: _SessionBody) -> Any:  # type: ignore[override]
     """Ensure a session exists and is persisted; return ok with session id."""
     try:
         session = get_session_from_db(body.session_id)
-        _persist_session(session)
+        _persist_session_to_db(session)
         return _SessionResponse(ok=True, session_id=body.session_id)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to upsert session: {e}") from e
-
-
-def get_agent_router() -> APIRouter:
-    """Factory for including the agent router (alias of tracking routes)."""
-    return agent_router
-
-
-def _persist_session(session: MCPSession) -> None:
-    """Serialize and persist the given session to the SQLite database.
-
-    Mirrors the persistence strategy used by the MCP middleware, without relying on its private helper.
-    """
-    with create_db_session() as db_session:
-        db_session_model = db_session.execute(
-            select(MCPSessionModel).where(MCPSessionModel.session_id == session.session_id)
-        ).scalar_one()
-
-        tool_calls_dict = [
-            {
-                "id": tc.id,
-                "tool_name": tc.tool_name,
-                "parameters": tc.parameters,
-                "timestamp": tc.timestamp.isoformat(),
-                "duration_ms": tc.duration_ms,
-                "status": tc.status,
-                "result": tc.result,
-            }
-            for tc in session.tool_calls
-        ]
-        db_session_model.tool_calls = tool_calls_dict  # type: ignore[attr-defined]
-        # Merge existing summary with tracker dict so we preserve created_at and other keys
-        existing_summary: dict[str, Any] = {}
-        try:
-            raw = db_session_model.data_access_summary  # type: ignore[attr-defined]
-            if isinstance(raw, dict):
-                existing_summary = dict(raw)
-        except Exception:
-            existing_summary = {}
-        updates: dict[str, Any] = (
-            session.data_access_tracker.to_dict() if session.data_access_tracker is not None else {}
-        )
-        merged = {**existing_summary, **updates}
-        db_session_model.data_access_summary = merged  # type: ignore[attr-defined]
-        db_session.commit()

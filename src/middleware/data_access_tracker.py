@@ -55,8 +55,6 @@ class DataAccessTracker:
     has_external_communication: bool = False
     # ACL tracking: the most restrictive ACL encountered during this session via reads
     highest_acl_level: str = "PUBLIC"
-    # Optional per-session tool permission overrides (e.g., for client.* demos)
-    tool_overrides: dict[str, ToolPermission] | None = None
 
     def is_trifecta_achieved(self) -> bool:
         """Check if the lethal trifecta has been achieved."""
@@ -178,16 +176,9 @@ class DataAccessTracker:
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         # Get tool permissions and update trifecta flags
-        override_perm: ToolPermission | None = None
-        if self.tool_overrides is not None:
-            override_perm = self.tool_overrides.get(tool_name)
-        if override_perm is not None:
-            permissions = override_perm
-            enabled = bool(override_perm.enabled)
-        else:
-            perms = Permissions()
-            permissions = perms.get_tool_permission(tool_name)
-            enabled = perms.is_tool_enabled(tool_name)
+        perms = Permissions()
+        permissions = perms.get_tool_permission(tool_name)
+        enabled = perms.is_tool_enabled(tool_name)
 
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
