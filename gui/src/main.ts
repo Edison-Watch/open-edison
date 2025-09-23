@@ -130,7 +130,7 @@ async function startFrontend(): Promise<void> {
     }
     
     // Start the frontend dev server
-    const frontendProcess = spawn('npm', ['run', 'dev'], {
+    frontendProcess = spawn('npm', ['run', 'dev'], {
       cwd: frontendDir,
       stdio: 'pipe',
       shell: true
@@ -241,13 +241,13 @@ async function createWindow(): Promise<void> {
   })
 
   // Handle external links
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
     shell.openExternal(url)
     return { action: 'deny' }
   })
 
   // Handle navigation errors
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription: string, validatedURL: string) => {
     console.error('Failed to load:', errorDescription, 'for URL:', validatedURL)
   })
 }

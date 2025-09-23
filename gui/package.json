@@ -16,21 +16,22 @@
   },
   "author": "Open Edison Team",
   "dependencies": {
+    "electron": "^32.3.3",
     "electron-updater": "^6.1.7"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/electron": "^1.4.38",
+    "@types/node": "^20.19.17",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
-    "electron": "^32.0.0",
     "electron-builder": "^24.9.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.5.4",
     "vite": "^5.3.1",
-    "wait-on": "^7.2.0",
-    "@vitejs/plugin-react": "^4.3.1"
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.edison.watch.open-edison",
