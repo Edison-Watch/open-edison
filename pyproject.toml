@@ -24,6 +24,9 @@ dependencies = [
     "hatchling>=1.27.0",
     "questionary>=2.1.1",
     "python-rapidjson>=1.21",
+    "langchain-core>=0.3.76",
+    "langchain-openai>=0.3.33",
+    "langgraph>=0.6.7",
 ]
 requires-python = ">=3.12"
 

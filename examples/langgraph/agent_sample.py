@@ -12,8 +12,6 @@ Requirements:
 
 import os
 
-import httpx
-
 from src.langgraph_integration import Edison  # type: ignore[reportMissingTypeStubs]
 
 
@@ -26,16 +24,6 @@ def _get_api_key() -> str | None:
     return os.getenv("OPEN_EDISON_API_KEY")
 
 
-def _approve_once(session_id: str, tool_name: str) -> None:
-    api_base = _get_api_base()
-    api_key = _get_api_key()
-    headers: dict[str, str] | None = {"Authorization": f"Bearer {api_key}"} if api_key else None
-    body = {"session_id": session_id, "kind": "tool", "name": tool_name, "command": "approve"}
-    resp = httpx.post(f"{api_base}/api/approve_or_deny", json=body, headers=headers, timeout=10.0)
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Approval failed: {resp.status_code} {resp.text}")
-
-
 def main() -> None:
     edison = Edison(
         api_base=_get_api_base(),
@@ -43,19 +31,20 @@ def main() -> None:
         permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
     )
 
-    with edison.session() as sid:
+    with edison.session():
 
         @edison.track()
         def cleanse_text(text: str) -> str:
             return text.strip()
 
-        # First call may block by policy; approve once then retry
+        # First call may block by policy; approve in dashboard if needed
         try:
             out = cleanse_text("  hello  ")
         except PermissionError:
-            # Approve this tool for this session and retry once
-            _approve_once(sid, "client.cleanse_text")
-            out = cleanse_text("  hello  ")
+            print(
+                "cleanse_text blocked by policy. Approve via the Open Edison dashboard, then rerun."
+            )
+            return
 
         assert out == "hello", f"Unexpected cleanse_text result: {out!r}"
 
@@ -64,17 +53,15 @@ def main() -> None:
         async def add(a: int, b: int) -> int:
             return a + b
 
-        # Approve if needed then run
+        # If blocked, approve in dashboard then rerun
         try:
             # In a real LangGraph node you'd await within the graph runtime
             import asyncio
 
             out2 = asyncio.run(add(2, 3))  # noqa: SLF001 - simple demo
         except PermissionError:
-            _approve_once(sid, "client.add")
-            import asyncio
-
-            out2 = asyncio.run(add(2, 3))  # noqa: SLF001 - simple demo
+            print("add blocked by policy. Approve via the Open Edison dashboard, then rerun.")
+            return
 
         assert out2 == 5, f"Unexpected add result: {out2!r}"
 

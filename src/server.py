@@ -39,7 +39,7 @@ from src.config import (
     resolve_json_path_with_bootstrap,
 )
 from src.config import get_config_dir as _get_cfg_dir  # type: ignore[attr-defined]
-from src.langgraph_integration.tracking_api import get_tracking_router
+from src.langgraph_integration.tracking_api import get_agent_router
 from src.mcp_stdio_capture import (
     install_stdio_client_stderr_capture as _install_stdio_capture,
 )
@@ -356,12 +356,12 @@ class OpenEdisonProxy:
 
         app.add_api_route("/", _root_redirect, methods=["GET"])  # type: ignore[arg-type]
 
-        # Include tracking API (auth-required)
+        # Include agent API alias for decorator/bgw use (auth-required)
         try:
-            app.include_router(get_tracking_router(), dependencies=[Depends(self.verify_api_key)])
-            log.info("Tracking API mounted at /track (auth required)")
+            app.include_router(get_agent_router(), dependencies=[Depends(self.verify_api_key)])
+            log.info("Agent API mounted at /agent (auth required)")
         except Exception as e:  # noqa: BLE001
-            log.error(f"Failed to mount tracking API: {e}")
+            log.error(f"Failed to mount agent API: {e}")
 
         return app
 

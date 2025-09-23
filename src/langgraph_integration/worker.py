@@ -51,7 +51,7 @@ def _run() -> None:
             continue
 
         try:
-            resp = client.post(f"{_api_base}/track/end", json=item, headers=_headers)
+            resp = client.post(f"{_api_base}/agent/end", json=item, headers=_headers)
             if resp.status_code >= 400:
                 raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
             backoff_s = 0.5

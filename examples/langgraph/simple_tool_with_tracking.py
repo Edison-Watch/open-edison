@@ -6,14 +6,20 @@ Run directly:
   uv run python examples/langgraph/simple_tool_with_tracking.py
 
 If LangGraph/OpenAI packages or keys are not available, this script falls back
-to directly calling the tracked tool (still exercises Edison tracking/approvals).
+to directly calling the tracked tool (still exercises Edison tracking).
+
+Note: If a call is blocked by policy, approve it in the Open Edison dashboard
+and re-run the script.
 """
 
 import os
 
-import httpx
+from dotenv import load_dotenv
 
 from src.langgraph_integration import Edison  # type: ignore[reportMissingTypeStubs]
+
+# Load .env for OPENAI_API_KEY / OPEN_EDISON_* variables
+load_dotenv()
 
 
 def _get_api_base() -> str:
@@ -22,16 +28,6 @@ def _get_api_base() -> str:
 
 def _get_api_key() -> str | None:
     return os.getenv("OPEN_EDISON_API_KEY")
-
-
-def _approve_once(session_id: str, tool_name: str) -> None:
-    api_base = _get_api_base()
-    api_key = _get_api_key()
-    headers: dict[str, str] | None = {"Authorization": f"Bearer {api_key}"} if api_key else None
-    body = {"session_id": session_id, "kind": "tool", "name": tool_name, "command": "approve"}
-    resp = httpx.post(f"{api_base}/api/approve_or_deny", json=body, headers=headers, timeout=10.0)
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Approval failed: {resp.status_code} {resp.text}")
 
 
 def run_bind_tools_variant() -> None:
@@ -48,7 +44,7 @@ def run_bind_tools_variant() -> None:
         permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
     )
 
-    with edison.session() as sid:
+    with edison.session():
 
         @tool  # type: ignore[misc]
         @edison.track()  # type: ignore[misc]
@@ -56,52 +52,20 @@ def run_bind_tools_variant() -> None:
             """Multiply two numbers."""
             return a * b
 
-        llm = ChatOpenAI()  # type: ignore[reportUnknownVariableType]
+        model_name = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+        llm = ChatOpenAI(model=model_name)  # type: ignore[reportUnknownVariableType]
         llm_with_tools = edison.bind_tools(llm, [multiply])
 
         try:
             resp = llm_with_tools.invoke([("user", "Use multiply to compute 6 * 7")])
+            print("bind_tools variant output:", resp)
         except PermissionError:
-            _approve_once(sid, "client.multiply")
-            resp = llm_with_tools.invoke([("user", "Use multiply to compute 6 * 7")])
-
-        print("bind_tools variant output:", resp)
-
-
-def run_direct_fallback() -> None:
-    """Fallback that doesn't require LangGraph/OpenAI; still exercises tracking."""
-    edison = Edison(
-        api_base=_get_api_base(),
-        api_key=_get_api_key(),
-        permissions_path=os.path.join(os.path.dirname(__file__), "tool_permissions.json"),
-    )
-
-    with edison.session() as sid:
-
-        @edison.track()
-        def multiply(a: int, b: int) -> int:
-            return a * b
-
-        try:
-            out = multiply(6, 7)
-        except PermissionError:
-            _approve_once(sid, "client.multiply")
-            out = multiply(6, 7)
-
-        assert out == 42, f"Unexpected result: {out!r}"
-        print("direct fallback output:", out)
+            print("multiply blocked by policy. Approve via the Open Edison dashboard, then rerun.")
+            return
 
 
 def main() -> None:
-    # Prefer running the full LangGraph example if packages are available and keys are set
-    want_graph = os.getenv("RUN_LANGGRAPH", "0")
-    if want_graph == "1":
-        try:
-            run_bind_tools_variant()
-            return
-        except Exception as e:  # noqa: BLE001
-            print("LangGraph variant failed, falling back to direct call:", e)
-    run_direct_fallback()
+    run_bind_tools_variant()
 
 
 if __name__ == "__main__":

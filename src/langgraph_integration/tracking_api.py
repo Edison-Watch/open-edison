@@ -1,12 +1,10 @@
 """
-Tracking API for LangGraph function instrumentation.
+Agent API for LangGraph function instrumentation.
 
 Provides begin/end endpoints that mirror MCP tool-call tracking semantics:
 - Permissions and lethal-trifecta gating via DataAccessTracker
 - Manual approvals via events.wait_for_approval
 - Persistence to sessions.db so calls appear in the dashboard timeline
-
-This is intentionally isolated from existing MCP paths.
 """
 
 import uuid
@@ -64,16 +62,19 @@ class _EndResponse(BaseModel):
 
 
 def _normalize_name(raw: str) -> str:
-    if raw.startswith("client."):
+    if raw.startswith("agent."):
         return raw
-    return f"client.{raw}"
+    return f"agent.{raw}"
 
 
-router = APIRouter(prefix="/track", tags=["tracking"])
+agent_router = APIRouter(prefix="/agent", tags=["agent"])
 
 
-@router.post("/begin", response_model=_BeginResponse)
-async def begin_tracking(body: _BeginBody) -> Any:  # type: ignore[override]
+# Legacy /track routes removed; use /agent equivalents
+
+
+@agent_router.post("/begin", response_model=_BeginResponse)
+async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
     try:
         session_id = body.session_id or str(uuid.uuid4())
         name = _normalize_name(body.name)
@@ -105,8 +106,6 @@ async def begin_tracking(body: _BeginBody) -> Any:  # type: ignore[override]
         # Apply gating. If blocked, persist blocked and return approved=False
         try:
             assert session.data_access_tracker is not None
-            # If the client wants to provide per-session overrides, attach them on first call
-            # via a special client.* convention: expect override files to be applied by client code.
             session.data_access_tracker.add_tool_call(name)
         except SecurityError as e:
             # Notify listeners and await approval
@@ -144,8 +143,8 @@ async def begin_tracking(body: _BeginBody) -> Any:  # type: ignore[override]
         )
 
 
-@router.post("/end", response_model=_EndResponse)
-async def end_tracking(body: _EndBody) -> Any:  # type: ignore[override]
+@agent_router.post("/end", response_model=_EndResponse)
+async def agent_end(body: _EndBody) -> Any:  # type: ignore[override]
     try:
         session = get_session_from_db(body.session_id)
 
@@ -177,9 +176,29 @@ async def end_tracking(body: _EndBody) -> Any:  # type: ignore[override]
         raise HTTPException(status_code=500, detail=f"Failed to end tracking: {e}") from e
 
 
-def get_tracking_router() -> APIRouter:
-    """Factory for including this router in the main FastAPI app."""
-    return router
+class _SessionBody(BaseModel):
+    session_id: str = Field(..., description="Agent-provided session id")
+
+
+class _SessionResponse(BaseModel):
+    ok: bool
+    session_id: str
+
+
+@agent_router.post("/session", response_model=_SessionResponse)
+async def agent_session(body: _SessionBody) -> Any:  # type: ignore[override]
+    """Ensure a session exists and is persisted; return ok with session id."""
+    try:
+        session = get_session_from_db(body.session_id)
+        _persist_session(session)
+        return _SessionResponse(ok=True, session_id=body.session_id)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Failed to upsert session: {e}") from e
+
+
+def get_agent_router() -> APIRouter:
+    """Factory for including the agent router (alias of tracking routes)."""
+    return agent_router
 
 
 def _persist_session(session: MCPSession) -> None:
