@@ -93,7 +93,7 @@ class Edison:
         base = raw or "tracked"
         return base if base.startswith("agent_") else f"agent_{base}"
 
-    def track(
+    def track(  # noqa: C901
         self, session_id: str | None = None, name: str | None = None
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator to gate and log tool calls via the OE server.

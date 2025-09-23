@@ -7,17 +7,6 @@ class TestAgentAPI(TestTemplate):
     def _auth(self) -> dict[str, str]:
         return {"Authorization": "Bearer dev-api-key-change-me"}
 
-    def test_agent_session_upsert(self, test_client):
-        resp = test_client.post(
-            "/agent/session",
-            json={"session_id": "sess-test-123"},
-            headers=self._auth(),
-        )
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data.get("ok") is True
-        assert data.get("session_id") == "sess-test-123"
-
     def test_agent_begin_and_end_ok(self, test_client):
         headers = self._auth()
         # Begin tool call

@@ -64,7 +64,7 @@ agent_router = APIRouter(prefix="/agent", tags=["agent"])
 # Legacy /track routes removed; use /agent equivalents
 
 
-@agent_router.post("/begin", response_model=_BeginResponse)
+@agent_router.post("/begin", response_model=_BeginResponse)  # noqa
 async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
     try:
         session_id = body.session_id or str(uuid.uuid4())
@@ -124,7 +124,7 @@ async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
         )
 
 
-@agent_router.post("/end", response_model=_EndResponse)
+@agent_router.post("/end", response_model=_EndResponse)  # noqa
 async def agent_end(body: _EndBody) -> Any:  # type: ignore[override]
     try:
         session = get_session_from_db(body.session_id)
@@ -155,23 +155,3 @@ async def agent_end(body: _EndBody) -> Any:  # type: ignore[override]
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to end tracking: {e}") from e
-
-
-class _SessionBody(BaseModel):
-    session_id: str = Field(..., description="Agent-provided session id")
-
-
-class _SessionResponse(BaseModel):
-    ok: bool
-    session_id: str
-
-
-@agent_router.post("/session", response_model=_SessionResponse)
-async def agent_session(body: _SessionBody) -> Any:  # type: ignore[override]
-    """Ensure a session exists and is persisted; return ok with session id."""
-    try:
-        session = get_session_from_db(body.session_id)
-        _persist_session_to_db(session)
-        return _SessionResponse(ok=True, session_id=body.session_id)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Failed to upsert session: {e}") from e
