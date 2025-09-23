@@ -16,6 +16,7 @@ const Overview: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showStdout, setShowStdout] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -133,6 +134,29 @@ const Overview: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Listen for backend logs
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.onBackendLog((log) => {
+        // Only show stderr by default, or stdout if checkbox is checked
+        if (log.type === 'stderr' || (log.type === 'stdout' && showStdout)) {
+          const timestamp = new Date().toLocaleTimeString();
+          const logEntry = {
+            timestamp,
+            message: `[${log.type.toUpperCase()}] ${log.message.trim()}`
+          };
+          setLogs(prev => [...prev, logEntry]);
+        }
+      });
+    }
+
+    return () => {
+      if (window.electronAPI) {
+        window.electronAPI.removeBackendLogListener();
+      }
+    };
+  }, [showStdout]);
+
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
       {/* Server Control Section */}
@@ -144,7 +168,7 @@ const Overview: React.FC = () => {
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
         <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
-          Server Control
+          Server Status
         </h2>
         
         <div style={{
@@ -156,66 +180,9 @@ const Overview: React.FC = () => {
           color: serverMcpStatus.running ? '#27ae60' : '#e74c3c',
           border: `1px solid ${serverMcpStatus.running ? '#27ae60' : '#e74c3c'}`
         }}>
-          {serverMcpStatus.running ? '✅ Server is running on port 3001' : '❌ Server is not running'}
+          {serverMcpStatus.running ? '✅ Server is online' : '❌ Server is offline'}
         </div>
 
-        <div style={{ marginTop: '1rem' }}>
-          <button
-            onClick={startServer}
-            disabled={serverMcpStatus.running}
-            style={{
-              background: serverMcpStatus.running ? '#bdc3c7' : '#3498db',
-              color: 'white',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '6px',
-              cursor: serverMcpStatus.running ? 'not-allowed' : 'pointer',
-              fontSize: '1rem',
-              margin: '0.5rem 0.5rem 0.5rem 0',
-              minWidth: '120px',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            Start Server
-          </button>
-          
-          <button
-            onClick={stopServer}
-            disabled={!serverMcpStatus.running}
-            style={{
-              background: !serverMcpStatus.running ? '#bdc3c7' : '#e74c3c',
-              color: 'white',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '6px',
-              cursor: !serverMcpStatus.running ? 'not-allowed' : 'pointer',
-              fontSize: '1rem',
-              margin: '0.5rem 0.5rem 0.5rem 0',
-              minWidth: '120px',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            Stop Server
-          </button>
-          
-          <button
-            onClick={restartServer}
-            style={{
-              background: '#9b59b6',
-              color: 'white',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              margin: '0.5rem 0.5rem 0.5rem 0',
-              minWidth: '120px',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            Restart Server
-          </button>
-        </div>
       </div>
 
       {/* Server Logs Section */}
@@ -226,9 +193,20 @@ const Overview: React.FC = () => {
         marginBottom: '2rem',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
-          Server Logs
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
+            Server Logs
+          </h2>
+          <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+            <input
+              type="checkbox"
+              checked={showStdout}
+              onChange={(e) => setShowStdout(e.target.checked)}
+              style={{ marginRight: '0.5rem' }}
+            />
+            Show stdout
+          </label>
+        </div>
         <div style={{
           background: '#2c3e50',
           color: '#ecf0f1',

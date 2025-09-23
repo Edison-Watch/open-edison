@@ -6,6 +6,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
   
+  // Backend log listener
+  onBackendLog: (callback: (log: { type: string; message: string }) => void) => {
+    ipcRenderer.on('backend-log', (event, log) => callback(log))
+  },
+  
+  // Remove backend log listener
+  removeBackendLogListener: () => {
+    ipcRenderer.removeAllListeners('backend-log')
+  },
+  
   // Platform info
   platform: process.platform,
   
@@ -19,6 +29,8 @@ declare global {
     electronAPI: {
       getBackendStatus: () => Promise<{ running: boolean; port: number }>
       restartBackend: () => Promise<boolean>
+      onBackendLog: (callback: (log: { type: string; message: string }) => void) => void
+      removeBackendLogListener: () => void
       platform: string
       appVersion: string
     }

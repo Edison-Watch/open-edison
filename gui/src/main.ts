@@ -45,6 +45,10 @@ async function startBackend(): Promise<void> {
     
     // Try different methods to start the backend
     const startMethods = [
+      // Method 0: Try uv open-edison (recommended for uv users)
+      () => spawn('uv', ['run', 'open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
+      // Method 1: Try uvx open-edison (recommended for uv users)
+      () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
       // Method 1: Try uvx open-edison (recommended for uv users)
       () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
       // Method 2: Try open-edison command (if installed globally)
@@ -68,11 +72,21 @@ async function startBackend(): Promise<void> {
         backendProcess = startMethods[methodIndex]()
         
         backendProcess.stdout?.on('data', (data) => {
-          console.log('Backend stdout:', data.toString())
+          const message = data.toString()
+          console.log('Backend stdout:', message)
+          // Send log to renderer process
+          if (mainWindow) {
+            mainWindow.webContents.send('backend-log', { type: 'stdout', message })
+          }
         })
 
         backendProcess.stderr?.on('data', (data) => {
-          console.log('Backend stderr:', data.toString())
+          const message = data.toString()
+          console.log('Backend stderr:', message)
+          // Send log to renderer process
+          if (mainWindow) {
+            mainWindow.webContents.send('backend-log', { type: 'stderr', message })
+          }
         })
 
         backendProcess.on('error', (error) => {
