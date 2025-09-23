@@ -12,6 +12,7 @@
     "electron:build": "npm run build && electron-builder",
     "dist": "npm run build && electron-builder --publish=never",
     "start": "NODE_ENV=production electron .",
+    "first-install": "electron . --force-first-install",
     "postinstall": "electron-builder install-app-deps"
   },
   "author": "Open Edison Team",

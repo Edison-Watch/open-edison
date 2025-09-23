@@ -13,6 +13,9 @@ let isBackendRunning = false
 const BACKEND_PORT = 3001
 const FRONTEND_PORT = 5173
 
+// Force first install mode (for testing/development)
+const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || process.argv.includes('--force-first-install')
+
 // Check if backend is already running
 async function checkBackendRunning(): Promise<boolean> {
   try {
@@ -292,12 +295,7 @@ app.whenReady().then(async () => {
   // await new Promise(resolve => setTimeout(resolve, 500))
   
   isOpenEdisonInstalled = await checkOpenEdisonInstall()
-  if (!isOpenEdisonInstalled) {
-    console.log('Open Edison not installed, will show welcome message in UI')
-  } else {
-    console.log('Open Edison installation found')
-  }
-  
+    
   // Start backend server
   await startBackend()
   
@@ -404,13 +402,36 @@ const checkOpenEdisonInstall = async (): Promise<boolean> => {
     const path = require('path')
     
     const folderExists = fs.existsSync(appSupportPath)
-    
+
+    // Assert that the application support directory exists
     if (!folderExists) {
+      throw new Error(`Application directory ${appSupportPath} does not exist`)
+    }
+
+    // Check for required configuration files
+    const configFiles = [
+      'config.json',
+      'tool_permissions.json',
+      'resource_permissions.json', 
+      'prompt_permissions.json'
+    ]
+    
+    const configFilesExist = configFiles.every(file => {
+      const filePath = path.join(appSupportPath, file)
+      const exists = fs.existsSync(filePath)
+      if (!exists) {
+        console.log(`Missing configuration file: ${file}`)
+      }
+      return exists
+    })
+
+    if (!configFilesExist || FORCE_FIRST_INSTALL) {
       console.log('Open Edison installation not found, initializing...')
       
-      // Create the application support directory
-      fs.mkdirSync(appSupportPath, { recursive: true })
-      console.log(`Created application support directory: ${appSupportPath}`)
+      // // Create the application support directory
+      // Note: since the appname matches open edison, the folder exists with electron data
+      // fs.mkdirSync(appSupportPath, { recursive: true })
+      // console.log(`Created application support directory: ${appSupportPath}`)
       
       // Copy initial JSON files from the app bundle
       await copyInitialConfigFiles(appSupportPath)
@@ -506,6 +527,7 @@ const createDefaultConfigFile = async (fileName: string, targetPath: string) => 
 
 // Store installation status globally
 let isOpenEdisonInstalled = false
+
 
 // IPC handler to get installation status
 ipcMain.handle('get-installation-status', async () => {
