@@ -11,22 +11,49 @@ interface LogEntry {
 }
 
 const Overview: React.FC = () => {
-  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false, port: 3000 });
+  const [serverApiStatus, setServerApiStatus] = useState<ServerStatus>({ running: false, port: 3001 });
+  const [serverMcpStatus, setServerMcpStatus] = useState<ServerStatus>({ running: false, port: 3000 });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Check server status
+  // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
     try {
-      const response = await fetch('http://localhost:3000/health');
-      if (response.ok) {
-        setServerStatus({ running: true, port: 3000 });
-      } else {
-        setServerStatus({ running: false, port: 3000 });
+      console.log('🔄 Starting server status check...');
+      const apiKey = 'dev-api-key-change-me';
+      // Try the API server health endpoint first (port 3001)
+      const apiResponse = await fetch('http://localhost:3001/health', {
+        method: 'GET',
+        mode: 'cors',
+        headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+      });
+      
+      if (apiResponse.ok) {
+        console.log('✅ API server is running on port 3001');
+        setServerApiStatus({ running: true, port: 3001 });
       }
+      
+      // If API server not responding, try the MCP server (port 3000)
+      const mcpResponse = await fetch('http://localhost:3001/mcp/status', {
+        method: 'GET',
+        mode: 'cors',
+        headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+      });
+      
+      if (mcpResponse.ok) {
+        console.log('✅ MCP server is running on port 3000');
+        setServerMcpStatus({ running: true, port: 3000 });
+        return;
+      }
+      
+      console.log('❌ No servers responding');
+      setServerMcpStatus({ running: false, port: 3000 });
+      setServerApiStatus({ running: false, port: 3001 });
     } catch (error) {
-      setServerStatus({ running: false, port: 3000 });
+      console.error('❌ Error checking server status:', error);
+      setServerMcpStatus({ running: false, port: 3000 });
+      setServerApiStatus({ running: false, port: 3001 });
     }
   };
 
@@ -42,7 +69,8 @@ const Overview: React.FC = () => {
       if (window.electronAPI) {
         const response = await window.electronAPI.restartBackend();
         if (response) {
-          setServerStatus({ running: true, port: 3000 });
+          setServerMcpStatus({ running: true, port: 3000 });
+          setServerApiStatus({ running: true, port: 3001 });
           addLog('Server started successfully');
         } else {
           addLog('Failed to start server');
@@ -124,24 +152,24 @@ const Overview: React.FC = () => {
           borderRadius: '6px',
           margin: '1rem 0',
           fontWeight: '500',
-          background: serverStatus.running ? '#d5f4e6' : '#fadbd8',
-          color: serverStatus.running ? '#27ae60' : '#e74c3c',
-          border: `1px solid ${serverStatus.running ? '#27ae60' : '#e74c3c'}`
+          background: serverMcpStatus.running ? '#d5f4e6' : '#fadbd8',
+          color: serverMcpStatus.running ? '#27ae60' : '#e74c3c',
+          border: `1px solid ${serverMcpStatus.running ? '#27ae60' : '#e74c3c'}`
         }}>
-          {serverStatus.running ? '✅ Server is running on port 3000' : '❌ Server is not running'}
+          {serverMcpStatus.running ? '✅ Server is running on port 3001' : '❌ Server is not running'}
         </div>
 
         <div style={{ marginTop: '1rem' }}>
           <button
             onClick={startServer}
-            disabled={serverStatus.running}
+            disabled={serverMcpStatus.running}
             style={{
-              background: serverStatus.running ? '#bdc3c7' : '#3498db',
+              background: serverMcpStatus.running ? '#bdc3c7' : '#3498db',
               color: 'white',
               border: 'none',
               padding: '0.75rem 1.5rem',
               borderRadius: '6px',
-              cursor: serverStatus.running ? 'not-allowed' : 'pointer',
+              cursor: serverMcpStatus.running ? 'not-allowed' : 'pointer',
               fontSize: '1rem',
               margin: '0.5rem 0.5rem 0.5rem 0',
               minWidth: '120px',
@@ -153,14 +181,14 @@ const Overview: React.FC = () => {
           
           <button
             onClick={stopServer}
-            disabled={!serverStatus.running}
+            disabled={!serverMcpStatus.running}
             style={{
-              background: !serverStatus.running ? '#bdc3c7' : '#e74c3c',
+              background: !serverMcpStatus.running ? '#bdc3c7' : '#e74c3c',
               color: 'white',
               border: 'none',
               padding: '0.75rem 1.5rem',
               borderRadius: '6px',
-              cursor: !serverStatus.running ? 'not-allowed' : 'pointer',
+              cursor: !serverMcpStatus.running ? 'not-allowed' : 'pointer',
               fontSize: '1rem',
               margin: '0.5rem 0.5rem 0.5rem 0',
               minWidth: '120px',
