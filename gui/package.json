@@ -5,7 +5,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "npm run build && electron .",
-    "build": "vite build",
+    "build": "vite build && node scripts/fix-asset-paths.js",
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "concurrently \"vite build --watch\" \"wait-on dist/main.js && electron .\"",

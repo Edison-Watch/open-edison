@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
+import { readFile } from 'fs'
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null
@@ -207,20 +208,27 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       contextIsolation: true,
       preload: join(__dirname, 'preload.js'),
-      webSecurity: false, // Allow loading local files
-      allowRunningInsecureContent: true
+      webSecurity: true, // Keep web security enabled
+      allowRunningInsecureContent: false
     },
     show: false, // Don't show until ready
     title: 'Open Edison Desktop'
   })
 
-  // Load the React desktop interface as a static file
+  // Load the React desktop interface
   const isDev = process.env.NODE_ENV === 'development'
   
-  // Load the React app from the built HTML file
-  const indexPath = join(__dirname, 'src', 'index.html')
-  console.log(`Loading React desktop interface from ${indexPath}`)
-  mainWindow.loadFile(indexPath)
+  if (isDev) {
+    // In development, load from the dev server
+    const devUrl = `http://localhost:${FRONTEND_PORT}`
+    console.log(`Loading React desktop interface from dev server: ${devUrl}`)
+    mainWindow.loadURL(devUrl)
+  } else {
+    // In production, load the built static files using custom protocol
+    const indexPath = 'app://src/index.html'
+    console.log(`Loading React desktop interface from built files: ${indexPath}`)
+    mainWindow.loadURL(indexPath)
+  }
   
   if (isDev) {
     // Open DevTools in development
@@ -251,6 +259,15 @@ async function createWindow(): Promise<void> {
     console.error('Failed to load:', errorDescription, 'for URL:', validatedURL)
   })
 }
+
+// Register custom protocol for serving local files
+app.whenReady().then(() => {
+  protocol.registerFileProtocol('app', (request, callback) => {
+    const url = request.url.substr(6) // Remove 'app://' prefix
+    const filePath = join(__dirname, url)
+    callback({ path: filePath })
+  })
+})
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {

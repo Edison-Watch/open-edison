@@ -47,14 +47,18 @@ export default defineConfig(({ command }) => {
               if (chunkInfo.name === 'main') return 'main.js'
               if (chunkInfo.name === 'preload') return 'preload.js'
               return 'assets/[name]-[hash].js'
-            }
+            },
+            // Ensure relative paths for assets
+            assetFileNames: 'assets/[name]-[hash][extname]'
           }
         },
         // Ensure assets are copied and paths are relative
         assetsDir: 'assets',
         copyPublicDir: false,
         // Use relative paths for static file loading
-        base: './'
+        base: './',
+        // Ensure all asset paths are relative
+        publicDir: false
       },
       define: {
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
