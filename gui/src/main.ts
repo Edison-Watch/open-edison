@@ -775,6 +775,10 @@ ipcMain.handle('restart-setup-wizard-api', async () => {
 // IPC handler to open wizard window
 ipcMain.handle('open-wizard-window', async () => {
   try {
+    // Ensure Setup Wizard API server is running
+    const { host, port } = await readServerConfig()
+    await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+    
     await createWizardWindow()
     return { success: true }
   } catch (error) {
