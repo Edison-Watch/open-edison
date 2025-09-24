@@ -66,6 +66,40 @@ export interface ExportResponse {
   message: string;
 }
 
+export interface ReplaceRequest {
+  clients: string[];
+  url?: string;
+  api_key?: string;
+  server_name?: string;
+  dry_run?: boolean;
+  force?: boolean;
+  create_if_missing?: boolean;
+}
+
+export interface ReplaceResponse {
+  success: boolean;
+  results: Record<string, any>;
+  message: string;
+}
+
+export interface BackupInfoResponse {
+  success: boolean;
+  backups: Record<string, any>;
+  message: string;
+}
+
+export interface RestoreRequest {
+  clients: string[];
+  server_name?: string;
+  dry_run?: boolean;
+}
+
+export interface RestoreResponse {
+  success: boolean;
+  results: Record<string, any>;
+  message: string;
+}
+
 export interface SaveRequest {
   servers: ServerConfig[];
   dry_run?: boolean;
@@ -176,20 +210,29 @@ class WizardApiService {
   }
 
   /**
+   * Replace existing MCP server configurations with Open Edison
+   */
+  async replaceMcpServers(request: ReplaceRequest): Promise<ReplaceResponse> {
+    return this.makeRequest('/replace', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * Get backup information for all clients
+   */
+  async getBackupInfo(): Promise<BackupInfoResponse> {
+    return this.makeRequest('/backups');
+  }
+
+  /**
    * Restore original MCP configurations for specified clients
    */
-  async restoreClients(
-    clients: string[],
-    serverName: string = 'open-edison',
-    dryRun: boolean = false
-  ): Promise<{ success: boolean; results: Record<string, any>; message: string }> {
+  async restoreClients(request: RestoreRequest): Promise<RestoreResponse> {
     return this.makeRequest('/restore', {
       method: 'POST',
-      body: JSON.stringify({
-        clients,
-        server_name: serverName,
-        dry_run: dryRun,
-      }),
+      body: JSON.stringify(request),
     });
   }
 

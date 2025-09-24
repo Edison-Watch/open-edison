@@ -64,6 +64,28 @@ class ExportResponse(BaseModel):
     message: str
 
 
+class ReplaceRequest(BaseModel):
+    clients: list[str]
+    url: str = "http://localhost:3000/mcp/"
+    api_key: str = "dev-api-key-change-me"
+    server_name: str = "open-edison"
+    dry_run: bool = False
+    force: bool = False
+    create_if_missing: bool = True
+
+
+class ReplaceResponse(BaseModel):
+    success: bool
+    results: dict[str, Any]
+    message: str
+
+
+class BackupInfoResponse(BaseModel):
+    success: bool
+    backups: dict[str, Any]
+    message: str
+
+
 class ClientDetectionResponse(BaseModel):
     success: bool
     clients: list[str]
@@ -313,32 +335,153 @@ async def export_to_clients(request: ExportRequest):
         )
 
 
-@app.post("/restore")  # noqa
-async def restore_client_configs(
-    clients: list[str], server_name: str = "open-edison", dry_run: bool = False
-) -> dict[str, Any]:
-    """Restore original MCP configurations for specified clients."""
+@app.post("/replace", response_model=ReplaceResponse)  # noqa
+async def replace_mcp_servers(request: ReplaceRequest):
+    """Replace existing MCP server configurations with Open Edison.
+    
+    This will:
+    1. Backup existing MCP configurations
+    2. Replace them with Open Edison configuration
+    3. Provide restore functionality
+    """
     try:
         results = {}
 
-        for client_name in clients:
+        for client_name in request.clients:
             try:
                 client = CLIENT(client_name)
-                result = restore_client(client, server_name=server_name, dry_run=dry_run)
+                result = export_edison_to(
+                    client,
+                    url=request.url,
+                    api_key=request.api_key,
+                    server_name=request.server_name,
+                    dry_run=request.dry_run,
+                    force=request.force,
+                    create_if_missing=request.create_if_missing,
+                )
                 results[client_name] = {
-                    "success": getattr(result, "restored", False),
-                    "backup_path": str(getattr(result, "backup_path", None))
-                    if getattr(result, "backup_path", None)
-                    else None,
-                    "message": getattr(result, "message", "Restore completed"),
+                    "success": result.wrote_changes,
+                    "backup_path": str(result.backup_path) if result.backup_path else None,
+                    "target_path": str(result.target_path),
+                    "backed_up": result.backup_path is not None,
                 }
             except Exception as e:
                 results[client_name] = {"success": False, "error": str(e)}
 
+        success_count = sum(
+            1
+            for result in results.values()  # type: ignore
+            if isinstance(result, dict) and result.get("success", False)  # type: ignore
+        )  # type: ignore
+
+        backup_count = sum(
+            1
+            for result in results.values()  # type: ignore
+            if isinstance(result, dict) and result.get("backed_up", False)  # type: ignore
+        )  # type: ignore
+
+        return ReplaceResponse(
+            success=success_count > 0,
+            results=results,  # type: ignore
+            message=f"Replaced MCP servers in {success_count}/{len(request.clients)} clients successfully. {backup_count} configurations backed up.",
+        )
+
+    except Exception as e:
+        return ReplaceResponse(
+            success=False,
+            results={},  # type: ignore
+            message=f"Replace failed: {str(e)}",
+        )
+
+
+@app.get("/backups", response_model=BackupInfoResponse)  # noqa
+async def get_backup_info():
+    """Get information about available backups for all clients."""
+    try:
+        backups: dict[str, Any] = {}
+        
+        # Get detected clients and their paths
+        detected_clients = detect_clients()
+        
+        for client in detected_clients:
+            try:
+                # Use the existing export functionality to get target paths
+                result = export_edison_to(
+                    client,
+                    url="http://localhost:3000/mcp/",
+                    api_key="dev-api-key-change-me",
+                    server_name="open-edison",
+                    dry_run=True,  # Don't actually export, just get paths
+                    force=False,
+                    create_if_missing=False,
+                )
+                
+                target_path = result.target_path
+                backup_path = result.backup_path
+                
+                backups[client.value] = {
+                    "has_backup": backup_path is not None,
+                    "backup_path": str(backup_path) if backup_path else None,
+                    "target_path": str(target_path),
+                }
+            except Exception as e:
+                backups[client.value] = {
+                    "has_backup": False,
+                    "backup_path": None,
+                    "target_path": f"Error: {str(e)}",
+                }
+
+        return BackupInfoResponse(
+            success=True,
+            backups=backups,
+            message=f"Found backup information for {len(backups)} clients",
+        )
+
+    except Exception as e:
+        return BackupInfoResponse(
+            success=False,
+            backups={},
+            message=f"Failed to get backup info: {str(e)}",
+        )
+
+
+class RestoreRequest(BaseModel):
+    clients: list[str]
+    server_name: str = "open-edison"
+    dry_run: bool = False
+
+
+@app.post("/restore")  # noqa
+async def restore_client_configs(request: RestoreRequest) -> dict[str, Any]:
+    """Restore original MCP configurations for specified clients."""
+    try:
+        results = {}
+
+        for client_name in request.clients:
+            try:
+                client = CLIENT(client_name)
+                result = restore_client(client, server_name=request.server_name, dry_run=request.dry_run)
+                results[client_name] = {
+                    "success": getattr(result, "wrote_changes", False),
+                    "restored_from_backup": str(getattr(result, "restored_from_backup", None))
+                    if getattr(result, "restored_from_backup", None)
+                    else None,
+                    "removed_open_edison_only": getattr(result, "removed_open_edison_only", False),
+                    "target_path": str(getattr(result, "target_path", "")),
+                }
+            except Exception as e:
+                results[client_name] = {"success": False, "error": str(e)}
+
+        success_count = sum(
+            1
+            for result in results.values()  # type: ignore
+            if isinstance(result, dict) and result.get("success", False)  # type: ignore
+        )  # type: ignore
+
         return {
-            "success": True,
+            "success": success_count > 0,
             "results": results,  # type: ignore
-            "message": f"Restore operations completed for {len(clients)} clients",
+            "message": f"Restore operations completed for {success_count}/{len(request.clients)} clients",
         }
 
     except Exception as e:
@@ -385,6 +528,8 @@ def main():
     print("  POST /oauth - Authorize OAuth for remote servers")
     print("  POST /save - Save imported servers to config")
     print("  POST /export - Export to MCP clients")
+    print("  POST /replace - Replace MCP servers with Open Edison (with backup)")
+    print("  GET  /backups - Get backup information for all clients")
     print("  POST /restore - Restore client configurations")
     print("  GET  /config - Get current configuration")
 

@@ -43,11 +43,24 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [previewData, setPreviewData] = useState<any>(null);
   const [activePreviewTab, setActivePreviewTab] = useState(0);
   const [autoImport, setAutoImport] = useState<boolean | null>(null);
+  
+  // New state for export/replace step
+  const [replaceClients, setReplaceClients] = useState<string[]>([]);
+  const [replaceResults, setReplaceResults] = useState<any>(null);
+  const [backupInfo, setBackupInfo] = useState<any>(null);
+  const [showReplacePreview, setShowReplacePreview] = useState(false);
 
   // Step 1: Detect available clients
   useEffect(() => {
     if (step === 1) {
       detectClients();
+    }
+  }, [step]);
+
+  // Step 6: Load backup info for replace step
+  useEffect(() => {
+    if (step === 6) {
+      loadBackupInfo();
     }
   }, [step]);
 
@@ -236,14 +249,104 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         });
         
         if (data.success) {
-          onImportComplete(selectedServers);
-          onClose();
+          // Move to replace step instead of completing
+          setStep(6);
         } else {
           setError(data.message);
         }
       }
     } catch (err) {
       setError('Failed to save configuration. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadBackupInfo = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await wizardApiService.getBackupInfo();
+      
+      if (data.success) {
+        setBackupInfo(data.backups);
+        // Initialize replace clients with the clients that were originally selected for import
+        setReplaceClients(selectedClients);
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Failed to load backup information. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReplaceClientToggle = (client: string) => {
+    setReplaceClients(prev => 
+      prev.includes(client) 
+        ? prev.filter(c => c !== client)
+        : [...prev, client]
+    );
+  };
+
+  const replaceMcpServers = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await wizardApiService.replaceMcpServers({
+        clients: replaceClients,
+        url: 'http://localhost:3000/mcp/',
+        api_key: 'dev-api-key-change-me',
+        server_name: 'open-edison',
+        dry_run: dryRun,
+        force: false,
+        create_if_missing: true
+      });
+      
+      if (response.success) {
+        setReplaceResults(response.results);
+        setError(null);
+        if (dryRun) {
+          setError('Dry run completed successfully. No changes were made.');
+        } else {
+          setError('MCP servers replaced successfully! Your original configurations have been backed up.');
+        }
+      } else {
+        setError(response.message);
+      }
+    } catch (err) {
+      setError('Failed to replace MCP servers. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const restoreMcpServers = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await wizardApiService.restoreClients({
+        clients: replaceClients,
+        server_name: 'open-edison',
+        dry_run: dryRun
+      });
+      
+      if (response.success) {
+        setError(null);
+        if (dryRun) {
+          setError('Dry run completed successfully. No changes were made.');
+        } else {
+          setError('MCP servers restored successfully!');
+        }
+      } else {
+        setError(response.message);
+      }
+    } catch (err) {
+      setError('Failed to restore MCP servers. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -654,6 +757,163 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     </div>
   );
 
+  const renderStep6 = () => (
+    <div>
+      <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 6: Replace MCP Servers</h3>
+      <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
+        Replace your existing MCP server configurations with Open Edison. Your original configurations will be backed up automatically.
+      </p>
+      <p style={{ marginBottom: '1rem', color: '#7f8c8d', fontSize: '0.875rem' }}>
+        <strong>Note:</strong> Only the clients you originally selected for import are shown below.
+      </p>
+      
+      {dryRun && (
+        <div style={{ 
+          background: '#fff3cd', 
+          border: '1px solid #ffeaa7', 
+          borderRadius: '4px', 
+          padding: '0.75rem', 
+          marginBottom: '1rem',
+          color: '#856404'
+        }}>
+          <strong>Dry Run Mode:</strong> No changes will be made to your MCP configurations.
+        </div>
+      )}
+
+      {loading ? (
+        <p>Loading backup information...</p>
+      ) : (
+        <div>
+          <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
+            Select which MCP clients to replace with Open Edison:
+          </p>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+            {selectedClients.map(client => (
+              <label key={client} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={replaceClients.includes(client)}
+                  onChange={() => handleReplaceClientToggle(client)}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>{client}</div>
+                  {backupInfo && backupInfo[client] && (
+                    <div style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>
+                      {backupInfo[client].has_backup ? (
+                        <span style={{ color: '#27ae60' }}>✓ Has backup available</span>
+                      ) : (
+                        <span style={{ color: '#e74c3c' }}>⚠ No existing backup</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {replaceResults && (
+            <div style={{ 
+              marginBottom: '1rem',
+              border: '1px solid #bdc3c7',
+              borderRadius: '8px',
+              overflow: 'hidden'
+            }}>
+              <div style={{ 
+                background: '#f8f9fa', 
+                padding: '1rem', 
+                borderBottom: '1px solid #bdc3c7',
+                fontWeight: 'bold'
+              }}>
+                Replace Results
+              </div>
+              <div style={{ padding: '1rem' }}>
+                {Object.entries(replaceResults).map(([client, result]: [string, any]) => (
+                  <div key={client} style={{ marginBottom: '0.5rem', padding: '0.5rem', background: '#f8f9fa', borderRadius: '4px' }}>
+                    <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>{client}</div>
+                    <div style={{ fontSize: '0.875rem', color: result.success ? '#27ae60' : '#e74c3c' }}>
+                      {result.success ? '✓ Successfully replaced' : '✗ Failed to replace'}
+                    </div>
+                    {result.backup_path && (
+                      <div style={{ fontSize: '0.75rem', color: '#7f8c8d' }}>
+                        Backup: {result.backup_path}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={replaceMcpServers}
+              disabled={loading || replaceClients.length === 0}
+              style={{
+                background: '#e74c3c',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: (loading || replaceClients.length === 0) ? 'not-allowed' : 'pointer',
+                opacity: (loading || replaceClients.length === 0) ? 0.5 : 1
+              }}
+            >
+              {loading ? 'Replacing...' : `Replace MCP Servers (${replaceClients.length})`}
+            </button>
+            
+            <button
+              onClick={restoreMcpServers}
+              disabled={loading || replaceClients.length === 0}
+              style={{
+                background: '#3498db',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: (loading || replaceClients.length === 0) ? 'not-allowed' : 'pointer',
+                opacity: (loading || replaceClients.length === 0) ? 0.5 : 1
+              }}
+            >
+              {loading ? 'Restoring...' : `Restore Original Configs (${replaceClients.length})`}
+            </button>
+
+            <button
+              onClick={() => {
+                onImportComplete(selectedServers);
+                onClose();
+              }}
+              style={{
+                background: '#27ae60',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              Complete Setup
+            </button>
+
+            <button
+              onClick={() => setStep(5)}
+              style={{
+                background: '#95a5a6',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              Back to Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{
       position: 'fixed',
@@ -725,7 +985,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             
             {/* Step circles */}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {[0, 1, 2, 3, 4, 5].map(stepNum => (
+              {[0, 1, 2, 3, 4, 5, 6].map(stepNum => (
                 <button
                   key={stepNum}
                   onClick={() => visitedSteps.has(stepNum) ? goToStep(stepNum) : undefined}
@@ -796,6 +1056,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         {step === 3 && renderStep3()}
         {step === 4 && renderStep4()}
         {step === 5 && renderStep5()}
+        {step === 6 && renderStep6()}
       </div>
     </div>
   );
