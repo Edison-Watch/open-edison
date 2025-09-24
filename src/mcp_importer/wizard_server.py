@@ -130,19 +130,19 @@ def convert_from_server_config(server_config: ServerConfig) -> MCPServerConfig:
     )
 
 
-@app.options("/{path:path}")
+@app.options("/{path:path}")  # noqa
 async def options_handler(path: str):
     """Handle CORS preflight requests."""
     return {"message": "OK"}
 
 
-@app.get("/health")
+@app.get("/health")  # noqa
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "setup-wizard-api"}
 
 
-@app.get("/clients", response_model=ClientDetectionResponse)
+@app.get("/clients", response_model=ClientDetectionResponse)  # noqa
 async def detect_available_clients():
     """Detect available MCP clients on the system."""
     try:
@@ -157,7 +157,7 @@ async def detect_available_clients():
         )
 
 
-@app.post("/import", response_model=ImportResponse)
+@app.post("/import", response_model=ImportResponse)  # noqa
 async def import_mcp_servers(request: ImportRequest):
     """Import MCP servers from specified clients."""
     try:
@@ -199,7 +199,7 @@ async def import_mcp_servers(request: ImportRequest):
         )
 
 
-@app.post("/verify", response_model=VerificationResponse)
+@app.post("/verify", response_model=VerificationResponse)  # noqa
 async def verify_servers(request: VerificationRequest):
     """Verify MCP server configurations."""
     try:
@@ -230,7 +230,7 @@ async def verify_servers(request: VerificationRequest):
         )
 
 
-@app.post("/oauth", response_model=OAuthResponse)
+@app.post("/oauth", response_model=OAuthResponse)  # noqa
 async def authorize_oauth(request: OAuthRequest):
     """Authorize OAuth for a remote MCP server."""
     try:
@@ -250,7 +250,8 @@ class SaveRequest(BaseModel):
     servers: list[ServerConfig]
     dry_run: bool = False
 
-@app.post("/save", response_model=dict[str, Any])
+
+@app.post("/save", response_model=dict[str, Any])  # noqa
 async def save_imported_servers_to_config(request: SaveRequest):
     """Save imported servers to Open Edison configuration."""
     try:
@@ -267,7 +268,7 @@ async def save_imported_servers_to_config(request: SaveRequest):
         return {"success": False, "message": f"Failed to save servers: {str(e)}"}
 
 
-@app.post("/export", response_model=ExportResponse)
+@app.post("/export", response_model=ExportResponse)  # noqa
 async def export_to_clients(request: ExportRequest):
     """Export Open Edison configuration to specified clients."""
     try:
@@ -294,8 +295,8 @@ async def export_to_clients(request: ExportRequest):
 
         success_count = sum(
             1
-            for result in results.values() # type: ignore
-            if isinstance(result, dict) and result.get("success", False) # type: ignore
+            for result in results.values()  # type: ignore
+            if isinstance(result, dict) and result.get("success", False)  # type: ignore
         )  # type: ignore
 
         return ExportResponse(
@@ -312,7 +313,7 @@ async def export_to_clients(request: ExportRequest):
         )
 
 
-@app.post("/restore")
+@app.post("/restore")  # noqa
 async def restore_client_configs(
     clients: list[str], server_name: str = "open-edison", dry_run: bool = False
 ) -> dict[str, Any]:
@@ -347,7 +348,7 @@ async def restore_client_configs(
         }
 
 
-@app.get("/config")
+@app.get("/config")  # noqa
 async def get_current_config():
     """Get current Open Edison configuration."""
     try:

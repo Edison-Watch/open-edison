@@ -21,8 +21,6 @@ interface OverviewProps {
 const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLogsExpanded }) => {
   const [serverApiStatus, setServerApiStatus] = useState<ServerStatus>({ running: false, port: 3001 });
   const [serverMcpStatus, setServerMcpStatus] = useState<ServerStatus>({ running: false, port: 3000 });
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [showApi, setShowApi] = useState(false);
   const [showMcp, setShowMcp] = useState(true);
   const [verboseLogs, setVerboseLogs] = useState(false);
@@ -30,6 +28,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
   const [showLogsSection, setShowLogsSection] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpMessage, setHelpMessage] = useState('');
+  const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -105,40 +106,58 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     await startServer();
   };
 
-  // File handling
-  const handleFileSelect = (files: FileList | null) => {
-    setSelectedFiles(files);
-    if (files && files.length > 0) {
-      addLog(`Selected ${files.length} file(s) for import`);
-    }
+  // Help modal functions
+  const openHelpModal = () => {
+    setShowHelpModal(true);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
+  const closeHelpModal = () => {
+    setShowHelpModal(false);
+    setHelpMessage('');
+    setIncludeDebugLogs(false);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = e.dataTransfer.files;
-    handleFileSelect(files);
-  };
-
-  const importServers = () => {
-    if (!selectedFiles || selectedFiles.length === 0) {
-      addLog('No files selected for import');
+  const submitHelpRequest = async () => {
+    if (!helpMessage.trim()) {
+      addLog('Please enter a message before submitting your help request.');
       return;
     }
 
-    addLog(`Importing ${selectedFiles.length} server configuration file(s)...`);
-    addLog('Import functionality not yet implemented');
+    try {
+      addLog('Sending help request...');
+      
+      // Prepare email content
+      const subject = `Open Edison Help Request - ${new Date().toLocaleString()}`;
+      let emailBody = `Help Request Details:\n\n`;
+      emailBody += `Message: ${helpMessage}\n\n`;
+      emailBody += `Timestamp: ${new Date().toISOString()}\n`;
+      emailBody += `Server Status: ${serverMcpStatus.running ? 'Online' : 'Offline'}\n`;
+      emailBody += `API Status: ${serverApiStatus.running ? 'Online' : 'Offline'}\n\n`;
+      
+      if (includeDebugLogs) {
+        emailBody += `Debug Logs:\n`;
+        emailBody += `================\n`;
+        emailBody += logs.map(log => `[${log.timestamp}] ${log.message}`).join('\n');
+        emailBody += `\n\n`;
+      }
+      
+      // Create mailto link
+      const mailtoLink = `mailto:support@edison.watch?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+      
+      // Open default email client
+      window.open(mailtoLink, '_blank');
+      
+      addLog('Help request prepared! Your default email client should open with the message ready to send.');
+      addLog('Please review and send the email to support@edison.watch');
+      
+    } catch (error) {
+      addLog('Error preparing help request. Please try again.');
+      console.error('Help request error:', error);
+    }
+    
+    closeHelpModal();
   };
+
 
 
   // Start server status monitoring
@@ -148,35 +167,12 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for API logs when showApi is enabled
-  useEffect(() => {
-    if (showApi && window.electronAPI) {
-      const handleApiLog = (log: any) => {
-        if (log.type === 'stdout') {
-          const timestamp = new Date().toLocaleTimeString();
-          const logEntry = {
-            timestamp,
-            message: log.message.trim(),
-            type: 'api'
-          };
-          setLogs(prev => [...prev, logEntry]);
-        }
-      };
-
-      window.electronAPI.onBackendLog(handleApiLog);
-      
-      return () => {
-        if (window.electronAPI) {
-          window.electronAPI.removeBackendLogListener();
-        }
-      };
-    }
-  }, [showApi, setLogs]);
+  // Note: All logs are now captured at App level for complete debugging
 
   // Filter and format logs based on current settings
   const filteredLogs = logs.filter(log => {
     // Show MCP logs (stderr) by default, API logs (stdout) when showApi is checked
-    return (log.type === 'stderr' && showMcp) || (log.type === 'api' && showApi);
+    return (log.type === 'stderr' && showMcp) || (log.type === 'stdout' && showApi);
   }).map(log => {
     let message = log.message;
     
@@ -230,6 +226,33 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           {serverMcpStatus.running ? '✅ Server is online 🛡️' : '❌ Server is offline'}
         </div>
 
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button
+            onClick={openHelpModal}
+            style={{
+              background: '#3498db',
+              color: 'white',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#2980b9';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#3498db';
+            }}
+          >
+            💬 Get Help
+          </button>
+        </div>
+
       </div>
 
       {/* Server Logs Section */}
@@ -274,24 +297,26 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
               </div>
             </div>
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setLogsExpanded(!logsExpanded);
-            }}
-            style={{
-              background: logsExpanded ? '#e74c3c' : '#3498db',
-              color: 'white',
-              border: 'none',
-              padding: '0.5rem 1rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            {logsExpanded ? 'Collapse' : 'Expand'}
-          </button>
+          {showLogsSection && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLogsExpanded(!logsExpanded);
+              }}
+              style={{
+                background: logsExpanded ? '#e74c3c' : '#3498db',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              {logsExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          )}
         </div>
 
         {/* Logs Content - Collapsible */}
@@ -396,98 +421,178 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         </div>
       </div>
 
-      {/* Import Servers Section */}
-      <div id="import-section" style={{
-        background: 'white',
-        borderRadius: '8px',
-        padding: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
-            Import Configuration Files
-          </h2>
-          <button
-            onClick={async () => {
-              // Start the Setup Wizard API server
-              if (window.electronAPI && window.electronAPI.restartSetupWizardApi) {
-                try {
-                  await window.electronAPI.restartSetupWizardApi();
-                } catch (error) {
-                  console.error('Failed to start Setup Wizard API:', error);
-                }
-              }
-              // Open wizard window
-              if (window.electronAPI && window.electronAPI.openWizardWindow) {
-                try {
-                  await window.electronAPI.openWizardWindow();
-                } catch (error) {
-                  console.error('Failed to open wizard window:', error);
-                }
-              }
-            }}
-            style={{
-              background: '#9b59b6',
-              color: 'white',
-              border: 'none',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            MCP Import Wizard
-          </button>
-        </div>
-        
-        <div
-          onClick={() => document.getElementById('file-input')?.click()}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          style={{
-            border: `2px dashed ${isDragOver ? '#3498db' : '#bdc3c7'}`,
-            borderRadius: '8px',
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
             padding: '2rem',
-            textAlign: 'center',
-            marginTop: '1rem',
-            background: isDragOver ? '#ebf3fd' : 'transparent',
-            cursor: 'pointer',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          <p>Click here or drag and drop configuration files</p>
-          <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-            Supported formats: JSON, YAML
-          </p>
-          <input
-            type="file"
-            id="file-input"
-            accept=".json,.yaml,.yml"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => handleFileSelect(e.target.files)}
-          />
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
+            position: 'relative'
+          }}>
+            {/* Close button */}
+            <button
+              onClick={closeHelpModal}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                color: '#7f8c8d',
+                padding: '0.25rem',
+                borderRadius: '4px',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f8f9fa';
+                e.currentTarget.style.color = '#2c3e50';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'none';
+                e.currentTarget.style.color = '#7f8c8d';
+              }}
+            >
+              ×
+            </button>
+
+            <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
+              💬 Get Help
+            </h2>
+            
+            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              Having issues with Open Edison? Let us know what's going wrong and we'll help you out!
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontWeight: '500', 
+                color: '#2c3e50' 
+              }}>
+                Describe your issue:
+              </label>
+              <textarea
+                value={helpMessage}
+                onChange={(e) => setHelpMessage(e.target.value)}
+                placeholder="Please describe the problem you're experiencing, what you were trying to do, and any error messages you've seen..."
+                style={{
+                  width: '100%',
+                  minHeight: '120px',
+                  padding: '0.75rem',
+                  border: '1px solid #bdc3c7',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  outline: 'none',
+                  transition: 'border-color 0.3s ease'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#3498db';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#bdc3c7';
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                color: '#2c3e50'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={includeDebugLogs}
+                  onChange={(e) => setIncludeDebugLogs(e.target.checked)}
+                  style={{ margin: 0 }}
+                />
+                <span>Attach debug logs to help with troubleshooting</span>
+              </label>
+              <p style={{ 
+                fontSize: '0.75rem', 
+                color: '#7f8c8d', 
+                margin: '0.25rem 0 0 1.5rem',
+                lineHeight: '1.4'
+              }}>
+                This will include server logs and system information to help us diagnose the issue.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeHelpModal}
+                style={{
+                  background: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#7f8c8d';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#95a5a6';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitHelpRequest}
+                disabled={!helpMessage.trim()}
+                style={{
+                  background: helpMessage.trim() ? '#27ae60' : '#bdc3c7',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: helpMessage.trim() ? 'pointer' : 'not-allowed',
+                  fontSize: '0.875rem',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (helpMessage.trim()) {
+                    e.currentTarget.style.background = '#229954';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (helpMessage.trim()) {
+                    e.currentTarget.style.background = '#27ae60';
+                  }
+                }}
+              >
+                Submit Help Request
+              </button>
+            </div>
+          </div>
         </div>
-        
-        <button
-          onClick={importServers}
-          style={{
-            background: '#9b59b6',
-            color: 'white',
-            border: 'none',
-            padding: '0.75rem 1.5rem',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            margin: '0.5rem',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          Import Configuration Files
-        </button>
-      </div>
+      )}
 
     </div>
   );

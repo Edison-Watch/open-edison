@@ -37,24 +37,24 @@ const App: React.FC = () => {
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.onBackendLog((log) => {
-        // Only process stderr by default, stdout will be filtered in Overview component
-        if (log.type === 'stderr') {
-          const timestamp = new Date().toLocaleTimeString();
-          let message = log.message.trim();
-          
-          // Extract just the message part (after the last "-") for stderr
+        // Capture ALL logs (both stderr and stdout) for complete debugging
+        const timestamp = new Date().toLocaleTimeString();
+        let message = log.message.trim();
+        
+        // Extract just the message part (after the last "-") for stderr
+        if (log.type === 'stderr' && message.includes(' - ')) {
           const lastDashIndex = message.lastIndexOf(' - ');
           if (lastDashIndex !== -1) {
             message = message.substring(lastDashIndex + 3);
           }
-          
-          const logEntry = {
-            timestamp,
-            message,
-            type: log.type
-          };
-          setLogs(prev => [...prev, logEntry]);
         }
+        
+        const logEntry = {
+          timestamp,
+          message,
+          type: log.type
+        };
+        setLogs(prev => [...prev, logEntry]);
       });
     }
 
