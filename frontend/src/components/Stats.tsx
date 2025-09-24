@@ -1,6 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Session } from '../types'
 import { Line, Bar } from 'react-chartjs-2'
+import Panel from './Panel'
+import { format as d3format } from 'd3-format'
+import dayjs from 'dayjs'
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -71,10 +74,42 @@ function histogramTools(sessions: Session[]): Bucket[] {
             map.set(key, (map.get(key) ?? 0) + 1)
         }
     }
-    return Array.from(map.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 15)
-        .map(([label, value]) => ({ label, value }))
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+    const top = sorted.slice(0, 15)
+    const rest = sorted.slice(15)
+    const buckets = top.map(([label, value]) => ({ label, value }))
+    if (rest.length > 0) {
+        const other = rest.reduce((acc, [, v]) => acc + v, 0)
+        if (other > 0) buckets.push({ label: 'Other', value: other })
+    }
+    return buckets
+}
+
+function serverNameFromToolName(toolName: string): string {
+    if (!toolName) return 'unknown'
+    if (toolName.startsWith('builtin_')) return 'builtin'
+    if (toolName.startsWith('agent_')) return 'agent'
+    const idx = toolName.indexOf('_')
+    return idx > 0 ? toolName.slice(0, idx) : toolName
+}
+
+function histogramServers(sessions: Session[]): Bucket[] {
+    const map = new Map<string, number>()
+    for (const s of sessions) {
+        for (const tc of s.tool_calls) {
+            const server = serverNameFromToolName(String(tc.tool_name || 'unknown'))
+            map.set(server, (map.get(server) ?? 0) + 1)
+        }
+    }
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+    const top = sorted.slice(0, 15)
+    const rest = sorted.slice(15)
+    const buckets = top.map(([label, value]) => ({ label, value }))
+    if (rest.length > 0) {
+        const other = rest.reduce((acc, [, v]) => acc + v, 0)
+        if (other > 0) buckets.push({ label: 'Other', value: other })
+    }
+    return buckets
 }
 
 function histogramSessionLengthsBinned(sessions: Session[], targetBins: number = 8): Bucket[] {
@@ -113,19 +148,7 @@ function histogramSessionLengthsBinned(sessions: Session[], targetBins: number =
     return out
 }
 
-function histogramCallDurationsLinear(sessions: Session[], binMs: number = 1000): Bucket[] {
-    const map = new Map<number, number>()
-    for (const s of sessions) {
-        for (const tc of s.tool_calls) {
-            const d = typeof tc.duration_ms === 'number' ? Math.max(0, tc.duration_ms) : null
-            if (d == null) continue
-            const bin = Math.floor(d / binMs)
-            map.set(bin, (map.get(bin) ?? 0) + 1)
-        }
-    }
-    const entries = Array.from(map.entries()).sort((a, b) => a[0] - b[0])
-    return entries.map(([bin, count]) => ({ label: `${(bin * binMs) / 1000}-${((bin + 1) * binMs) / 1000}s`, value: count }))
-}
+// Removed linear bin histogram in favor of log-binned view only
 
 const fmtRange = (loSec: number, hiSec: number): string => {
     const fmt = (s: number) => (s < 1 ? `${Math.round(s * 1000)}ms` : `${Math.round(s)}s`)
@@ -172,26 +195,31 @@ function histogramCallDurationsLogDynamic(sessions: Session[], targetBins: numbe
 }
 
 function percentileCurve(sessions: Session[]): { xs: number[]; ys: number[] } {
-    const arr: number[] = []
+    // Return as X = seconds, Y = percentile (0..100)
+    const msArr: number[] = []
     for (const s of sessions) {
         for (const tc of s.tool_calls) {
             const d = typeof tc.duration_ms === 'number' ? Math.max(0, tc.duration_ms) : null
-            if (d != null) arr.push(d)
+            if (d != null) msArr.push(d)
         }
     }
-    if (arr.length === 0) return { xs: [], ys: [] }
-    arr.sort((a, b) => a - b)
-    const xs: number[] = []
-    const ys: number[] = []
-    for (let p = 0; p <= 100; p += 5) {
-        const rank = (p / 100) * (arr.length - 1)
-        const lo = Math.floor(rank)
-        const hi = Math.ceil(rank)
-        const loVal = arr[Math.max(0, Math.min(lo, arr.length - 1))] as number
-        const hiVal = arr[Math.max(0, Math.min(hi, arr.length - 1))] as number
-        const v = lo === hi ? loVal : loVal + (hiVal - loVal) * (rank - lo)
-        xs.push(p)
-        ys.push(v / 1000) // seconds
+    if (msArr.length === 0) return { xs: [], ys: [] }
+    msArr.sort((a, b) => a - b)
+    const xs: number[] = [] // seconds
+    const ys: number[] = [] // percent
+    // Sample x values across the range (sec)
+    const minS = msArr[0]! / 1000
+    const maxS = msArr[msArr.length - 1]! / 1000
+    const steps = 20
+    for (let i = 0; i <= steps; i += 1) {
+        const sec = minS + ((maxS - minS) * i) / steps
+        // Compute percentile for this duration
+        const ms = sec * 1000
+        let idx = msArr.findIndex((v) => v >= ms)
+        if (idx < 0) idx = msArr.length - 1
+        const pct = (idx / (msArr.length - 1)) * 100
+        xs.push(sec)
+        ys.push(pct)
     }
     return { xs, ys }
 }
@@ -215,70 +243,113 @@ function histogramTrifectaCombos(sessions: Session[]): Bucket[] {
     return combos.map((label) => ({ label, value: map.get(label) ?? 0 }))
 }
 
-function SimpleBar({ data, maxLabel }: { data: Bucket[]; maxLabel?: number }) {
-    const max = data.reduce((m, x) => Math.max(m, x.value), 1)
-    const items = maxLabel ? data.slice(0, maxLabel) : data
-    return (
-        <div className="space-y-2">
-            {items.map((b) => (
-                <div key={b.label} className="flex items-center gap-2">
-                    <div className="text-xs w-20 truncate" title={b.label}>{b.label}</div>
-                    <div className="h-2 bg-app-border rounded flex-1 overflow-hidden">
-                        <div className="h-2 bg-app-accent rounded" style={{ width: `${(b.value / max) * 100}%` }} />
-                    </div>
-                    <div className="text-xs text-app-muted" style={{ width: 28, textAlign: 'right' }}>{b.value}</div>
-                </div>
-            ))}
-        </div>
-    )
-}
+// Removed SimpleBar (horizontal bars) in favor of vertical Bar charts
 
 // Sparkline removed after switching to Chart.js line chart
 
 export function Stats({ sessions }: { sessions: Session[] }) {
     const callsOverTime = useMemo(() => groupByDayCalls(sessions), [sessions])
     const toolsHist = useMemo(() => histogramTools(sessions), [sessions])
+    const serversHist = useMemo(() => histogramServers(sessions), [sessions])
     const sessionLenHist = useMemo(() => histogramSessionLengthsBinned(sessions), [sessions])
-    const durationHistLinear = useMemo(() => histogramCallDurationsLinear(sessions, 1000), [sessions])
     const durationHistLog = useMemo(() => histogramCallDurationsLogDynamic(sessions, 10), [sessions])
     const perc = useMemo(() => percentileCurve(sessions), [sessions])
     const trifectaHist = useMemo(() => histogramTrifectaCombos(sessions), [sessions])
 
+    // Formatters
+    const fmtSI = useMemo(() => d3format('~s'), [])
+    const fmtDate = (d: string) => dayjs(d).format('MM-DD')
+    const fmtSecs = (s: number) => (s < 1 ? `${Math.round(s * 1000)}ms` : `${Math.round(s * 10) / 10}s`)
+
+    // Calls chart controls
+    const [callsScale, setCallsScale] = useState<'linear' | 'logarithmic'>('linear')
+    const [showMA, setShowMA] = useState<boolean>(true)
+    const [topBy, setTopBy] = useState<'tool' | 'server'>('tool')
+
+    const callsLabels = useMemo(() => callsOverTime.map(b => b.label), [callsOverTime])
+    const callsValues = useMemo(() => callsOverTime.map(b => b.value), [callsOverTime])
+    const callsMA = useMemo(() => {
+        const w = 7
+        const out: number[] = []
+        for (let i = 0; i < callsValues.length; i += 1) {
+            const a = Math.max(0, i - (w - 1))
+            const slice = callsValues.slice(a, i + 1)
+            const sum = slice.reduce((acc, v) => acc + v, 0)
+            out.push(sum / slice.length)
+        }
+        return out
+    }, [callsValues])
+
+    // Percentiles for captions
+    const durationSeconds = useMemo(() => {
+        const arr: number[] = []
+        for (const s of sessions) {
+            for (const tc of s.tool_calls) {
+                const d = typeof tc.duration_ms === 'number' ? Math.max(0, tc.duration_ms) : null
+                if (d != null) arr.push(d / 1000)
+            }
+        }
+        return arr.sort((a, b) => a - b)
+    }, [sessions])
+    const pct = useMemo(() => {
+        const get = (p: number) => {
+            if (durationSeconds.length === 0) return 0
+            const rank = (p / 100) * (durationSeconds.length - 1)
+            const lo = Math.floor(rank)
+            const hi = Math.ceil(rank)
+            const loVal = durationSeconds[Math.max(0, Math.min(lo, durationSeconds.length - 1))] as number
+            const hiVal = durationSeconds[Math.max(0, Math.min(hi, durationSeconds.length - 1))] as number
+            return lo === hi ? loVal : loVal + (hiVal - loVal) * (rank - lo)
+        }
+        return { p50: get(50), p90: get(90), p95: get(95) }
+    }, [durationSeconds])
+
     return (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Calls over time (by day)</div>
-                <Line height={160} data={{
-                    labels: callsOverTime.map(b => b.label),
-                    datasets: [{
-                        label: 'Calls',
-                        data: callsOverTime.map(b => b.value),
-                        borderColor: '#8b5cf6',
-                        backgroundColor: 'rgba(139,92,246,0.2)',
-                        tension: 0.3,
-                        pointRadius: 0,
-                    }],
+            <Panel title="Calls over time (by day)" unit="calls">
+                <div className="flex items-center gap-2 mb-1 text-[10px]">
+                    <button className={`badge ${callsScale === 'linear' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setCallsScale('linear')}>Linear</button>
+                    <button className={`badge ${callsScale === 'logarithmic' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setCallsScale('logarithmic')}>Log</button>
+                    <button className={`badge ${showMA ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setShowMA((prev) => !prev)}>7-day Moving Average</button>
+                </div>
+                <Line height={140} data={{
+                    labels: callsLabels,
+                    datasets: [
+                        {
+                            label: 'Calls',
+                            data: callsValues,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139,92,246,0.2)',
+                            tension: 0.25,
+                            pointRadius: 0,
+                        },
+                        ...(showMA ? [{ label: '7-day Moving Average', data: callsMA, borderColor: '#34d399', backgroundColor: 'rgba(16,185,129,0.0)', borderDash: [6, 4], tension: 0, pointRadius: 0 }] : []),
+                    ],
                 }} options={{
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { labels: { color: '#a0a7b4' } }, tooltip: { mode: 'index', intersect: false } },
+                    plugins: { legend: { labels: { color: '#a0a7b4' } }, tooltip: { mode: 'index', intersect: false }, decimation: { enabled: true, algorithm: 'min-max' } as any },
                     animation: false,
-                    elements: { line: { tension: 0.25 } },
-                    scales: { x: { ticks: { color: '#a0a7b4' } }, y: { type: 'logarithmic', ticks: { color: '#a0a7b4' } } },
+                    scales: {
+                        x: { ticks: { color: '#a0a7b4', callback: (v: string | number) => fmtDate(String(v)), maxTicksLimit: 8 }, grid: { color: 'rgba(160,167,180,0.15)' } },
+                        y: { type: callsScale, ticks: { color: '#a0a7b4', callback: (val: any) => fmtSI(Number(val)) }, grid: { color: 'rgba(160,167,180,0.15)' } },
+                    },
                 }} />
-            </div>
-            {/* Row separator */}
-            <div className="col-span-2 h-px bg-app-border opacity-60 my-1" />
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Top tools by calls</div>
+            </Panel>
+
+            <Panel title={`Top ${topBy === 'tool' ? 'tools' : 'servers'} by calls`} unit="calls">
+                <div className="flex items-center gap-2 mb-1 text-[10px]">
+                    <button className={`badge ${topBy === 'tool' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setTopBy('tool')}>Tool</button>
+                    <button className={`badge ${topBy === 'server' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setTopBy('server')}>Server</button>
+                </div>
                 <Bar height={160} data={{
-                    labels: toolsHist.map(b => b.label),
+                    labels: (topBy === 'tool' ? toolsHist : serversHist).map(b => b.label),
                     datasets: [{
                         label: 'calls',
-                        data: toolsHist.map(b => b.value),
-                        backgroundColor: toolsHist.map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]!.fill),
-                        borderColor: toolsHist.map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]!.stroke),
+                        data: (topBy === 'tool' ? toolsHist : serversHist).map(b => b.value),
+                        backgroundColor: (topBy === 'tool' ? toolsHist : serversHist).map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]!.fill),
+                        borderColor: (topBy === 'tool' ? toolsHist : serversHist).map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]!.stroke),
                         borderWidth: 1,
                     }],
                 }} options={{
@@ -286,47 +357,73 @@ export function Stats({ sessions }: { sessions: Session[] }) {
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     animation: false,
-                    scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 0, minRotation: 0 }, grid: { display: false } }, y: { ticks: { color: '#a0a7b4' } } },
+                    scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 45, minRotation: 45 }, grid: { display: false } }, y: { type: 'logarithmic', ticks: { color: '#a0a7b4', callback: (v: any) => fmtSI(Number(v)) } } },
                 }} />
-            </div>
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Session length (calls per session)</div>
-                <SimpleBar data={sessionLenHist} />
-            </div>
-            {/* Row separator */}
-            <div className="col-span-2 h-px bg-app-border opacity-60 my-1" />
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Tool call durations (linear bins, s)</div>
-                <SimpleBar data={durationHistLinear} />
-            </div>
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Tool call durations (log bins)</div>
-                <SimpleBar data={durationHistLog} />
-            </div>
-            {/* Row separator */}
-            <div className="col-span-2 h-px bg-app-border opacity-60 my-1" />
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Duration percentile (p vs seconds)</div>
+            </Panel>
+
+            <Panel title="Session length" subtitle="Calls per session" unit="sessions">
+                <Bar height={160} data={{
+                    labels: sessionLenHist.map(b => b.label),
+                    datasets: [{ label: 'sessions', data: sessionLenHist.map(b => b.value), backgroundColor: '#8b5cf6', borderColor: '#7c3aed' }],
+                }} options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    animation: false,
+                    scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                }} />
+            </Panel>
+
+
+
+            <Panel title="Tool call durations" subtitle="Log bins" unit="s">
+                <Bar height={160} data={{
+                    labels: durationHistLog.map(b => b.label),
+                    datasets: [{ label: 'calls', data: durationHistLog.map(b => b.value), backgroundColor: '#34d399', borderColor: '#059669' }],
+                }} options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    animation: false,
+                    scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                }} />
+                <div className="text-[10px] text-app-muted mt-2">p50 {fmtSecs(pct.p50)}, p90 {fmtSecs(pct.p90)}, p95 {fmtSecs(pct.p95)}</div>
+            </Panel>
+
+            <Panel title="Duration CDF" subtitle="Percent vs seconds" unit="%">
                 <Line height={160} data={{
-                    labels: perc.xs.map(x => `${x}%`),
-                    datasets: [{ label: 'secs', data: perc.ys, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.2)', tension: 0.25, pointRadius: 0 }],
+                    labels: perc.xs.map(x => fmtSecs(x)),
+                    datasets: [{ label: 'percent', data: perc.ys.map(v => Math.max(0, Math.min(100, v))), borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.2)', tension: 0, stepped: true, pointRadius: 0 }],
                 }} options={{
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: { legend: { labels: { color: '#a0a7b4' } } },
-                    scales: { x: { ticks: { color: '#a0a7b4' } }, y: { ticks: { color: '#a0a7b4' } } },
+                    scales: {
+                        x: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Seconds' } },
+                        y: { ticks: { color: '#a0a7b4', callback: (v: any) => `${v}%` }, title: { display: true, text: 'Percent' }, min: 0, max: 100 },
+                    },
                 }} />
-            </div>
-            <div className="card" style={{ minHeight: '14rem', height: '14rem', minWidth: 0, overflow: 'hidden' }}>
-                <div className="text-xs text-app-muted mb-2">Trifecta combinations</div>
+                <div className="text-[10px] text-app-muted mt-1">p50 {fmtSecs(pct.p50)}, p90 {fmtSecs(pct.p90)}, p95 {fmtSecs(pct.p95)}</div>
+            </Panel>
+
+            <Panel title="Trifecta combinations" subtitle="P/ U/ E flags" unit="sessions">
                 <div className="flex items-center gap-3 mb-2 text-xs">
                     <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Private</span>
                     <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Untrusted</span>
                     <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> External</span>
                 </div>
-                <SimpleBar data={trifectaHist} />
+                <Bar height={160} data={{
+                    labels: trifectaHist.map(b => b.label),
+                    datasets: [{ label: 'sessions', data: trifectaHist.map(b => b.value), backgroundColor: '#f59e0b', borderColor: '#d97706' }],
+                }} options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    animation: false,
+                    scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                }} />
                 <div className="text-[10px] text-app-muted mt-2">Legend: P=Private, U=Untrusted, E=External</div>
-            </div>
+            </Panel>
         </div>
     )
 }
