@@ -318,6 +318,12 @@ class Config:
         ]
         self.telemetry = telemetry_cfg
 
+        # If api key is default value, and the OPEN_EDISON_API_KEY environment variable is set, use it
+        if self.server.api_key == "dev-api-key-change-me" and (
+            env_api_key := os.environ.get("OPEN_EDISON_API_KEY")
+        ):
+            self.server.api_key = env_api_key
+
     def save(self, config_path: Path | None = None) -> None:
         """Save configuration to JSON file"""
         if config_path is None:
