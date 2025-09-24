@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Wizard window methods
   openWizardWindow: () => ipcRenderer.invoke('open-wizard-window'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
+  wizardCompleted: () => ipcRenderer.invoke('wizard-completed'),
   
   // Setup Wizard API log listener
   onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -63,6 +64,7 @@ declare global {
       removeSetupWizardApiLogListener: () => void
       openWizardWindow: () => Promise<{ success: boolean; error?: string }>
       closeWindow: () => Promise<{ success: boolean }>
+      wizardCompleted: () => Promise<{ success: boolean }>
       platform: string
       appVersion: string
     }

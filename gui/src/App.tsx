@@ -76,8 +76,8 @@ const App: React.FC = () => {
         }}
         onImportComplete={(servers) => {
           console.log('Import completed:', servers);
-          if (window.electronAPI && window.electronAPI.closeWindow) {
-            window.electronAPI.closeWindow();
+          if (window.electronAPI && window.electronAPI.wizardCompleted) {
+            window.electronAPI.wizardCompleted();
           }
         }}
       />

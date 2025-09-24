@@ -246,16 +246,20 @@ async def authorize_oauth(request: OAuthRequest):
         return OAuthResponse(success=False, message=f"OAuth authorization error: {str(e)}")
 
 
+class SaveRequest(BaseModel):
+    servers: list[ServerConfig]
+    dry_run: bool = False
+
 @app.post("/save", response_model=dict[str, Any])
-async def save_imported_servers_to_config(servers: list[ServerConfig], dry_run: bool = False):
+async def save_imported_servers_to_config(request: SaveRequest):
     """Save imported servers to Open Edison configuration."""
     try:
-        mcp_servers = [convert_from_server_config(server) for server in servers]
-        config_path = save_imported_servers(mcp_servers, dry_run=dry_run)
+        mcp_servers = [convert_from_server_config(server) for server in request.servers]
+        config_path = save_imported_servers(mcp_servers, dry_run=request.dry_run)
 
         return {
             "success": True,
-            "message": f"Saved {len(servers)} servers to configuration",
+            "message": f"Saved {len(request.servers)} servers to configuration",
             "config_path": str(config_path) if config_path else None,
         }
 
@@ -290,8 +294,8 @@ async def export_to_clients(request: ExportRequest):
 
         success_count = sum(
             1
-            for result in results.values()
-            if isinstance(result, dict) and result.get("success", False)
+            for result in results.values() # type: ignore
+            if isinstance(result, dict) and result.get("success", False) # type: ignore
         )  # type: ignore
 
         return ExportResponse(

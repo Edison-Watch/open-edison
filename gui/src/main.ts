@@ -404,7 +404,7 @@ async function createWindow(): Promise<void> {
 }
 
 // Create the wizard window
-async function createWizardWindow(): Promise<void> {
+async function createWizardWindow(isFirstInstall: boolean = false): Promise<void> {
   // Don't create if already exists
   if (wizardWindow) {
     wizardWindow.focus()
@@ -423,9 +423,9 @@ async function createWizardWindow(): Promise<void> {
       allowRunningInsecureContent: false
     },
     show: false,
-    title: 'MCP Import Wizard',
-    parent: mainWindow || undefined,
-    modal: true,
+    title: isFirstInstall ? 'Open Edison Setup Wizard' : 'MCP Import Wizard',
+    parent: isFirstInstall ? undefined : mainWindow || undefined,
+    modal: !isFirstInstall,
     resizable: true,
     minimizable: false,
     maximizable: false
@@ -483,14 +483,10 @@ app.whenReady().then(() => {
   })
 })
 
-// This method will be called when Electron has finished initialization
-app.whenReady().then(async () => {
-  console.log('Electron app ready, starting services...')
-
-  // // Add a small delay to ensure any previous processes have finished
-  // await new Promise(resolve => setTimeout(resolve, 500))
-  
-  isFirstInstall = await installOpenEdison()
+// Function to start the main application (backend, frontend, main window)
+async function startMainApplication() {
+  console.log('Starting main application...')
+  console.log('isInFirstInstallMode:', isInFirstInstallMode)
   
   // Read host and port from config.json
   const { host, port } = await readServerConfig()
@@ -502,13 +498,39 @@ app.whenReady().then(async () => {
   await startBackend(host, port)
   
   // Start Setup Wizard API server
-  // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+  await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
   
   // Always start frontend server (needed for proper asset loading)
   await startFrontend(host, port+1)
   
   // Create the main window
   await createWindow()
+}
+
+// This method will be called when Electron has finished initialization
+app.whenReady().then(async () => {
+  console.log('Electron app ready, checking installation...')
+
+  // Check if Open Edison is installed
+  isFirstInstall = await installOpenEdison()
+  console.log('Installation check result - isFirstInstall:', isFirstInstall)
+  
+  if (isFirstInstall) {
+    console.log('First install detected, starting setup wizard...')
+    isInFirstInstallMode = true
+    console.log('isInFirstInstallMode set to:', isInFirstInstallMode)
+    
+    // Start only the Setup Wizard API server for the wizard
+    const { host, port } = await readServerConfig()
+    await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+    
+    // Create only the wizard window
+    await createWizardWindow(true)
+    console.log('Wizard window created, main application should NOT start yet')
+  } else {
+    console.log('Open Edison already installed, starting main application...')
+    await startMainApplication()
+  }
 })
 
 // Quit when all windows are closed
@@ -540,7 +562,7 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   // On macOS, re-create a window when the dock icon is clicked
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (BrowserWindow.getAllWindows().length === 0 && !isInFirstInstallMode) {
     createWindow()
   }
 })
@@ -635,11 +657,11 @@ const installOpenEdison = async (): Promise<boolean> => {
       await copyInitialConfigFiles(appSupportPath)
       
       console.log('Open Edison installation initialized with default configuration')
-      return false // Still show welcome message for first-time setup
+      return true // First install detected
     }
     
     console.log('Open Edison installation found')
-    return true
+    return false // Not a first install
   } catch (error) {
     console.error('Error checking Open Edison installation:', error)
     return false
@@ -725,6 +747,7 @@ const createDefaultConfigFile = async (fileName: string, targetPath: string) => 
 
 // Store installation status globally
 let isFirstInstall = false
+let isInFirstInstallMode = false
 
 
 // IPC handler to get installation status
@@ -767,4 +790,17 @@ ipcMain.handle('close-window', async () => {
     focusedWindow.close()
   }
   return { success: true }
+})
+
+// IPC handler for wizard completion
+ipcMain.handle('wizard-completed', async () => {
+  if (isInFirstInstallMode) {
+    console.log('Wizard completed successfully, starting main application...')
+    isInFirstInstallMode = false
+    await startMainApplication()
+    return { success: true }
+  } else {
+    console.log('Wizard completed but not in first install mode, ignoring...')
+    return { success: false, error: 'Not in first install mode' }
+  }
 })

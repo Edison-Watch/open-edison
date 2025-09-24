@@ -391,6 +391,14 @@ gui_dev: ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
 	@cd gui && npm run dev
 
+gui_run: ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop...$(RESET)"
+	@cd gui && npm run electron
+
+gui_run_wizard: ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop with wizard...$(RESET)"
+	@cd gui && npm run first-install
+
 gui_pack: ## Build the desktop app for distribution
 	@echo "$(YELLOW)🏗️  Building desktop app (Electron) for distribution...$(RESET)"
 	@cd gui && npm install && npm run build
