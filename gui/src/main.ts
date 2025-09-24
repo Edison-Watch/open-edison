@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
-import { readFile } from 'fs'
+import { readFile } from 'fs/promises'
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null
@@ -10,16 +10,54 @@ let frontendProcess: ChildProcess | null = null
 let reactProcess: ChildProcess | null = null
 let isBackendRunning = false
 
-const BACKEND_PORT = 3001
+let BACKEND_PORT = 3001
 const FRONTEND_PORT = 5173
 
 // Force first install mode (for testing/development)
 const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || process.argv.includes('--force-first-install')
 
-// Check if backend is already running
-async function checkBackendRunning(): Promise<boolean> {
+// Read host and port from config.json
+async function readServerConfig(): Promise<{ host: string; port: number }> {
+  const configPath = join(app.getPath('userData'), 'config.json')
   try {
-    const response = await fetch(`http://localhost:${BACKEND_PORT}/health`)
+    const configData = await readFile(configPath, 'utf8')
+    const config = JSON.parse(configData)
+    return {
+      host: config.server?.host || 'localhost',
+      port: config.server?.port || 3000
+    }
+  } catch (error) {
+    console.error('Failed to read config.json:', error)
+    return {
+      host: 'localhost',
+      port: 3000
+    }
+  }
+}
+
+// Check if frontend server is ready
+async function checkFrontendReady(maxAttempts: number = 30, host: string = 'localhost', port: number = 3001): Promise<boolean> {
+  let attempts = 0
+  while (attempts < maxAttempts) {
+    try {
+      const response = await fetch(`http://${host}:${port}`)
+      if (response.ok) {
+        console.log('Frontend server is ready')
+        return true
+      }
+    } catch {
+      // Frontend not ready yet
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    attempts++
+  }
+  return false
+}
+
+// Check if backend is already running
+async function checkBackendRunning(host: string = 'localhost', port: number = 3001): Promise<boolean> {
+  try {
+    const response = await fetch(`http://${host}:${port}/health`)
     return response.ok
   } catch {
     return false
@@ -27,7 +65,7 @@ async function checkBackendRunning(): Promise<boolean> {
 }
 
 // Start the backend server
-async function startBackend(): Promise<void> {
+async function startBackend(host: string = 'localhost', port: number = 3001): Promise<void> {
   if (isBackendRunning) {
     console.log('Backend already running')
     return
@@ -35,8 +73,8 @@ async function startBackend(): Promise<void> {
 
   try {
     // Check if backend is already running
-    if (await checkBackendRunning()) {
-      console.log('Backend server already running on port', BACKEND_PORT)
+    if (await checkBackendRunning(host, port)) {
+      console.log('Backend server already running on port', port)
       isBackendRunning = true
       return
     }
@@ -107,7 +145,7 @@ async function startBackend(): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, 3000))
         
         // Check if backend is now running
-        if (await checkBackendRunning()) {
+        if (await checkBackendRunning(host, port)) {
           console.log('Backend server started successfully')
           isBackendRunning = true
           startupSuccessful = true
@@ -134,7 +172,7 @@ async function startBackend(): Promise<void> {
 }
 
 // Start the frontend development server
-async function startFrontend(): Promise<void> {
+async function startFrontend(host: string = 'localhost', port: number = 3001): Promise<void> {
   try {
     console.log('Starting frontend development server...')
     
@@ -173,6 +211,9 @@ async function startFrontend(): Promise<void> {
         frontendProcess.kill()
       }
     })
+
+    // Wait for frontend to be ready
+    await checkFrontendReady(30, host, port)
 
   } catch (error) {
     console.error('Error starting frontend:', error)
@@ -294,30 +335,19 @@ app.whenReady().then(async () => {
   // // Add a small delay to ensure any previous processes have finished
   // await new Promise(resolve => setTimeout(resolve, 500))
   
-  isOpenEdisonInstalled = await checkOpenEdisonInstall()
+  isFirstInstall = await installOpenEdison()
+  
+  // Read host and port from config.json
+  const { host, port } = await readServerConfig()
+  
+  // Set the global BACKEND_PORT to the port from config
+  BACKEND_PORT = port
     
   // Start backend server
-  await startBackend()
+  await startBackend(host, port)
   
   // Always start frontend server (needed for proper asset loading)
-  await startFrontend()
-  
-  // Wait for frontend to be ready
-  let attempts = 0
-  const maxAttempts = 30
-  while (attempts < maxAttempts) {
-    try {
-      const response = await fetch(`http://localhost:${FRONTEND_PORT}`)
-      if (response.ok) {
-        console.log('Frontend server is ready')
-        break
-      }
-    } catch {
-      // Frontend not ready yet
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    attempts++
-  }
+  await startFrontend(host, port+1)
   
   // Create the main window
   await createWindow()
@@ -394,7 +424,7 @@ ipcMain.handle('check-path-exists', async (event, path: string) => {
 })
 
 // Check Open Edison installation and initialize if needed
-const checkOpenEdisonInstall = async (): Promise<boolean> => {
+const installOpenEdison = async (): Promise<boolean> => {
   try {
     const appSupportPath = app.getPath('userData')
     console.log('App support path:', appSupportPath)
@@ -526,10 +556,10 @@ const createDefaultConfigFile = async (fileName: string, targetPath: string) => 
 }
 
 // Store installation status globally
-let isOpenEdisonInstalled = false
+let isFirstInstall = false
 
 
 // IPC handler to get installation status
 ipcMain.handle('get-installation-status', async () => {
-  return isOpenEdisonInstalled
+  return isFirstInstall
 })
