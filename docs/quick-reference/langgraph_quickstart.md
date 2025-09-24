@@ -37,13 +37,13 @@ from src.langgraph_integration import Edison
 edison = Edison()
 
 @tool
-@edison.track()  # auto-names: agent_web_search
+@edison.track() # auto-names: agent_web_search
 def web_search(query: str, max_results: int = 3) -> str:
     """Return up to N result URLs (demo)."""
     return "https://docs.python.org/3/"
 
 @tool
-@edison.track()  # auto-names: agent_fetch_url
+@edison.track() # auto-names: agent_fetch_url
 def fetch_url(url: str, max_chars: int = 1000) -> str:
     """Fetch and return the first max_chars of the page."""
     import httpx
@@ -56,6 +56,27 @@ result = agent.invoke({
     "messages": [("user", "Fetch the first 1000 chars of the CPython docs homepage.")]
 })
 print(result["messages"][-1].content)
+```
+
+### Minimal integration diff (4 lines)
+
+```bash
+diff agent_no_firewall.py agent_firewall.py
+```
+
+```text
+examples/langgraph/agent_no_firewall.py                     examples/langgraph/agent_firewall.py                       
+                                                                                                                        
+                                                            from src.langgraph_integration import Edison                
+                                                            edison = Edison()                                           
+                                                                                                                        
+@tool                                                       @tool                                                       
+                                                            @edison.track()  # auto-names: agent_web_search            
+def web_search(query: str, _max_results: int = 3) -> str:   def web_search(query: str, _max_results: int = 3) -> str:  
+---                                                         ---                                                        
+@tool                                                       @tool                                                       
+                                                            @edison.track()  # auto-names: agent_fetch_url             
+def fetch_url(url: str, _max_chars: int = 1000) -> str:     def fetch_url(url: str, _max_chars: int = 1000) -> str:    
 ```
 
 ### 4) Permissions (server-side)
