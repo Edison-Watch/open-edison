@@ -290,6 +290,9 @@ class Permissions:
         """Check if a tool is enabled
         Also checks if the server is enabled"""
         permission = self.get_tool_permission(tool_name)
+        # Agent-side tools (agent_*) are not backed by any MCP server; rely solely on permission.enabled
+        if tool_name.startswith("agent_"):
+            return bool(permission.enabled)
         try:
             server_name = self.server_name_from_tool_name(tool_name)
             server_enabled = self.is_server_enabled(server_name)

@@ -60,10 +60,14 @@ const localSavePlugin = () => ({
                         const configData = JSON.parse(configContent)
                         const serverHost = configData?.server?.host || 'localhost'
                         const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
+                        const apiKey = configData?.server?.api_key || ''
+
+                        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
                         const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' }
+                            headers
                         })
                         if (cacheResponse.ok) {
                             const cacheResult = await cacheResponse.json()

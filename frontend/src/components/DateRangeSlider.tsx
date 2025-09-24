@@ -1,0 +1,353 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import dayjs from 'dayjs'
+import type { Session } from '../types'
+import Slider from 'rc-slider'
+import 'rc-slider/assets/index.css'
+import { Line } from 'react-chartjs-2'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js'
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
+
+function dayFromSession(s: Session): string | null {
+    const iso = (s as any).created_at || s.tool_calls[0]?.timestamp
+    if (!iso) return null
+    try {
+        const ts = Date.parse(String(iso))
+        if (Number.isNaN(ts)) return null
+        return new Date(ts).toISOString().slice(0, 10)
+    } catch {
+        return null
+    }
+}
+
+export function DateRangeSlider({
+    sessions,
+    startTimeLabel,
+    endTimeLabel,
+    onTimeRangeChange,
+    hoverTimeLabel,
+    onHoverTimeChange,
+    onTimeRangeMsChange,
+    nowMs,
+}: {
+    sessions: (Session & { day?: string })[]
+    startTimeLabel: string
+    endTimeLabel: string
+    onTimeRangeChange: (start: string, end: string) => void
+    hoverTimeLabel?: string | null
+    onHoverTimeChange?: (label: string | null) => void
+    onTimeRangeMsChange?: (startMs: number, endMs: number) => void
+    nowMs?: number
+}) {
+    // Quick ranges dropdown (declare hooks before any early return to keep hook order stable)
+    const [open, setOpen] = useState(false)
+    const applyRange = (fromIso: string, toIso: string) => {
+        onTimeRangeChange(fromIso, toIso)
+        // Also emit ms range covering full selected days
+        try {
+            const sTs = new Date(`${fromIso}T00:00:00`).getTime()
+            const eTs = new Date(`${toIso}T23:59:59`).getTime()
+            if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) onTimeRangeMsChange?.(Math.min(sTs, eTs), Math.max(sTs, eTs))
+        } catch { /* noop */ }
+        setOpen(false)
+    }
+    const days = useMemo(() => {
+        const set = new Set<string>()
+        for (const s of sessions) {
+            const day = (s as any).day || dayFromSession(s)
+            if (day) set.add(day)
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b))
+    }, [sessions])
+
+    // Compute overall time window (intraday) across tool calls and session times
+    const [minTs, maxTs] = useMemo(() => {
+        let minV = Number.POSITIVE_INFINITY
+        let maxV = 0
+        for (const s of sessions) {
+            const isoS = (s as any).created_at || s.tool_calls[0]?.timestamp
+            if (isoS) {
+                const t = Date.parse(String(isoS))
+                if (!Number.isNaN(t)) { if (t < minV) minV = t; if (t > maxV) maxV = t }
+            }
+            for (const tc of s.tool_calls) {
+                const iso = (tc as any)?.timestamp
+                if (!iso) continue
+                const t = Date.parse(String(iso))
+                if (!Number.isNaN(t)) { if (t < minV) minV = t; if (t > maxV) maxV = t }
+            }
+        }
+        // Always include current time as the right edge (from SSE if provided)
+        const nowTs = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : Date.now()
+        if (nowTs > maxV) maxV = nowTs
+        if (!Number.isFinite(minV) || maxV <= minV) {
+            const now = Date.now()
+            return [now - 24 * 3600_000, now]
+        }
+        return [minV, maxV]
+    }, [sessions, nowMs])
+
+    const [value, setValue] = useState<[number, number]>(() => [minTs, maxTs])
+    const rafRef = useRef<number | null>(null)
+    const latestMinMaxRef = useRef<[number, number]>([minTs, maxTs])
+    useEffect(() => { latestMinMaxRef.current = [minTs, maxTs] }, [minTs, maxTs])
+
+    // Live anchoring: when a live quick-range is selected, keep right edge at now
+    const [liveWindowMs, setLiveWindowMs] = useState<number | null>(null)
+    useEffect(() => {
+        if (liveWindowMs == null) return
+        const now = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : Date.now()
+        const a = Math.max(minTs, now - liveWindowMs)
+        const b = Math.min(maxTs, now)
+        if (value[0] !== a || value[1] !== b) {
+            setValue([a, b])
+            const sa = new Date(a).toISOString().slice(0, 10)
+            const sb = new Date(b).toISOString().slice(0, 10)
+            onTimeRangeMsChange?.(a, b)
+            if (sa && sb) onTimeRangeChange(sa, sb)
+        }
+    }, [nowMs, liveWindowMs, minTs, maxTs])
+
+    // Clamp current value to new bounds if sessions update or now advances
+    useEffect(() => {
+        const [curA, curB] = value
+        const a = Math.max(minTs, Math.min(curA, maxTs))
+        const b = Math.max(a, Math.min(curB, maxTs))
+        if (a !== curA || b !== curB) setValue([a, b])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [minTs, maxTs])
+
+    // Sync external start/end to slider values (snap to day boundaries but slider stays continuous)
+    useEffect(() => {
+        if (!days.length) return
+        const s = startTimeLabel || days[0]!
+        const e = endTimeLabel || days[days.length - 1]!
+        const sTs = new Date(`${s}T00:00:00`).getTime()
+        const eTs = new Date(`${e}T23:59:59`).getTime()
+        if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) {
+            const next: [number, number] = [Math.min(sTs, eTs), Math.max(sTs, eTs)]
+            if (next[0] !== value[0] || next[1] !== value[1]) setValue(next)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [startTimeLabel, endTimeLabel, days.join(',')])
+
+    const marks = useMemo(() => {
+        const out: Record<number, string> = {}
+        if (!days.length) return out
+        const maxLabels = 12
+        const step = Math.max(1, Math.ceil(days.length / maxLabels))
+        for (let i = 0; i < days.length; i += step) {
+            const d = days[i]!
+            const ts = new Date(`${d}T00:00:00`).getTime()
+            if (!Number.isNaN(ts)) out[ts] = d.slice(5)
+        }
+        const last = days[days.length - 1]!
+        const lastTs = new Date(`${last}T00:00:00`).getTime()
+        if (!Number.isNaN(lastTs)) out[lastTs] = last.slice(5)
+        out[minTs] = 'Any time'
+        out[maxTs] = 'Now'
+        return out
+    }, [days, minTs, maxTs])
+
+    // Histogram of sessions per day for inline context
+    const histogram = useMemo(() => {
+        const counts = new Map<string, number>()
+        for (const s of sessions) {
+            const d = (s as any).day || dayFromSession(s)
+            if (!d) continue
+            counts.set(d, (counts.get(d) ?? 0) + 1)
+        }
+        const labels = days
+        const data = labels.map((d) => counts.get(d) ?? 0)
+        return { labels, data }
+    }, [sessions, days])
+
+    const sparkRef = useRef<any>(null)
+
+    // Count sessions in current slider range (by ms value)
+    const inRangeCount = useMemo(() => {
+        const [a, b] = value
+        let count = 0
+        for (const s of sessions) {
+            const iso = (s as any).created_at || s.tool_calls?.[0]?.timestamp
+            if (!iso) continue
+            const t = Date.parse(String(iso))
+            if (Number.isNaN(t)) continue
+            if (t >= a && t <= b) count += 1
+        }
+        return count
+    }, [value, sessions])
+
+    // Reflect external hoverDay to sparkline active tooltip
+    useEffect(() => {
+        try {
+            const chart = sparkRef.current
+            if (!chart) return
+            if (!hoverTimeLabel) {
+                chart.setActiveElements([])
+                chart.update()
+                return
+            }
+            const idx = days.indexOf(hoverTimeLabel)
+            if (idx >= 0) {
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }])
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }], { x: 0, y: 0 })
+                chart.update()
+            }
+        } catch { /* noop */ }
+    }, [hoverTimeLabel, days])
+
+    if (days.length === 0) return null
+
+    return (
+        <div className="card">
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-xs text-app-muted">
+                    <div>Date range (drag handles or bar)</div>
+                    <span className="badge">{inRangeCount} sessions</span>
+                </div>
+                <div className="relative">
+                    <button className="badge" style={{ background: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text)' }} onClick={() => setOpen(v => !v)}>Quick ranges</button>
+                    {open && (
+                        <div className="absolute right-0 mt-1 w-44 border rounded shadow-md z-10 p-1" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
+                            {(() => {
+                                const haveDays = days.length > 0
+                                const maxDay = haveDays ? days[days.length - 1]! : ''
+                                const todayIso = new Date().toISOString().slice(0, 10)
+                                const lastNDays = (n: number) => {
+                                    const d = new Date(); d.setDate(d.getDate() - (n - 1)); return d.toISOString().slice(0, 10)
+                                }
+                                // quick helpers removed; live ranges use activateLive()
+                                const clampStart = (iso: string) => {
+                                    if (!haveDays) return ''
+                                    for (const d of days) { if (d >= iso) return d }
+                                    return days[0]!
+                                }
+                                const activateLive = (windowMs: number) => {
+                                    const now = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : Date.now()
+                                    const a = now - windowMs
+                                    const b = now
+                                    setLiveWindowMs(windowMs)
+                                    setValue([a, b] as any)
+                                    onTimeRangeMsChange?.(a, b)
+                                    const sa = new Date(a).toISOString().slice(0, 10)
+                                    const sb = new Date(b).toISOString().slice(0, 10)
+                                    onTimeRangeChange(sa, sb)
+                                    setOpen(false)
+                                }
+                                return (
+                                    <div className="flex flex-col gap-1 text-xs">
+                                        <button className="badge" onClick={() => activateLive(60_000)}>Last 1 min</button>
+                                        <button className="badge" onClick={() => activateLive(5 * 60_000)}>Last 5 min</button>
+                                        <button className="badge" onClick={() => activateLive(30 * 60_000)}>Last 30 min</button>
+                                        <button className="badge" onClick={() => activateLive(60 * 60_000)}>Last 1 hour</button>
+                                        <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(todayIso); applyRange(s, maxDay || s) }}>Today</button>
+                                        <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(lastNDays(7)); applyRange(s, maxDay || s) }}>This week</button>
+                                        <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(lastNDays(30)); applyRange(s, maxDay || s) }}>This month</button>
+                                        <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(lastNDays(365)); applyRange(s, maxDay || s) }}>This year</button>
+                                        <button className="badge" onClick={() => { setLiveWindowMs(null); if (haveDays) applyRange(days[0]!, maxDay || days[0]!) }}>All time</button>
+                                    </div>
+                                )
+                            })()}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="px-2">
+                <div className="mb-3" style={{ height: 80, overflow: 'hidden' }}>
+                    <Line ref={sparkRef as any} height={60} data={{
+                        labels: histogram.labels,
+                        datasets: [{ label: 'sessions', data: histogram.data, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.2)', tension: 0.3, pointRadius: 0 }],
+                    }} options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+                        interaction: { mode: 'index', intersect: false },
+                        onHover: (_evt: any, elements: any[]) => {
+                            try {
+                                const idx = elements?.[0]?.index
+                                if (typeof idx === 'number') onHoverTimeChange?.(histogram.labels[idx]!)
+                            } catch { /* noop */ }
+                        },
+                        // @ts-expect-error allow custom callback property via plugin typing hole
+                        onLeave: () => onHoverTimeChange?.(null),
+                        scales: { x: { offset: false, bounds: 'ticks', alignToPixels: true, ticks: { color: '#a0a7b4', autoSkip: true, maxTicksLimit: 8, align: 'inner' as any, callback: (_v: any, i: number) => (i === 0 ? '' : undefined) as any } }, y: { ticks: { color: '#a0a7b4' } } },
+                    }} />
+                </div>
+                <Slider
+                    style={{ overflow: 'hidden' }}
+                    range
+                    min={minTs}
+                    max={maxTs}
+                    value={value}
+                    draggableTrack
+                    handleRender={(node: any, props: any) => {
+                        const ms = Number(props?.value)
+                        const label = Number.isFinite(ms) ? dayjs(ms).format('YYYY-MM-DD HH:mm') : ''
+                        return (
+                            <div style={{ position: 'relative' }}>
+                                {node}
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: -24,
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        background: 'var(--border)',
+                                        color: 'var(--text)',
+                                        fontSize: 10,
+                                        padding: '2px 6px',
+                                        borderRadius: 6,
+                                        whiteSpace: 'nowrap',
+                                        pointerEvents: 'none',
+                                    }}
+                                >
+                                    {label}
+                                </div>
+                            </div>
+                        )
+                    }}
+                    onChange={(val: number | number[]) => {
+                        const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
+                        let next: [number, number] = [Math.max(minTs, Math.min(v[0], v[1])), Math.min(maxTs, Math.max(v[0], v[1]))]
+                        const SNAP_MS = 15 * 60_000
+                        // Snap to edges when close
+                        if (Math.abs(next[0] - minTs) <= SNAP_MS) next[0] = minTs
+                        if (Math.abs(maxTs - next[1]) <= SNAP_MS) next[1] = maxTs
+                        if (liveWindowMs != null) setLiveWindowMs(null)
+                        setValue(next)
+                        // Live update parent (throttled to animation frame) for smooth sliding
+                        if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+                        rafRef.current = requestAnimationFrame(() => {
+                            // Emit date strings (clamp to day) and raw ms range for charts
+                            const sa = new Date(next[0]).toISOString().slice(0, 10)
+                            const sb = new Date(next[1]).toISOString().slice(0, 10)
+                            onTimeRangeMsChange?.(next[0], next[1])
+                            if (sa && sb) onTimeRangeChange(sa, sb)
+                        })
+                    }}
+                    onAfterChange={(val: number | number[]) => {
+                        const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
+                        let a = Math.max(minTs, Math.min(v[0], v[1]))
+                        let b = Math.min(maxTs, Math.max(v[0], v[1]))
+                        const SNAP_MS = 15 * 60_000
+                        if (Math.abs(a - minTs) <= SNAP_MS) a = minTs
+                        if (Math.abs(maxTs - b) <= SNAP_MS) b = maxTs
+                        if (liveWindowMs != null) setLiveWindowMs(null)
+                        const sa = new Date(a).toISOString().slice(0, 10)
+                        const sb = new Date(b).toISOString().slice(0, 10)
+                        onTimeRangeMsChange?.(a, b)
+                        if (sa && sb) onTimeRangeChange(sa, sb)
+                    }}
+                    allowCross={false}
+                    step={900_000}
+                    marks={marks}
+                    pushable={false}
+                />
+            </div>
+        </div>
+    )
+}
+
+export default DateRangeSlider
+
+
