@@ -29,6 +29,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [logLevel, setLogLevel] = useState('info');
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
+  const [showLogsSection, setShowLogsSection] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -235,114 +236,163 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       <div style={{
         background: 'white',
         borderRadius: '8px',
-        padding: '2rem',
         marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        overflow: 'hidden'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        {/* Logs Header - Always Visible */}
+        <div style={{
+          padding: '1.5rem 2rem',
+          borderBottom: showLogsSection ? '1px solid #ecf0f1' : 'none',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          cursor: 'pointer',
+          background: showLogsSection ? '#f8f9fa' : 'white',
+          transition: 'all 0.3s ease'
+        }}
+        onClick={() => setShowLogsSection(!showLogsSection)}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
               Server Logs
             </h2>
-            <button
-              onClick={() => setLogsExpanded(!logsExpanded)}
-              style={{
-                background: logsExpanded ? '#e74c3c' : '#3498db',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {logsExpanded ? 'Collapse' : 'Expand'}
-            </button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-              <input
-                type="checkbox"
-                checked={showMcp}
-                onChange={(e) => setShowMcp(e.target.checked)}
-                style={{ marginRight: '0.5rem' }}
-              />
-              Show MCP
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-              <input
-                type="checkbox"
-                checked={showApi}
-                onChange={(e) => setShowApi(e.target.checked)}
-                style={{ marginRight: '0.5rem' }}
-              />
-              Show API
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-              <input
-                type="checkbox"
-                checked={verboseLogs}
-                onChange={(e) => setVerboseLogs(e.target.checked)}
-                style={{ marginRight: '0.5rem' }}
-              />
-              Verbose logs
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-              <input
-                type="checkbox"
-                checked={showDate}
-                onChange={(e) => setShowDate(e.target.checked)}
-                style={{ marginRight: '0.5rem' }}
-              />
-              Show date
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-              <input
-                type="checkbox"
-                checked={showStream}
-                onChange={(e) => setShowStream(e.target.checked)}
-                style={{ marginRight: '0.5rem' }}
-              />
-              Show stream
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Level:</label>
-              <select
-                value={logLevel}
-                onChange={(e) => setLogLevel(e.target.value)}
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '4px',
-                  border: '1px solid #bdc3c7',
-                  fontSize: '0.875rem',
-                  background: 'white'
-                }}
-              >
-                <option value="debug">Debug</option>
-                <option value="info">Info</option>
-                <option value="warning">Warning</option>
-                <option value="error">Error</option>
-              </select>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.875rem',
+              color: '#7f8c8d'
+            }}>
+              <span>{filteredLogs.length} entries</span>
+              <div style={{
+                transform: showLogsSection ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.3s ease',
+                fontSize: '1.2rem'
+              }}>
+                ▼
+              </div>
             </div>
           </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setLogsExpanded(!logsExpanded);
+            }}
+            style={{
+              background: logsExpanded ? '#e74c3c' : '#3498db',
+              color: 'white',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            {logsExpanded ? 'Collapse' : 'Expand'}
+          </button>
         </div>
+
+        {/* Logs Content - Collapsible */}
         <div style={{
-          background: '#2c3e50',
-          color: '#ecf0f1',
-          padding: '1rem',
-          borderRadius: '6px',
-          fontFamily: "'Monaco', 'Menlo', monospace",
-          fontSize: '0.875rem',
-          maxHeight: logsExpanded ? 'calc(100vh - 200px)' : '200px',
-          height: logsExpanded ? 'calc(100vh - 200px)' : 'auto',
-          overflowY: 'auto',
-          whiteSpace: 'pre-wrap',
-          transition: 'all 0.3s ease'
+          maxHeight: showLogsSection ? (logsExpanded ? 'calc(100vh - 200px)' : '300px') : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.3s ease'
         }}>
-          {filteredLogs.length === 0 ? 'Server logs will appear here...' : 
-            filteredLogs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
-          }
+          <div style={{ padding: '2rem' }}>
+            {/* Log Filters */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '1rem', 
+              marginBottom: '1rem',
+              flexWrap: 'wrap'
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                <input
+                  type="checkbox"
+                  checked={showMcp}
+                  onChange={(e) => setShowMcp(e.target.checked)}
+                  style={{ marginRight: '0.5rem' }}
+                />
+                Show MCP
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                <input
+                  type="checkbox"
+                  checked={showApi}
+                  onChange={(e) => setShowApi(e.target.checked)}
+                  style={{ marginRight: '0.5rem' }}
+                />
+                Show API
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                <input
+                  type="checkbox"
+                  checked={verboseLogs}
+                  onChange={(e) => setVerboseLogs(e.target.checked)}
+                  style={{ marginRight: '0.5rem' }}
+                />
+                Verbose logs
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                <input
+                  type="checkbox"
+                  checked={showDate}
+                  onChange={(e) => setShowDate(e.target.checked)}
+                  style={{ marginRight: '0.5rem' }}
+                />
+                Show date
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                <input
+                  type="checkbox"
+                  checked={showStream}
+                  onChange={(e) => setShowStream(e.target.checked)}
+                  style={{ marginRight: '0.5rem' }}
+                />
+                Show stream
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Level:</label>
+                <select
+                  value={logLevel}
+                  onChange={(e) => setLogLevel(e.target.value)}
+                  style={{
+                    padding: '0.25rem 0.5rem',
+                    borderRadius: '4px',
+                    border: '1px solid #bdc3c7',
+                    fontSize: '0.875rem',
+                    background: 'white'
+                  }}
+                >
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warning">Warning</option>
+                  <option value="error">Error</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Logs Display */}
+            <div style={{
+              background: '#2c3e50',
+              color: '#ecf0f1',
+              padding: '1rem',
+              borderRadius: '6px',
+              fontFamily: "'Monaco', 'Menlo', monospace",
+              fontSize: '0.875rem',
+              maxHeight: logsExpanded ? 'calc(100vh - 300px)' : '200px',
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              transition: 'all 0.3s ease'
+            }}>
+              {filteredLogs.length === 0 ? 'Server logs will appear here...' : 
+                filteredLogs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
+              }
+            </div>
+          </div>
         </div>
       </div>
 
