@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import contextlib
+import os
 import sys
 from collections.abc import Generator
 
@@ -303,6 +304,15 @@ def run_import_tui(args: argparse.Namespace, force: bool = False) -> bool:
     config_dir.mkdir(parents=True, exist_ok=True)
 
     setup_tui_ran_file = config_dir / ".setup_tui_ran"
+
+    # Tui requires a tty
+    if not sys.stdin.isatty():
+        print(
+            "Non-interactive environment detected or OPEN_EDISON_SKIP_TUI set; skipping setup wizard."
+        )
+        setup_tui_ran_file.touch()
+        return True
+
     success = True
     if not setup_tui_ran_file.exists() or force:
         success = run(dry_run=args.wizard_dry_run, skip_oauth=args.wizard_skip_oauth)

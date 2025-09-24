@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
-RUN npm ci
+RUN npm install
 COPY frontend ./
 RUN npm run build
 
@@ -65,5 +65,8 @@ COPY prompt_permissions.json ./prompt_permissions.json
 # Expose ports
 EXPOSE 3000 3001 50001
 
-# Start the server
-CMD ["uv", "run", "open-edison"]
+# Default runtime env for containers: use /data for config
+ENV OPEN_EDISON_CONFIG_DIR=/data
+
+# Start the server (non-interactive by default) and listen on all interfaces
+CMD ["uv", "run", "open-edison", "--host", "0.0.0.0"]
