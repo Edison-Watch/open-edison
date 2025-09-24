@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Overview from './Overview';
+import McpImportWizard from './components/McpImportWizard';
 
 interface LogEntry {
   timestamp: string;
@@ -11,10 +12,26 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'dashboard'>('overview');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsExpanded, setLogsExpanded] = useState(false);
+  const [isWizardMode, setIsWizardMode] = useState(false);
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
   };
+
+  // Check if we're in wizard mode based on URL query parameter
+  useEffect(() => {
+    const checkWizardMode = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      setIsWizardMode(urlParams.get('wizard') === 'true');
+    };
+
+    checkWizardMode();
+    window.addEventListener('popstate', checkWizardMode);
+    
+    return () => {
+      window.removeEventListener('popstate', checkWizardMode);
+    };
+  }, []);
 
   // Listen for backend logs at App level to persist across tab switches
   useEffect(() => {
@@ -47,6 +64,25 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  // If in wizard mode, show only the wizard
+  if (isWizardMode) {
+    return (
+      <McpImportWizard
+        onClose={() => {
+          if (window.electronAPI && window.electronAPI.closeWindow) {
+            window.electronAPI.closeWindow();
+          }
+        }}
+        onImportComplete={(servers) => {
+          console.log('Import completed:', servers);
+          if (window.electronAPI && window.electronAPI.closeWindow) {
+            window.electronAPI.closeWindow();
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{ height: '100vh', overflow: 'hidden' }}>

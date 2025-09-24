@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSetupWizardApiStatus: () => ipcRenderer.invoke('get-setup-wizard-api-status'),
   restartSetupWizardApi: () => ipcRenderer.invoke('restart-setup-wizard-api'),
   
+  // Wizard window methods
+  openWizardWindow: () => ipcRenderer.invoke('open-wizard-window'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
+  
   // Setup Wizard API log listener
   onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => {
     ipcRenderer.on('setup-wizard-api-log', (event, log) => callback(log))
@@ -57,6 +61,8 @@ declare global {
       restartSetupWizardApi: () => Promise<boolean>
       onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => void
       removeSetupWizardApiLogListener: () => void
+      openWizardWindow: () => Promise<{ success: boolean; error?: string }>
+      closeWindow: () => Promise<{ success: boolean }>
       platform: string
       appVersion: string
     }

@@ -39,6 +39,9 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [error, setError] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [skipOAuth, setSkipOAuth] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [activePreviewTab, setActivePreviewTab] = useState(0);
 
   // Step 1: Detect available clients
   useEffect(() => {
@@ -183,6 +186,37 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     } finally {
       setLoading(false);
     }
+  };
+
+  const showPreviewData = () => {
+    // Generate preview data from selected servers without API call
+    const previewData = {
+      config: {
+        server: {
+          host: "localhost",
+          port: 3000
+        },
+        mcp_servers: selectedServers.reduce((acc, server) => {
+          acc[server.name] = {
+            command: server.command,
+            args: server.args,
+            env: server.env,
+            enabled: server.enabled,
+            ...(server.roots && { roots: server.roots })
+          };
+          return acc;
+        }, {} as Record<string, any>),
+        logging: {
+          level: "INFO"
+        }
+      },
+      tool_permissions: {},
+      resource_permissions: {},
+      prompt_permissions: {}
+    };
+    
+    setPreviewData(previewData);
+    setShowPreview(true);
   };
 
   const saveConfiguration = async () => {
@@ -400,7 +434,114 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           <strong>Dry Run Mode:</strong> No changes will be saved to your configuration.
         </div>
       )}
+      
+      {/* Preview Section */}
+      {showPreview && previewData && (
+        <div style={{ 
+          marginBottom: '1rem',
+          border: '1px solid #bdc3c7',
+          borderRadius: '8px',
+          overflow: 'hidden'
+        }}>
+          <div style={{ 
+            background: '#f8f9fa', 
+            padding: '1rem', 
+            borderBottom: '1px solid #bdc3c7',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <h4 style={{ margin: 0, color: '#2c3e50' }}>Configuration Preview</h4>
+            <button
+              onClick={() => setShowPreview(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                color: '#7f8c8d'
+              }}
+            >
+              ×
+            </button>
+          </div>
+          
+          {/* Tabs for different config files */}
+          <div style={{ display: 'flex', borderBottom: '1px solid #bdc3c7' }}>
+            {['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'].map((fileName, index) => (
+              <button
+                key={fileName}
+                onClick={() => setActivePreviewTab(index)}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  border: 'none',
+                  background: activePreviewTab === index ? '#3498db' : '#ecf0f1',
+                  color: activePreviewTab === index ? 'white' : '#2c3e50',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  borderRight: index < 3 ? '1px solid #bdc3c7' : 'none'
+                }}
+              >
+                {fileName}
+              </button>
+            ))}
+          </div>
+          
+          {/* Preview Content */}
+          <div style={{ 
+            padding: '1rem', 
+            maxHeight: '400px', 
+            overflowY: 'auto',
+            background: '#f8f9fa'
+          }}>
+            <pre style={{ 
+              margin: 0, 
+              fontSize: '0.875rem', 
+              lineHeight: '1.4',
+              color: '#2c3e50',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              {(() => {
+                const fileNames = ['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'];
+                const currentFile = fileNames[activePreviewTab];
+                
+                if (!previewData) return 'No preview data available';
+                
+                // Show different data based on the active tab
+                switch (activePreviewTab) {
+                  case 0: // config.json
+                    return JSON.stringify(previewData.config, null, 2);
+                  case 1: // tool_permissions.json
+                    return JSON.stringify(previewData.tool_permissions, null, 2);
+                  case 2: // resource_permissions.json
+                    return JSON.stringify(previewData.resource_permissions, null, 2);
+                  case 3: // prompt_permissions.json
+                    return JSON.stringify(previewData.prompt_permissions, null, 2);
+                  default:
+                    return JSON.stringify(previewData, null, 2);
+                }
+              })()}
+            </pre>
+          </div>
+        </div>
+      )}
+      
       <div style={{ display: 'flex', gap: '1rem' }}>
+        <button
+          onClick={showPreviewData}
+          style={{
+            background: '#3498db',
+            color: 'white',
+            border: 'none',
+            padding: '0.75rem 1.5rem',
+            borderRadius: '6px',
+            cursor: 'pointer'
+          }}
+        >
+          View Changes
+        </button>
         <button
           onClick={saveConfiguration}
           disabled={loading}

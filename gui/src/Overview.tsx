@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import McpImportWizard from './components/McpImportWizard';
 
 interface ServerStatus {
   running: boolean;
@@ -31,7 +30,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
-  const [showMcpWizard, setShowMcpWizard] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -307,7 +305,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
                       console.error('Failed to start Setup Wizard API:', error);
                     }
                   }
-                  setShowMcpWizard(true);
+                  // Open wizard window
+                  if (window.electronAPI && window.electronAPI.openWizardWindow) {
+                    try {
+                      await window.electronAPI.openWizardWindow();
+                    } catch (error) {
+                      console.error('Failed to open wizard window:', error);
+                    }
+                  }
                 }}
                 style={{
                   background: '#3498db',
@@ -507,7 +512,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
                   console.error('Failed to start Setup Wizard API:', error);
                 }
               }
-              setShowMcpWizard(true);
+              // Open wizard window
+              if (window.electronAPI && window.electronAPI.openWizardWindow) {
+                try {
+                  await window.electronAPI.openWizardWindow();
+                } catch (error) {
+                  console.error('Failed to open wizard window:', error);
+                }
+              }
             }}
             style={{
               background: '#9b59b6',
@@ -572,17 +584,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         </button>
       </div>
 
-      {/* MCP Import Wizard */}
-      {showMcpWizard && (
-        <McpImportWizard
-          onClose={() => setShowMcpWizard(false)}
-          onImportComplete={(servers) => {
-            console.log('Import completed:', servers);
-            setShowMcpWizard(false);
-            // You could add a success message or update the UI here
-          }}
-        />
-      )}
     </div>
   );
 };

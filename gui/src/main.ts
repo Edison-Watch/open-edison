@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises'
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null
+let wizardWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 let frontendProcess: ChildProcess | null = null
 let reactProcess: ChildProcess | null = null
@@ -402,11 +403,82 @@ async function createWindow(): Promise<void> {
   })
 }
 
+// Create the wizard window
+async function createWizardWindow(): Promise<void> {
+  // Don't create if already exists
+  if (wizardWindow) {
+    wizardWindow.focus()
+    return
+  }
+
+  // Create the wizard window
+  wizardWindow = new BrowserWindow({
+    width: 800,
+    height: 700,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: join(__dirname, 'preload.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false
+    },
+    show: false,
+    title: 'MCP Import Wizard',
+    parent: mainWindow || undefined,
+    modal: true,
+    resizable: true,
+    minimizable: false,
+    maximizable: false
+  })
+
+  // Load the wizard interface
+  const isDev = process.env.NODE_ENV === 'development'
+  
+  if (isDev) {
+    // In development, load from the dev server with wizard query parameter
+    const devUrl = `http://localhost:${FRONTEND_PORT}?wizard=true`
+    console.log(`Loading wizard from dev server: ${devUrl}`)
+    wizardWindow.loadURL(devUrl)
+  } else {
+    // In production, use the same approach as main window but with a query parameter
+    const indexPath = 'app://src/index.html?wizard=true'
+    console.log(`Loading wizard from built files: ${indexPath}`)
+    console.log(`__dirname: ${__dirname}`)
+    wizardWindow.loadURL(indexPath)
+  }
+  
+  if (isDev) {
+    // Open DevTools in development
+    wizardWindow.webContents.openDevTools()
+  }
+
+  // Show window when ready
+  wizardWindow.once('ready-to-show', () => {
+    if (wizardWindow) {
+      wizardWindow.show()
+      console.log('MCP Import Wizard is ready!')
+    }
+  })
+
+  // Handle window closed
+  wizardWindow.on('closed', () => {
+    wizardWindow = null
+  })
+
+  // Handle navigation errors
+  wizardWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription: string, validatedURL: string) => {
+    console.error('Wizard failed to load:', errorDescription, 'for URL:', validatedURL)
+  })
+}
+
 // Register custom protocol for serving local files
 app.whenReady().then(() => {
   protocol.registerFileProtocol('app', (request, callback) => {
     const url = request.url.substr(6) // Remove 'app://' prefix
-    const filePath = join(__dirname, url)
+    // Remove query parameters from the URL before creating file path
+    const cleanUrl = url.split('?')[0]
+    const filePath = join(__dirname, cleanUrl)
+    console.log(`Protocol request: ${request.url} -> ${filePath}`)
     callback({ path: filePath })
   })
 })
@@ -675,4 +747,24 @@ ipcMain.handle('restart-setup-wizard-api', async () => {
   }
   await startSetupWizardApi()
   return isSetupWizardApiRunning
+})
+
+// IPC handler to open wizard window
+ipcMain.handle('open-wizard-window', async () => {
+  try {
+    await createWizardWindow()
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to open wizard window:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+// IPC handler to close current window
+ipcMain.handle('close-window', async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow()
+  if (focusedWindow) {
+    focusedWindow.close()
+  }
+  return { success: true }
 })
