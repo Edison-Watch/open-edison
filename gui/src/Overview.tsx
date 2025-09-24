@@ -249,8 +249,41 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
             maxWidth: '500px',
             width: '90%',
             boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
-            textAlign: 'center'
+            textAlign: 'center',
+            position: 'relative'
           }}>
+            {/* Close button */}
+            <button
+              onClick={() => setShowWelcome(false)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                color: '#7f8c8d',
+                padding: '0.25rem',
+                borderRadius: '4px',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '2rem',
+                height: '2rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f8f9fa';
+                e.currentTarget.style.color = '#2c3e50';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'none';
+                e.currentTarget.style.color = '#7f8c8d';
+              }}
+            >
+              ×
+            </button>
             <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
               Welcome to Open Edison! 🎉
             </h2>
