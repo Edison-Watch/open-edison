@@ -8,10 +8,13 @@ let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 let frontendProcess: ChildProcess | null = null
 let reactProcess: ChildProcess | null = null
+let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
+let isSetupWizardApiRunning = false
 
 let BACKEND_PORT = 3001
 const FRONTEND_PORT = 5173
+const SETUP_WIZARD_API_PORT = 3002
 
 // Force first install mode (for testing/development)
 const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || process.argv.includes('--force-first-install')
@@ -56,6 +59,16 @@ async function checkFrontendReady(maxAttempts: number = 30, host: string = 'loca
 
 // Check if backend is already running
 async function checkBackendRunning(host: string = 'localhost', port: number = 3001): Promise<boolean> {
+  try {
+    const response = await fetch(`http://${host}:${port}/health`)
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+// Check if Setup Wizard API server is already running
+async function checkSetupWizardApiRunning(host: string = 'localhost', port: number = 3002): Promise<boolean> {
   try {
     const response = await fetch(`http://${host}:${port}/health`)
     return response.ok
@@ -168,6 +181,76 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
 
   } catch (error) {
     console.error('Error starting backend:', error)
+  }
+}
+
+// Start the Setup Wizard API server
+async function startSetupWizardApi(host: string = 'localhost', port: number = 3002): Promise<void> {
+  if (isSetupWizardApiRunning) {
+    console.log('Setup Wizard API already running')
+    return
+  }
+
+  try {
+    // Check if Setup Wizard API is already running
+    if (await checkSetupWizardApiRunning(host, port)) {
+      console.log('Setup Wizard API server already running on port', port)
+      isSetupWizardApiRunning = true
+      return
+    }
+
+    console.log('Starting Setup Wizard API server...')
+    
+    // Get the project root (parent directory of gui folder)
+    const projectRoot = join(__dirname, '..', '..')
+    
+    // Start the Setup Wizard API server
+    setupWizardApiProcess = spawn('uv', ['run', 'python', '-m', 'src.mcp_importer.wizard_server', '--host', host, '--port', port.toString()], {
+      cwd: projectRoot,
+      stdio: 'pipe',
+      shell: true
+    })
+    
+    setupWizardApiProcess.stdout?.on('data', (data) => {
+      const message = data.toString()
+      console.log('Setup-Wizard-API-1:', message)
+      // Send log to renderer process
+      if (mainWindow) {
+        mainWindow.webContents.send('setup-wizard-api-log', { type: 'stdout', message })
+      }
+    })
+
+    setupWizardApiProcess.stderr?.on('data', (data) => {
+      const message = data.toString()
+      console.log('Setup-Wizard-API-2:', message)
+      // Send log to renderer process
+      if (mainWindow) {
+        mainWindow.webContents.send('setup-wizard-api-log', { type: 'stderr', message })
+      }
+    })
+
+    setupWizardApiProcess.on('error', (error) => {
+      console.log('Setup Wizard API startup failed:', error.message)
+    })
+
+    setupWizardApiProcess.on('exit', (code) => {
+      console.log('Setup Wizard API process exited with code:', code)
+      isSetupWizardApiRunning = false
+    })
+
+    // Wait a moment for the server to start
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    // Check if Setup Wizard API is now running
+    if (await checkSetupWizardApiRunning(host, port)) {
+      console.log('Setup Wizard API server started successfully')
+      isSetupWizardApiRunning = true
+    } else {
+      console.warn('⚠️  Could not start Setup Wizard API server')
+    }
+
+  } catch (error) {
+    console.error('Error starting Setup Wizard API:', error)
   }
 }
 
@@ -346,6 +429,9 @@ app.whenReady().then(async () => {
   // Start backend server
   await startBackend(host, port)
   
+  // Start Setup Wizard API server
+  // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+  
   // Always start frontend server (needed for proper asset loading)
   await startFrontend(host, port+1)
   
@@ -359,6 +445,12 @@ app.on('window-all-closed', () => {
   if (backendProcess) {
     console.log('Terminating backend process...')
     backendProcess.kill()
+  }
+  
+  // Kill Setup Wizard API process when app closes
+  if (setupWizardApiProcess) {
+    console.log('Terminating Setup Wizard API process...')
+    setupWizardApiProcess.kill()
   }
   
   // Kill frontend process when app closes
@@ -386,6 +478,10 @@ app.on('before-quit', () => {
   if (backendProcess) {
     console.log('Terminating backend process...')
     backendProcess.kill()
+  }
+  if (setupWizardApiProcess) {
+    console.log('Terminating Setup Wizard API process...')
+    setupWizardApiProcess.kill()
   }
 })
 
@@ -562,4 +658,21 @@ let isFirstInstall = false
 // IPC handler to get installation status
 ipcMain.handle('get-installation-status', async () => {
   return isFirstInstall
+})
+
+// IPC handlers for Setup Wizard API
+ipcMain.handle('get-setup-wizard-api-status', async () => {
+  return {
+    running: isSetupWizardApiRunning,
+    port: SETUP_WIZARD_API_PORT
+  }
+})
+
+ipcMain.handle('restart-setup-wizard-api', async () => {
+  if (setupWizardApiProcess) {
+    setupWizardApiProcess.kill()
+    isSetupWizardApiRunning = false
+  }
+  await startSetupWizardApi()
+  return isSetupWizardApiRunning
 })

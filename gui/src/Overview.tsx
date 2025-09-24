@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import McpImportWizard from './components/McpImportWizard';
 
 interface ServerStatus {
   running: boolean;
@@ -30,6 +31,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showMcpWizard, setShowMcpWizard] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -288,16 +290,25 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
               Welcome to Open Edison! 🎉
             </h2>
             <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              This is your first time using Open Edison! We've automatically created your application 
-              support folder and initialized it with default configuration files.
+              This is your first time using Open Edison! We've already created a basic configuration for you.
             </p>
             <p style={{ color: '#7f8c8d', marginBottom: '2rem', lineHeight: '1.6' }}>
-              You can now import server configuration files using the "Import Servers" section below, 
-              or configure your MCP servers directly in the application support folder.
+              You can now run the configuration wizard to automatically configure your MCP servers, or select a folder to import your configuration files.
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
               <button
-                onClick={() => setShowWelcome(false)}
+                onClick={async () => {
+                  setShowWelcome(false);
+                  // Start the Setup Wizard API server
+                  if (window.electronAPI && window.electronAPI.restartSetupWizardApi) {
+                    try {
+                      await window.electronAPI.restartSetupWizardApi();
+                    } catch (error) {
+                      console.error('Failed to start Setup Wizard API:', error);
+                    }
+                  }
+                  setShowMcpWizard(true);
+                }}
                 style={{
                   background: '#3498db',
                   color: 'white',
@@ -309,7 +320,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
                   transition: 'all 0.3s ease'
                 }}
               >
-                Get Started
+                Run Configuration Wizard
               </button>
               <button
                 onClick={() => {
@@ -328,7 +339,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
                   transition: 'all 0.3s ease'
                 }}
               >
-                Import Files
+                Import Configuration Files
               </button>
             </div>
           </div>
@@ -482,9 +493,36 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         padding: '2rem',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
-          Import Servers
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
+            Import Configuration Files
+          </h2>
+          <button
+            onClick={async () => {
+              // Start the Setup Wizard API server
+              if (window.electronAPI && window.electronAPI.restartSetupWizardApi) {
+                try {
+                  await window.electronAPI.restartSetupWizardApi();
+                } catch (error) {
+                  console.error('Failed to start Setup Wizard API:', error);
+                }
+              }
+              setShowMcpWizard(true);
+            }}
+            style={{
+              background: '#9b59b6',
+              color: 'white',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            MCP Import Wizard
+          </button>
+        </div>
         
         <div
           onClick={() => document.getElementById('file-input')?.click()}
@@ -502,7 +540,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
             transition: 'all 0.3s ease'
           }}
         >
-          <p>Click here or drag and drop server configuration files</p>
+          <p>Click here or drag and drop configuration files</p>
           <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginTop: '0.5rem' }}>
             Supported formats: JSON, YAML
           </p>
@@ -530,9 +568,21 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
             transition: 'all 0.3s ease'
           }}
         >
-          Import Selected Files
+          Import Configuration Files
         </button>
       </div>
+
+      {/* MCP Import Wizard */}
+      {showMcpWizard && (
+        <McpImportWizard
+          onClose={() => setShowMcpWizard(false)}
+          onImportComplete={(servers) => {
+            console.log('Import completed:', servers);
+            setShowMcpWizard(false);
+            // You could add a success message or update the UI here
+          }}
+        />
+      )}
     </div>
   );
 };
