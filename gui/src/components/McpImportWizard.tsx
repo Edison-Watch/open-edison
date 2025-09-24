@@ -30,6 +30,7 @@ interface McpImportWizardProps {
 
 const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComplete }) => {
   const [step, setStep] = useState(1);
+  const [visitedSteps, setVisitedSteps] = useState<Set<number>>(new Set([1]));
   const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [importedServers, setImportedServers] = useState<ServerConfig[]>([]);
@@ -84,11 +85,44 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     );
   };
 
+  const goToStep = (targetStep: number) => {
+    if (targetStep >= 1 && targetStep <= 5) {
+      setStep(targetStep);
+      setVisitedSteps(prev => new Set([...prev, targetStep]));
+      setError(null);
+    }
+  };
+
+  const getPreviousVisitedStep = () => {
+    const previousSteps = Array.from(visitedSteps).filter(s => s < step);
+    return previousSteps.length > 0 ? Math.max(...previousSteps) : 0;
+  };
+
+  const getNextVisitedStep = () => {
+    const nextSteps = Array.from(visitedSteps).filter(s => s > step);
+    return nextSteps.length > 0 ? Math.min(...nextSteps) : Infinity;
+  };
+
+  const goToPreviousStep = () => {
+    const previousStep = getPreviousVisitedStep();
+    if (previousStep > 0) {
+      goToStep(previousStep);
+    }
+  };
+
+  const goToNextStep = () => {
+    const nextStep = getNextVisitedStep();
+    if (nextStep !== Infinity) {
+      goToStep(nextStep);
+    }
+  };
+
   const proceedToImport = () => {
     if (selectedClients.length === 0) {
       setError('Please select at least one client to import from.');
       return;
     }
+    setVisitedSteps(prev => new Set([...prev, 2]));
     setStep(2);
     importServers();
   };
@@ -439,26 +473,78 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         {/* Progress indicator */}
         <div style={{ marginBottom: '2rem' }}>
           <h2 style={{ color: '#2c3e50', marginBottom: '0.5rem' }}>MCP Import Wizard</h2>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-            {[1, 2, 3, 4, 5].map(stepNum => (
-              <div
-                key={stepNum}
-                style={{
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '50%',
-                  background: stepNum <= step ? '#3498db' : '#bdc3c7',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.875rem',
-                  fontWeight: 'bold'
-                }}
-              >
-                {stepNum}
-              </div>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+            {/* Previous arrow */}
+            <button
+              onClick={goToPreviousStep}
+              disabled={getPreviousVisitedStep() <= 0}
+              style={{
+                background: getPreviousVisitedStep() <= 0 ? '#bdc3c7' : '#3498db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '30px',
+                height: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: getPreviousVisitedStep() <= 0 ? 'not-allowed' : 'pointer',
+                fontSize: '1rem',
+                fontWeight: 'bold'
+              }}
+            >
+              ‹
+            </button>
+            
+            {/* Step circles */}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {[1, 2, 3, 4, 5].map(stepNum => (
+                <button
+                  key={stepNum}
+                  onClick={() => visitedSteps.has(stepNum) ? goToStep(stepNum) : undefined}
+                  disabled={!visitedSteps.has(stepNum)}
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    background: stepNum <= step ? '#3498db' : '#bdc3c7',
+                    color: 'white',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    fontWeight: 'bold',
+                    cursor: visitedSteps.has(stepNum) ? 'pointer' : 'not-allowed',
+                    opacity: visitedSteps.has(stepNum) ? 1 : 0.5
+                  }}
+                >
+                  {stepNum}
+                </button>
+              ))}
+            </div>
+            
+            {/* Next arrow */}
+            <button
+              onClick={goToNextStep}
+              disabled={getNextVisitedStep() === Infinity}
+              style={{
+                background: getNextVisitedStep() === Infinity ? '#bdc3c7' : '#3498db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '30px',
+                height: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: getNextVisitedStep() === Infinity ? 'not-allowed' : 'pointer',
+                fontSize: '1rem',
+                fontWeight: 'bold'
+              }}
+            >
+              ›
+            </button>
           </div>
         </div>
 
