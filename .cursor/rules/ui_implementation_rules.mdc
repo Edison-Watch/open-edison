@@ -1,0 +1,10 @@
+---
+description: Implementing designs and building UI
+alwaysApply: false
+---
+
+# UI Implementation Rules
+
+- Reuse existing UI components from `/frontend/src/components/ui`; these are the primitives we can build with.
+- Create new components by orchestrating UI components if you can't find any existing that solves the problem.
+- Ask the human how they want to proceed when there are missing components and designs.

@@ -4,6 +4,8 @@ import Editor from '@monaco-editor/react'
 import { useSessions } from './hooks'
 import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus, ToolSchemasResponse, ToolSchemaEntry } from './types'
 import { Timeline } from './components/Timeline'
+import { DateRangeSlider } from './components/DateRangeSlider'
+import { Stats } from './components/Stats'
 import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
 
@@ -148,10 +150,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability'>(() => {
         try {
             const saved = localStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -160,7 +162,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -534,6 +536,7 @@ export function App(): React.JSX.Element {
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
                         <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
                         {theme === 'light' ? 'Dark' : 'Light'} mode
@@ -638,8 +641,65 @@ export function App(): React.JSX.Element {
                 </div>
             ) : view === 'configs' ? (
                 <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} theme={theme} />
-            ) : (
+            ) : view === 'manager' ? (
                 <ConfigurationManager projectRoot={projectRoot} />
+            ) : (
+                <div className="space-y-4">
+                    {(() => {
+                        // Build day index from UI sessions for preset buttons
+                        const allDays = Array.from(new Set(uiSessions.map((s) => s.day).filter(Boolean))).sort() as string[]
+                        const haveDays = allDays.length > 0
+                        const todayIso = new Date().toISOString().slice(0, 10)
+                        const lastNDays = (n: number) => {
+                            const d = new Date()
+                            d.setDate(d.getDate() - (n - 1))
+                            return d.toISOString().slice(0, 10)
+                        }
+                        const clampStart = (iso: string) => {
+                            if (!haveDays) return ''
+                            for (const d of allDays) { if (d >= iso) return d }
+                            return allDays[0]!
+                        }
+                        const maxDay = haveDays ? allDays[allDays.length - 1]! : ''
+                        return (
+                            <div className="card">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-xs text-app-muted mr-2">Quick ranges</div>
+                                    <button className="badge" onClick={() => { const s = clampStart(todayIso); setStartDay(s); setEndDay(maxDay || s) }}>Today</button>
+                                    <button className="badge" onClick={() => { const s = clampStart(lastNDays(7)); setStartDay(s); setEndDay(maxDay || s) }}>This week</button>
+                                    <button className="badge" onClick={() => { const s = clampStart(lastNDays(30)); setStartDay(s); setEndDay(maxDay || s) }}>This month</button>
+                                    <button className="badge" onClick={() => { const s = clampStart(lastNDays(365)); setStartDay(s); setEndDay(maxDay || s) }}>This year</button>
+                                    <button className="badge" onClick={() => { if (haveDays) { setStartDay(allDays[0]!); setEndDay(maxDay) } }}>All time</button>
+                                </div>
+                            </div>
+                        )
+                    })()}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="card">
+                            <div className="text-xs text-app-muted">Total sessions</div>
+                            <div className="text-xl font-bold">{uiSessions.length}</div>
+                        </div>
+                        <div className="card">
+                            <div className="text-xs text-app-muted">Total tool calls</div>
+                            <div className="text-xl font-bold">{uiSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)}</div>
+                        </div>
+                        <div className="card">
+                            <div className="text-xs text-app-muted">Sessions with private data</div>
+                            <div className="text-xl font-bold">{uiSessions.filter(s => Boolean((s.data_access_summary as any)?.lethal_trifecta?.has_private_data_access)).length}</div>
+                        </div>
+                        <div className="card">
+                            <div className="text-xs text-app-muted">Sessions with untrusted content</div>
+                            <div className="text-xl font-bold">{uiSessions.filter(s => Boolean((s.data_access_summary as any)?.lethal_trifecta?.has_untrusted_content_exposure)).length}</div>
+                        </div>
+                    </div>
+                    <DateRangeSlider
+                        sessions={uiSessions}
+                        startDay={startDay}
+                        endDay={endDay}
+                        onChange={(s, e) => { setStartDay(s); setEndDay(e) }}
+                    />
+                    <Stats sessions={uiSessions.filter(s => s.day && (!startDay || s.day >= startDay) && (!endDay || s.day <= endDay)) as any} />
+                </div>
             )}
             {/* In-page approval banner (fallback for OS notifications) */}
             {pendingApprovals.length > 0 && pendingApprovals[0] && (
