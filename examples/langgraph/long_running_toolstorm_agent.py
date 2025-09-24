@@ -2,15 +2,17 @@
 Long-running LangGraph ReAct agent that exercises many tracked tools.
 
 Run:
-  OPENAI_API_KEY=... uv run python examples/langgraph/long_running_toolstorm_agent.py
+  OPENAI_API_KEY=... [OPENAI_MODEL=gpt-4.1] uv run python examples/langgraph/long_running_toolstorm_agent.py
 
 Notes:
 - Requires Open Edison management API running (default: http://localhost:3001)
 - Tools are decorated with @edison.track() so calls are gated/logged
 - Designed to generate many tool calls: searches, fetches, math, sleeps, etc.
+- The OpenAI chat model can be selected via the OPENAI_MODEL env var (default: gpt-4.1)
 """
 
 import datetime as dt
+import os
 import random
 import re
 import time
@@ -26,7 +28,6 @@ from langgraph.prebuilt import create_react_agent  # type: ignore[reportMissingT
 from loguru import logger as log
 
 from src.langgraph_integration import Edison  # type: ignore[reportMissingTypeStubs]
-
 
 load_dotenv()
 
@@ -64,117 +65,104 @@ def _http_fetch(url: str, max_chars: int = 4000) -> str:
     return text[: max(0, max_chars)]
 
 
+def web_search_fn(query: str, max_results: int = 5) -> str:
+    """Search the web and return up to N result URLs."""
+    return "\n".join(_duckduckgo_search(query, max_results=max_results))
+
+
+def fetch_url_fn(url: str, max_chars: int = 4000) -> str:
+    """Fetch a URL and return first max_chars of readable text."""
+    return _http_fetch(url, max_chars=max_chars)
+
+
+def http_head_fn(url: str) -> dict[str, Any]:
+    """Perform an HTTP HEAD request and return status and headers."""
+    with httpx.Client(timeout=10.0) as client:
+        resp = client.head(url, follow_redirects=True)
+    return {"status_code": resp.status_code, "headers": dict(resp.headers)}
+
+
+def summarize_fn(text: str, max_sentences: int = 3) -> str:
+    """Naive summary: first N sentences (split on period)."""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    return " ".join(parts[: max(1, max_sentences)])
+
+
+def regex_extract_fn(text: str, pattern: str) -> list[str]:
+    """Return all regex matches (group 0)."""
+    try:
+        return re.findall(pattern, text)
+    except re.error as e:  # noqa: BLE001
+        return [f"regex error: {e}"]
+
+
+def token_count_fn(text: str) -> int:
+    """Approximate token count by splitting on whitespace."""
+    return len(text.split())
+
+
+def add_fn(a: float, b: float) -> float:
+    """Return a + b."""
+    return a + b
+
+
+def multiply_fn(a: float, b: float) -> float:
+    """Return a * b."""
+    return a * b
+
+
+def random_int_fn(low: int = 0, high: int = 10) -> int:
+    """Return a random integer in [low, high]."""
+    return random.randint(low, high)
+
+
+def now_iso_fn() -> str:
+    """Return current UTC time in ISO 8601 format."""
+    now = dt.datetime.now(dt.UTC)
+    return now.isoformat().replace("+00:00", "Z")
+
+
+def sleep_ms_fn(ms: int = 200) -> str:
+    """Sleep for N milliseconds to simulate long/slow chains."""
+    s = max(0.0, float(ms) / 1000.0)
+    time.sleep(s)
+    return f"slept {ms}ms"
+
+
+def list_top_fn(items: list[str], n: int = 3) -> list[str]:
+    """Return the first N items of a list."""
+    return items[: max(0, n)]
+
+
+def dict_keys_fn(d: dict[str, Any]) -> list[str]:
+    """Return keys of a dictionary."""
+    return list(d.keys())
+
+
 def build_agent() -> None:
     edison = Edison()
 
-    # Web tools
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def web_search(query: str, max_results: int = 5) -> str:
-        """Search the web and return up to N result URLs."""
-        return "\n".join(_duckduckgo_search(query, max_results=max_results))
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def fetch_url(url: str, max_chars: int = 4000) -> str:
-        """Fetch a URL and return first max_chars of readable text."""
-        return _http_fetch(url, max_chars=max_chars)
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def http_head(url: str) -> dict[str, Any]:
-        """Perform an HTTP HEAD request and return status and headers."""
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.head(url, follow_redirects=True)
-        return {"status_code": resp.status_code, "headers": dict(resp.headers)}
-
-    # Text utilities
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def summarize(text: str, max_sentences: int = 3) -> str:
-        """Naive summary: first N sentences (split on period)."""
-        parts = re.split(r"(?<=[.!?])\s+", text)
-        return " ".join(parts[: max(1, max_sentences)])
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def regex_extract(text: str, pattern: str) -> list[str]:
-        """Return all regex matches (group 0)."""
-        try:
-            return re.findall(pattern, text)
-        except re.error as e:  # noqa: BLE001
-            return [f"regex error: {e}"]
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def token_count(text: str) -> int:
-        """Approximate token count by splitting on whitespace."""
-        return len(text.split())
-
-    # Math and randomness
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def add(a: float, b: float) -> float:
-        """Return a + b."""
-        return a + b
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def multiply(a: float, b: float) -> float:
-        """Return a * b."""
-        return a * b
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def random_int(low: int = 0, high: int = 10) -> int:
-        """Return a random integer in [low, high]."""
-        return random.randint(low, high)
-
-    # Time and pacing
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def now_iso() -> str:
-        """Return current UTC time in ISO 8601 format."""
-        now = dt.datetime.now(dt.UTC)
-        return now.isoformat().replace("+00:00", "Z")
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def sleep_ms(ms: int = 200) -> str:
-        """Sleep for N milliseconds to simulate long/slow chains."""
-        s = max(0.0, float(ms) / 1000.0)
-        time.sleep(s)
-        return f"slept {ms}ms"
-
-    # Collections
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def list_top(items: list[str], n: int = 3) -> list[str]:
-        """Return the first N items of a list."""
-        return items[: max(0, n)]
-
-    @tool  # type: ignore[misc]
-    @edison.track()
-    def dict_keys(d: dict[str, Any]) -> list[str]:
-        """Return keys of a dictionary."""
-        return list(d.keys())
-
     # Build LLM + agent
-    llm = ChatOpenAI()  # type: ignore[reportUnknownVariableType]
+    # Prefer a long-context model by default; allow override via OPENAI_MODEL
+    # Examples: gpt-4.1 (very large context), gpt-4o (128k context)
+    model_name = os.environ.get("OPENAI_MODEL", "gpt-4.1")
+    llm = ChatOpenAI(model=model_name)  # type: ignore[reportUnknownVariableType]
+
+    # Wrap tool functions with edison.track() first, then mark as LangChain tools
     tools = [
-        web_search,
-        fetch_url,
-        http_head,
-        summarize,
-        regex_extract,
-        token_count,
-        add,
-        multiply,
-        random_int,
-        now_iso,
-        sleep_ms,
-        list_top,
-        dict_keys,
+        tool(edison.track()(web_search_fn)),
+        tool(edison.track()(fetch_url_fn)),
+        tool(edison.track()(http_head_fn)),
+        tool(edison.track()(summarize_fn)),
+        tool(edison.track()(regex_extract_fn)),
+        tool(edison.track()(token_count_fn)),
+        tool(edison.track()(add_fn)),
+        tool(edison.track()(multiply_fn)),
+        tool(edison.track()(random_int_fn)),
+        tool(edison.track()(now_iso_fn)),
+        tool(edison.track()(sleep_ms_fn)),
+        tool(edison.track()(list_top_fn)),
+        tool(edison.track()(dict_keys_fn)),
     ]
     agent = create_react_agent(model=llm, tools=tools)  # type: ignore[reportUnknownReturnType]
 

@@ -8,7 +8,7 @@ http://localhost:3001
 
 ## Authentication
 
-Public endpoints: `/health`, `/mcp/status`, `/sessions`.
+Public endpoints: `/health` only.
 
 All other endpoints require API key authentication:
 
@@ -50,37 +50,15 @@ Check server health and basic information.
 
 - `200` - Server is healthy
 
-**Example**:
-
-```bash
-curl http://localhost:3001/health
-```
-
 ---
 
-### MCP Server Status (Public)
+### MCP Server Status
 
 #### GET `/mcp/status`
 
 Get configured MCP servers and their enabled flags.
 
-**Authentication**: None required
-
-**Response**:
-
-```json
-{
-  "servers": [
-    { "name": "filesystem", "enabled": true },
-    { "name": "github", "enabled": false }
-  ]
-}
-```
-
-**Status Codes**:
-
-- `200` - Success
-- `401` - Invalid API key
+**Authentication**: Required
 
 **Example**:
 
@@ -143,18 +121,18 @@ curl -X DELETE -H "Authorization: Bearer your-api-key" http://localhost:3001/mcp
 
 ---
 
-### Session Logs (Public)
+### Session Logs
 
 #### GET `/sessions`
 
 Return recent MCP session summaries.
 
-**Authentication**: None required
+**Authentication**: Required
 
 **Example**:
 
 ```bash
-curl http://localhost:3001/sessions
+curl -H "Authorization: Bearer your-api-key" http://localhost:3001/sessions
 ```
 
 ---

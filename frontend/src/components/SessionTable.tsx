@@ -1,4 +1,6 @@
 import React, { useState } from 'react'
+import Modal from './Modal'
+import JsonHighlight from './JsonHighlight'
 import type { Session } from '../types'
 
 function formatDate(iso: string | undefined): string {
@@ -33,8 +35,9 @@ function riskLevel(flags: { privateData: boolean; untrusted: boolean; external: 
   return { label: 'Low', colorClass: 'text-green-400' }
 }
 
-export function SessionTable({ sessions }: { sessions: Session[] }) {
+export function SessionTable({ sessions, headerRight }: { sessions: Session[]; headerRight?: React.ReactNode }) {
   const [openId, setOpenId] = useState<string | null>(null)
+  const [paramModal, setParamModal] = useState<{ title: string; content: string } | null>(null)
   const getHighestAcl = (summary: Record<string, unknown> | undefined): 'PUBLIC' | 'PRIVATE' | 'SECRET' => {
     const s: any = summary || {}
     const acl = s.acl || {}
@@ -48,6 +51,11 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
   }
   return (
     <div className="card">
+      {headerRight && (
+        <div className="flex items-center justify-end mb-2">
+          {headerRight}
+        </div>
+      )}
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -116,19 +124,35 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
                               </tr>
                             </thead>
                             <tbody>
-                              {s.tool_calls.map((tc) => (
-                                <tr key={tc.id}>
-                                  <td className="border-b border-app-border py-2 whitespace-nowrap">{formatDate(tc.timestamp)}</td>
-                                  <td className="border-b border-app-border py-2">{tc.tool_name}</td>
-                                  <td className="border-b border-app-border py-2">{tc.status ?? 'pending'}</td>
-                                  <td className="border-b border-app-border py-2">
-                                    {typeof tc.duration_ms === 'number' ? (tc.duration_ms / 1000).toPrecision(3) : ''}
-                                  </td>
-                                  <td className="border-b border-app-border py-2 text-xs font-mono">
-                                    <code className="text-xs">{JSON.stringify(tc.parameters ?? {}, null, 0)}</code>
-                                  </td>
-                                </tr>
-                              ))}
+                              {s.tool_calls.map((tc) => {
+                                const fullJson = (() => {
+                                  try { return JSON.stringify(tc.parameters ?? {}, null, 2) } catch { return String(tc.parameters ?? '') }
+                                })()
+                                const isLarge = fullJson.length > 2000 || fullJson.split('\n').length > 30
+                                const preview = isLarge ? `${fullJson.slice(0, 2000)}…` : fullJson
+                                return (
+                                  <tr key={tc.id}>
+                                    <td className="border-b border-app-border py-2 whitespace-nowrap">{formatDate(tc.timestamp)}</td>
+                                    <td className="border-b border-app-border py-2">{tc.tool_name}</td>
+                                    <td className="border-b border-app-border py-2">{tc.status ?? 'pending'}</td>
+                                    <td className="border-b border-app-border py-2">
+                                      {typeof tc.duration_ms === 'number' ? (tc.duration_ms / 1000).toPrecision(3) : ''}
+                                    </td>
+                                    <td className="border-b border-app-border py-2 text-xs align-top">
+                                      <div className="flex flex-col gap-2 max-w-[560px]">
+                                        <div className="max-h-40 overflow-auto pr-1">
+                                          <JsonHighlight json={preview} />
+                                        </div>
+                                        {isLarge && (
+                                          <div>
+                                            <button className="badge" onClick={() => setParamModal({ title: 'Parameters', content: fullJson })}>Expand</button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
                             </tbody>
                           </table>
                         )}
@@ -141,6 +165,24 @@ export function SessionTable({ sessions }: { sessions: Session[] }) {
           })}
         </tbody>
       </table>
+      {paramModal && (
+        <Modal
+          title={paramModal.title}
+          onClose={() => setParamModal(null)}
+          actions={(
+            <button
+              className="badge"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(paramModal.content)
+                } catch { /* ignore */ }
+              }}
+            >Copy</button>
+          )}
+        >
+          <pre className="text-xs font-mono whitespace-pre-wrap break-all"><JsonHighlight json={paramModal.content} /></pre>
+        </Modal>
+      )}
     </div>
   )
 }

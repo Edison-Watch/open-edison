@@ -186,13 +186,40 @@ class OpenEdisonProxy:
 
         # Provide multiple paths the SPA might attempt (both edison.db legacy and sessions.db canonical)
         for name in ("edison.db", "sessions.db"):
-            app.add_api_route(f"/dashboard/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
-            app.add_api_route(f"/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
-            app.add_api_route(f"/@fs/dashboard//{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
-            app.add_api_route(f"/@fs/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/dashboard/{name}",
+                _serve_db,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/{name}", _serve_db, methods=["GET"], dependencies=[Depends(self.verify_api_key)]
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/@fs/dashboard//{name}",
+                _serve_db,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/@fs/{name}",
+                _serve_db,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
             # Also support URL-encoded '@' prefix used by some bundlers
-            app.add_api_route(f"/%40fs/dashboard//{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
-            app.add_api_route(f"/%40fs/{name}", _serve_db, methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/%40fs/dashboard//{name}",
+                _serve_db,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/%40fs/{name}",
+                _serve_db,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
 
         # Config files (read + write)
         allowed_json_files = {
@@ -234,10 +261,20 @@ class OpenEdisonProxy:
 
             return endpoint
 
-        # GET endpoints for convenience
+        # GET endpoints for convenience (auth required due to sensitive contents)
         for name in allowed_json_files:
-            app.add_api_route(f"/{name}", _json_endpoint_factory(name), methods=["GET"])  # type: ignore[arg-type]
-            app.add_api_route(f"/dashboard/{name}", _json_endpoint_factory(name), methods=["GET"])  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/{name}",
+                _json_endpoint_factory(name),
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
+            app.add_api_route(
+                f"/dashboard/{name}",
+                _json_endpoint_factory(name),
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
+            )  # type: ignore[arg-type]
 
         # Save endpoint to persist JSON changes
         async def _save_json(body: dict[str, Any]) -> dict[str, str]:  # type: ignore[override]
@@ -285,7 +322,12 @@ class OpenEdisonProxy:
             except Exception as e:  # noqa: BLE001
                 raise HTTPException(status_code=400, detail=f"Save failed: {e}") from e
 
-        app.add_api_route("/__save_json__", _save_json, methods=["POST"])  # type: ignore[arg-type]
+        app.add_api_route(
+            "/__save_json__",
+            _save_json,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )  # type: ignore[arg-type]
 
         # SSE events endpoint
         async def _events() -> StreamingResponse:  # type: ignore[override]
@@ -334,7 +376,12 @@ class OpenEdisonProxy:
                     status_code=500, detail="Failed to process approval/denial"
                 ) from e
 
-        app.add_api_route("/api/approve_or_deny", _approve_or_deny, methods=["POST"])  # type: ignore[arg-type]
+        app.add_api_route(
+            "/api/approve_or_deny",
+            _approve_or_deny,
+            methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
+        )  # type: ignore[arg-type]
 
         # Catch-all for @fs patterns; serve known db and json filenames
         async def _serve_fs_path(rest: str):  # type: ignore[override]
@@ -347,8 +394,18 @@ class OpenEdisonProxy:
                 return await _serve_db()
             raise HTTPException(status_code=404, detail="Not found")
 
-        app.add_api_route("/@fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
-        app.add_api_route("/%40fs/{rest:path}", _serve_fs_path, methods=["GET"])  # type: ignore[arg-type]
+        app.add_api_route(
+            "/@fs/{rest:path}",
+            _serve_fs_path,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )  # type: ignore[arg-type]
+        app.add_api_route(
+            "/%40fs/{rest:path}",
+            _serve_fs_path,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )  # type: ignore[arg-type]
 
         # Redirect root to dashboard
         async def _root_redirect() -> RedirectResponse:  # type: ignore[override]
@@ -487,18 +544,20 @@ class OpenEdisonProxy:
             "/mcp/status",
             self.mcp_status,
             methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
         )
         # Endpoint to notify server that permissions JSONs changed; invalidate caches
         app.add_api_route(
             "/api/permissions-changed",
             self.permissions_changed,
             methods=["POST"],
+            dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
             "/mcp/validate",
             self.validate_mcp_server,
             methods=["POST"],
-            # Intentionally no auth required for validation for now
+            dependencies=[Depends(self.verify_api_key)],
         )
         app.add_api_route(
             "/mcp/mounted",
@@ -530,11 +589,12 @@ class OpenEdisonProxy:
             methods=["DELETE"],
             dependencies=[Depends(self.verify_api_key)],
         )
-        # Public sessions endpoint (no auth) for simple local dashboard
+        # Sessions endpoint (auth required)
         app.add_api_route(
             "/sessions",
             self.get_sessions,
             methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
         )
 
         # OAuth endpoints
@@ -577,7 +637,8 @@ class OpenEdisonProxy:
 
         Returns the API key string if valid, otherwise raises HTTPException.
         """
-        if credentials.credentials != Config().server.api_key:
+        expected = Config().server.api_key
+        if credentials.credentials != expected:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
         return credentials.credentials
 

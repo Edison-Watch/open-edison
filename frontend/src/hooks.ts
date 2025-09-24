@@ -14,9 +14,12 @@ export function useSessions(dbPath: string) {
       setError(null)
       try {
         const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
+        const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+        const headers: Record<string, string> = { 'Cache-Control': 'no-cache' }
+        if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
         const fileResp = await fetch(`/@fs${dbPath}`, {
           cache: 'no-cache',
-          headers: { 'Cache-Control': 'no-cache' }
+          headers
         })
         if (!fileResp.ok) throw new Error(`Cannot read DB at ${dbPath}`)
         const buf = new Uint8Array(await fileResp.arrayBuffer())

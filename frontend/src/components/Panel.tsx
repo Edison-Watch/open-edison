@@ -23,11 +23,14 @@ export function Panel({ title, subtitle, unit, actions, heightRem = 14, children
                 </div>
                 {actions && actions.length > 0 ? (
                     <div className="flex items-center gap-1">
-                        {actions.map((a) => (
-                            <button key={a.id} className="badge" onClick={a.onClick} title={a.label || a.id}>
-                                {a.label || a.id}
-                            </button>
-                        ))}
+                        {actions.map((a) => {
+                            const label = a.label || (a.id === 'csv' ? 'CSV' : a.id === 'image' ? 'Copy image' : 'Expand')
+                            return (
+                                <button key={a.id} className="badge" onClick={a.onClick} title={label}>
+                                    {label}
+                                </button>
+                            )
+                        })}
                     </div>
                 ) : null}
             </div>
