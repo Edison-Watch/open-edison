@@ -355,7 +355,21 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                         result = obj.shutdown()  # type: ignore[attr-defined]
                         await asyncio.wait_for(result, timeout=2.0)  # type: ignore[func-returns-value]
 
-    return asyncio.run(_verify_async())
+    try:
+        # Try to get the current event loop
+        asyncio.get_running_loop()
+        # If we're already in an event loop, we need to run the coroutine differently
+        import concurrent.futures
+
+        def run_in_thread():
+            return asyncio.run(_verify_async())
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(_verify_async())
 
 
 def authorize_server_oauth(server: MCPServerConfig) -> bool:
@@ -430,7 +444,21 @@ def authorize_server_oauth(server: MCPServerConfig) -> bool:
             print("[OAuth] Authorization failed:", e)
             return False
 
-    return asyncio.run(_authorize_async())
+    try:
+        # Try to get the current event loop
+        asyncio.get_running_loop()
+        # If we're already in an event loop, we need to run the coroutine differently
+        import concurrent.futures
+
+        def run_in_thread():
+            return asyncio.run(_authorize_async())
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(_authorize_async())
 
 
 def has_oauth_tokens(server: MCPServerConfig) -> bool:

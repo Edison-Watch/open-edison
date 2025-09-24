@@ -190,16 +190,22 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setError(null);
     
     try {
-      const data = await wizardApiService.saveServers({
-        servers: selectedServers,
-        dry_run: dryRun,
-      });
-      
-      if (data.success) {
+      if (dryRun) {
+        // In dry run mode, skip the actual save and just show success
         onImportComplete(selectedServers);
         onClose();
       } else {
-        setError(data.message);
+        const data = await wizardApiService.saveServers({
+          servers: selectedServers,
+          dry_run: dryRun,
+        });
+        
+        if (data.success) {
+          onImportComplete(selectedServers);
+          onClose();
+        } else {
+          setError(data.message);
+        }
       }
     } catch (err) {
       setError('Failed to save configuration. Please try again.');
