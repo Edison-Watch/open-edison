@@ -29,7 +29,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [logLevel, setLogLevel] = useState('info');
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -140,32 +139,10 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     addLog('Import functionality not yet implemented');
   };
 
-  // Check for Open Edison installation
-  const checkOpenEdisonInstall = async () => {
-    try {
-      if (window.electronAPI) {
-        const isInstalled = await window.electronAPI.getInstallationStatus();
-        
-        if (!isInstalled) {
-          setShowWelcome(true);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking Open Edison installation:', error);
-      setShowWelcome(true);
-    }
-  };
 
-  // Check Open Edison installation first, then start server monitoring
+  // Start server status monitoring
   useEffect(() => {
-    const initializeApp = async () => {
-      // Check installation first
-      await checkOpenEdisonInstall();
-      // Then start server status monitoring
-      checkServerStatus();
-    };
-    
-    initializeApp();
+    checkServerStatus();
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -228,128 +205,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
-      {/* Welcome Modal */}
-      {showWelcome && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '2rem',
-            maxWidth: '500px',
-            width: '90%',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
-            textAlign: 'center',
-            position: 'relative'
-          }}>
-            {/* Close button */}
-            <button
-              onClick={() => setShowWelcome(false)}
-              style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                background: 'none',
-                border: 'none',
-                fontSize: '1.5rem',
-                cursor: 'pointer',
-                color: '#7f8c8d',
-                padding: '0.25rem',
-                borderRadius: '4px',
-                transition: 'all 0.2s ease',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '2rem',
-                height: '2rem'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#f8f9fa';
-                e.currentTarget.style.color = '#2c3e50';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'none';
-                e.currentTarget.style.color = '#7f8c8d';
-              }}
-            >
-              ×
-            </button>
-            <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
-              Welcome to Open Edison! 🎉
-            </h2>
-            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              This is your first time using Open Edison! We've already created a basic configuration for you.
-            </p>
-            <p style={{ color: '#7f8c8d', marginBottom: '2rem', lineHeight: '1.6' }}>
-              You can now run the configuration wizard to automatically configure your MCP servers, or select a folder to import your configuration files.
-            </p>
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button
-                onClick={async () => {
-                  setShowWelcome(false);
-                  // Start the Setup Wizard API server
-                  if (window.electronAPI && window.electronAPI.restartSetupWizardApi) {
-                    try {
-                      await window.electronAPI.restartSetupWizardApi();
-                    } catch (error) {
-                      console.error('Failed to start Setup Wizard API:', error);
-                    }
-                  }
-                  // Open wizard window
-                  if (window.electronAPI && window.electronAPI.openWizardWindow) {
-                    try {
-                      await window.electronAPI.openWizardWindow();
-                    } catch (error) {
-                      console.error('Failed to open wizard window:', error);
-                    }
-                  }
-                }}
-                style={{
-                  background: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '1rem',
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                Run Configuration Wizard
-              </button>
-              <button
-                onClick={() => {
-                  setShowWelcome(false);
-                  // Scroll to import section
-                  document.getElementById('import-section')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                style={{
-                  background: '#9b59b6',
-                  color: 'white',
-                  border: 'none',
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '1rem',
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                Import Configuration Files
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Server Control Section */}
       <div style={{
         background: 'white',
@@ -371,7 +226,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           color: serverMcpStatus.running ? '#27ae60' : '#e74c3c',
           border: `1px solid ${serverMcpStatus.running ? '#27ae60' : '#e74c3c'}`
         }}>
-          {serverMcpStatus.running ? '✅ Server is online' : '❌ Server is offline'}
+          {serverMcpStatus.running ? '✅ Server is online 🛡️' : '❌ Server is offline'}
         </div>
 
       </div>
