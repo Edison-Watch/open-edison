@@ -29,8 +29,8 @@ interface McpImportWizardProps {
 }
 
 const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComplete }) => {
-  const [step, setStep] = useState(1);
-  const [visitedSteps, setVisitedSteps] = useState<Set<number>>(new Set([1]));
+  const [step, setStep] = useState(0);
+  const [visitedSteps, setVisitedSteps] = useState<Set<number>>(new Set([0]));
   const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [importedServers, setImportedServers] = useState<ServerConfig[]>([]);
@@ -42,6 +42,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [activePreviewTab, setActivePreviewTab] = useState(0);
+  const [autoImport, setAutoImport] = useState<boolean | null>(null);
 
   // Step 1: Detect available clients
   useEffect(() => {
@@ -89,7 +90,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   };
 
   const goToStep = (targetStep: number) => {
-    if (targetStep >= 1 && targetStep <= 5) {
+    if (targetStep >= 0 && targetStep <= 5) {
       setStep(targetStep);
       setVisitedSteps(prev => new Set([...prev, targetStep]));
       setError(null);
@@ -247,6 +248,85 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       setLoading(false);
     }
   };
+
+  const handleWelcomeChoice = (choice: boolean) => {
+    setAutoImport(choice);
+    if (choice) {
+      // User wants to auto-import, proceed to step 1
+      setVisitedSteps(prev => new Set([...prev, 1]));
+      setStep(1);
+      detectClients();
+    } else {
+      // User doesn't want to import, complete the wizard to start main application
+      if (window.electronAPI && window.electronAPI.wizardCompleted) {
+        window.electronAPI.wizardCompleted();
+      }
+      onClose();
+    }
+  };
+
+  const renderWelcomeScreen = () => (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
+          Welcome to Open Edison! 🎉
+        </h2>
+        <p style={{ color: '#7f8c8d', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+          We've detected that this is the first time you're running our tool. 
+          We'd like to help you set it up quickly and easily.
+        </p>
+        <p style={{ color: '#2c3e50', fontSize: '1rem', lineHeight: '1.5', marginBottom: '2rem' }}>
+          Would you like to automatically import your MCP servers from other tools like Cursor, VSCode, Claude Desktop, or Claude Code?
+        </p>
+      </div>
+      
+      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => handleWelcomeChoice(true)}
+          style={{
+            background: '#27ae60',
+            color: 'white',
+            border: 'none',
+            padding: '1rem 2rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            minWidth: '200px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          Yes, Import My Servers
+        </button>
+        <button
+          onClick={() => handleWelcomeChoice(false)}
+          style={{
+            background: '#95a5a6',
+            color: 'white',
+            border: 'none',
+            padding: '1rem 2rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            minWidth: '200px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          No, Skip for Now
+        </button>
+      </div>
+      
+      <p style={{ 
+        color: '#7f8c8d', 
+        fontSize: '0.875rem', 
+        marginTop: '1.5rem',
+        fontStyle: 'italic'
+      }}>
+        You can always import servers later from the settings menu.
+      </p>
+    </div>
+  );
 
   const renderStep1 = () => (
     <div>
@@ -645,7 +725,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             
             {/* Step circles */}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {[1, 2, 3, 4, 5].map(stepNum => (
+              {[0, 1, 2, 3, 4, 5].map(stepNum => (
                 <button
                   key={stepNum}
                   onClick={() => visitedSteps.has(stepNum) ? goToStep(stepNum) : undefined}
@@ -666,7 +746,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                     opacity: visitedSteps.has(stepNum) ? 1 : 0.5
                   }}
                 >
-                  {stepNum}
+                  {stepNum === 0 ? 'W' : stepNum}
                 </button>
               ))}
             </div>
@@ -710,6 +790,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         )}
 
         {/* Step content */}
+        {step === 0 && renderWelcomeScreen()}
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
