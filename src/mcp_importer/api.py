@@ -347,9 +347,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
 
             # Check if empty results and treat as failed
             if not result or len(result) == 0:
-                log.debug(
-                    f"Remote server {server.name} returned empty results, treating as failed"
-                )
+                log.debug(f"Remote server {server.name} returned empty results, treating as failed")
                 return False
 
             return True
