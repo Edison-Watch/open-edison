@@ -14,9 +14,24 @@ export function useSessions(dbPath: string) {
       setError(null)
       try {
         const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
-        const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+        // Get API key from localStorage (for autonomous operation), global variable, or URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlApiKey = urlParams.get('api_key');
+        const globalApiKey = (window as any).OPEN_EDISON_API_KEY;
+        const storedKey = (() => { 
+            try { 
+                return localStorage.getItem('api_key') || globalApiKey || urlApiKey || '' 
+            } catch { 
+                return globalApiKey || urlApiKey || '' 
+            } 
+        })()
         const headers: Record<string, string> = { 'Cache-Control': 'no-cache' }
-        if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+        if (storedKey) {
+            headers['Authorization'] = `Bearer ${storedKey}`
+            console.log('Using API key for sessions request:', storedKey)
+        } else {
+            console.log('No API key found for sessions request')
+        }
         const fileResp = await fetch(`/@fs${dbPath}`, {
           cache: 'no-cache',
           headers

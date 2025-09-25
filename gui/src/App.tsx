@@ -161,9 +161,27 @@ const App: React.FC = () => {
         {activeTab === 'overview' && <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />}
         {activeTab === 'dashboard' && (
           <iframe
-            src={serverConfig ? `http://${serverConfig.host}:${serverConfig.port + 1}` : 'http://localhost:000'}
+            src={serverConfig ? `http://${serverConfig.host}:${serverConfig.port + 1}/dashboard?api_key=dev-api-key-change-me` : 'http://localhost:3001/dashboard?api_key=dev-api-key-change-me'}
             style={{ width: '100%', height: '100%', border: 'none' }}
             title="Open Edison Dashboard"
+            allow="storage-access *; localStorage *; sessionStorage *;"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
+            onLoad={(e) => {
+              // Inject API key into the iframe
+              try {
+                const iframe = e.target as HTMLIFrameElement;
+                if (iframe.contentWindow) {
+                  // Inject a script that sets the API key globally
+                  const script = `
+                    window.OPEN_EDISON_API_KEY = 'dev-api-key-change-me';
+                    console.log('API key injected:', window.OPEN_EDISON_API_KEY);
+                  `;
+                  (iframe.contentWindow as any).eval(script);
+                }
+              } catch (error) {
+                console.error('Failed to inject API key into iframe:', error);
+              }
+            }}
           />
         )}
       </div>

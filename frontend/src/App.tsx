@@ -9,13 +9,80 @@ import AgentDataflow from './components/AgentDataflow'
 import Stats from './components/Stats'
 import DateRangeSlider from './components/DateRangeSlider'
 
-// Ensure dev default API key is present as early as possible (before effects)
-try {
-    if (typeof window !== 'undefined') {
-        const existing = localStorage.getItem('api_key')
-        if (!existing) localStorage.setItem('api_key', 'dev-api-key-change-me')
+// Embedding/Electron detection
+const isEmbedded = (() => {
+    try { return window.top !== window.self } catch { return true }
+})()
+const isLikelyElectron = !!(
+    typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')
+)
+
+// Helper function to get API key with proper fallback order
+const getApiKey = (): string => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlApiKey = urlParams.get('api_key') || ''
+    const globalApiKey = (window as any).OPEN_EDISON_API_KEY || ''
+
+    // When embedded (including Electron app iframe), avoid localStorage entirely.
+    if (isEmbedded || isLikelyElectron) {
+        if (urlApiKey) return urlApiKey
+        if (globalApiKey) return globalApiKey
+        return ''
     }
-} catch { /* ignore */ }
+
+    // Standalone dashboard: prefer persisted localStorage, then URL, then global
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            const storedKey = localStorage.getItem('api_key')
+            if (storedKey) return storedKey
+        }
+    } catch { /* ignore */ }
+
+    if (urlApiKey) return urlApiKey
+    if (globalApiKey) return globalApiKey
+    return ''
+}
+
+// Simple localStorage wrapper that handles security restrictions
+const safeLocalStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return null
+            return localStorage.getItem(key)
+        } catch (error) {
+            console.warn('localStorage.getItem failed:', error)
+            return null
+        }
+    },
+    setItem: (key: string, value: string): boolean => {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return false
+            localStorage.setItem(key, value)
+            return true
+        } catch (error) {
+            console.warn('localStorage.setItem failed:', error)
+            return false
+        }
+    },
+    removeItem: (key: string): boolean => {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return false
+            localStorage.removeItem(key)
+            return true
+        } catch (error) {
+            console.warn('localStorage.removeItem failed:', error)
+            return false
+        }
+    }
+}
+
+// Ensure dev default API key is present for standalone only
+if (typeof window !== 'undefined' && !(isEmbedded || isLikelyElectron)) {
+    try {
+        const existing = localStorage?.getItem('api_key')
+        if (!existing) localStorage?.setItem('api_key', 'dev-api-key-change-me')
+    } catch { /* ignore */ }
+}
 
 // Module-level cache of tool schemas, refreshed on reinitialize
 let TOOL_SCHEMAS: Record<string, Record<string, ToolSchemaEntry>> = {}
@@ -66,7 +133,7 @@ function summarizeJsonSchema(schema: unknown): { entries: Array<{ name: string; 
 
 async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<string, Record<string, ToolSchemaEntry>>> {
     try {
-        const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+        const storedKey = getApiKey()
         const headersCfg: Record<string, string> = { 'Cache-Control': 'no-cache' }
         if (storedKey) headersCfg['Authorization'] = `Bearer ${storedKey}`
         const isDev = !!((import.meta as any)?.env?.DEV)
@@ -95,6 +162,24 @@ async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<str
 export function App(): React.JSX.Element {
     // Always read from sessions.db (canonical name)
     const dbRelativeToProjectRoot = '/sessions.db'
+    
+    // Get API key from URL query parameter (set by Electron app) and store in localStorage
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiKey = urlParams.get('api_key');
+        console.log('URL search params:', window.location.search);
+        console.log('API key from URL:', apiKey);
+        if (apiKey) {
+            try {
+                safeLocalStorage.setItem('api_key', apiKey);
+                console.log('API key set from URL parameter:', apiKey);
+            } catch (error) {
+                console.error('Failed to set API key in localStorage:', error);
+            }
+        } else {
+            console.log('No API key found in URL parameters');
+        }
+    }, []);
     // Vite injects __PROJECT_ROOT__ from vite.config.ts define
     const dbAbsolutePath = (globalThis as any).__PROJECT_ROOT__
         ? `${(globalThis as any).__PROJECT_ROOT__}${dbRelativeToProjectRoot}`
@@ -162,7 +247,7 @@ export function App(): React.JSX.Element {
     }, [filtered, unknownSessions, showUnknown])
     const [theme, setTheme] = useState<'light' | 'dark'>(() => {
         try {
-            const saved = localStorage.getItem('app_theme')
+            const saved = safeLocalStorage.getItem('app_theme')
             if (saved === 'light' || saved === 'dark') {
                 return saved
             }
@@ -178,7 +263,7 @@ export function App(): React.JSX.Element {
     // Save theme state to localStorage whenever it changes
     useEffect(() => {
         try {
-            localStorage.setItem('app_theme', theme)
+            safeLocalStorage.setItem('app_theme', theme)
         } catch { /* ignore */ }
     }, [theme])
 
@@ -186,7 +271,7 @@ export function App(): React.JSX.Element {
 
     const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability'>(() => {
         try {
-            const saved = localStorage.getItem('app_view')
+            const saved = safeLocalStorage.getItem('app_view')
             if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability') {
                 return saved
             }
@@ -207,7 +292,7 @@ export function App(): React.JSX.Element {
     // Save view state to localStorage whenever it changes
     useEffect(() => {
         try {
-            localStorage.setItem('app_view', view)
+            safeLocalStorage.setItem('app_view', view)
         } catch { /* ignore */ }
     }, [view])
 
@@ -236,7 +321,7 @@ export function App(): React.JSX.Element {
     const approveItem = async (item: PendingApproval) => {
         try {
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             await fetch(`/api/approve_or_deny`, {
                 method: 'POST',
@@ -254,7 +339,7 @@ export function App(): React.JSX.Element {
     const denyItem = async (item: PendingApproval) => {
         try {
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             await fetch(`/api/approve_or_deny`, {
                 method: 'POST',
@@ -277,9 +362,14 @@ export function App(): React.JSX.Element {
                 console.log('🔄 Starting MCP status check...')
 
                 // Load config to get server settings
-                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const storedKey = getApiKey()
                 const headersCfg: Record<string, string> = { 'Cache-Control': 'no-cache' }
-                if (storedKey) headersCfg['Authorization'] = `Bearer ${storedKey}`
+                if (storedKey) {
+                    headersCfg['Authorization'] = `Bearer ${storedKey}`
+                    console.log('Using API key for config request:', storedKey)
+                } else {
+                    console.log('No API key found in localStorage, global, or URL')
+                }
                 const isDev = !!((import.meta as any)?.env?.DEV)
                 let configResponse: Response
                 if (isDev && projectRoot) {
@@ -385,7 +475,7 @@ export function App(): React.JSX.Element {
             try {
                 const msg = (ev && ev.data) || {}
                 if (msg && msg.type === 'OE_GET_API_KEY') {
-                    const apiKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                    const apiKey = getApiKey()
                     try { (ev.ports && ev.ports[0])?.postMessage({ type: 'OE_API_KEY', apiKey }) } catch { /* ignore */ }
                 }
             } catch { /* ignore */ }
@@ -709,8 +799,8 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
     // Load update flags from localStorage
     const getUpdateFlags = () => {
         try {
-            const permissionFlags = localStorage.getItem('json_editor_needs_permission_update')
-            const configFlags = localStorage.getItem('json_editor_needs_config_update')
+            const permissionFlags = safeLocalStorage.getItem('json_editor_needs_permission_update')
+            const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
             return {
                 needsPermissionUpdate: permissionFlags ? JSON.parse(permissionFlags) : {},
                 needsConfigUpdate: configFlags ? JSON.parse(configFlags) : {}
@@ -724,8 +814,8 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
     // Save update flags to localStorage
     const setUpdateFlags = (permissionFlags: Record<FileKey, boolean>, configFlags: Record<FileKey, boolean>) => {
         try {
-            localStorage.setItem('json_editor_needs_permission_update', JSON.stringify(permissionFlags))
-            localStorage.setItem('json_editor_needs_config_update', JSON.stringify(configFlags))
+            safeLocalStorage.setItem('json_editor_needs_permission_update', JSON.stringify(permissionFlags))
+            safeLocalStorage.setItem('json_editor_needs_config_update', JSON.stringify(configFlags))
         } catch { /* ignore */ }
     }
 
@@ -737,13 +827,13 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
         const loadUpdateFlags = async () => {
             // Validate config update flag first
             try {
-                const configFlags = localStorage.getItem('json_editor_needs_config_update')
+                const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
                 if (configFlags && content.config) {
                     const flags = JSON.parse(configFlags)
 
                     if (flags.config) {
                         let configResponse: Response
-                        const storedKeyUpd = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                        const storedKeyUpd = getApiKey()
                         const headersCfgUpd: Record<string, string> = { 'Cache-Control': 'no-cache' }
                         if (storedKeyUpd) headersCfgUpd['Authorization'] = `Bearer ${storedKeyUpd}`
                         if (projectRoot) {
@@ -764,7 +854,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                             // Configurations match, clear the flag
                             console.log('🔄 Configurations match, clearing config update flag')
                             const resetFlags = { ...flags, config: false }
-                            localStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
+                            safeLocalStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
                         }
                     }
                 }
@@ -842,9 +932,15 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
         const load = async () => {
             try {
                 setLoadingKey(active)
-                const storedKeyFile = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                // Get API key with fallback helper
+                const storedKeyFile = getApiKey()
                 const headersFile: Record<string, string> = {}
-                if (storedKeyFile) headersFile['Authorization'] = `Bearer ${storedKeyFile}`
+                if (storedKeyFile) {
+                    headersFile['Authorization'] = `Bearer ${storedKeyFile}`
+                    console.log('Using API key for file request:', storedKeyFile)
+                } else {
+                    console.log('No API key found for file request')
+                }
                 const resp = await fetch(`/@fs${f.path}`, { headers: headersFile })
                 if (!resp.ok) throw new Error(`Cannot read ${f.name}`)
                 const txt = await resp.text()
@@ -860,7 +956,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                     try {
                         const configData = JSON.parse(txt)
                         if (configData?.server?.api_key) {
-                            localStorage.setItem('api_key', configData.server.api_key)
+                            safeLocalStorage.setItem('api_key', configData.server.api_key)
                         }
                     } catch { /* ignore JSON parse errors */ }
                 }
@@ -933,7 +1029,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
             // if (file.key === 'tool' || file.key === 'resource' || file.key === 'prompt') {
             console.log(`🔄 Clearing permission caches after ${file.name} save...`)
             // Load config to get server settings
-            const storedKeyCfg = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKeyCfg = getApiKey()
             const headersCfgRoot: Record<string, string> = { 'Cache-Control': 'no-cache' }
             if (storedKeyCfg) headersCfgRoot['Authorization'] = `Bearer ${storedKeyCfg}`
             const configResponse: Response = await fetch('/config.json', {
@@ -981,7 +1077,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
 
             setToast({ message: 'Updating open-edison configuration', type: 'success' })
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
 
             const reinitResponse = await fetchWithTimeout(`/mcp/reinitialize`, { method: 'POST', headers }, 10_000)
@@ -1210,7 +1306,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     useEffect(() => {
         const checkConfigUpdateFlag = () => {
             try {
-                const configFlags = localStorage.getItem('json_editor_needs_config_update')
+                const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
                 if (configFlags) {
                     const flags = JSON.parse(configFlags)
                     setNeedsReinitialize(!!flags.config)
@@ -1279,9 +1375,15 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setLoading(true)
             setError('')
             try {
-                const storedKeyBulk = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                // Get API key with proper fallback order
+                const storedKeyBulk = getApiKey()
                 const headersBulk: Record<string, string> = { 'Cache-Control': 'no-cache' }
-                if (storedKeyBulk) headersBulk['Authorization'] = `Bearer ${storedKeyBulk}`
+                if (storedKeyBulk) {
+                    headersBulk['Authorization'] = `Bearer ${storedKeyBulk}`
+                    console.log('Using API key for bulk request:', storedKeyBulk)
+                } else {
+                    console.log('No API key found for bulk request')
+                }
                 const [c, t, r, p] = await Promise.all([
                     fetch(`/@fs${projectRoot}/${CONFIG_NAME}`, { cache: 'no-cache', headers: headersBulk }),
                     fetch(`/@fs${projectRoot}/${TOOL_NAME}`, { cache: 'no-cache', headers: headersBulk }),
@@ -1470,7 +1572,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             // Persist to backend immediately
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             const resp = await fetch('/__save_json__', {
                 method: 'POST',
@@ -1484,7 +1586,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             // Set config update flag in localStorage to make buttons orange
             try {
-                const configFlags = localStorage.getItem('json_editor_needs_config_update')
+                const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
                 const flags = configFlags ? JSON.parse(configFlags) : {}
                 flags.config = true
                 localStorage.setItem('json_editor_needs_config_update', JSON.stringify(flags))
@@ -1502,7 +1604,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         try {
             const post = (name: string, content: string) => {
                 const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const storedKey = getApiKey()
                 if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
                 return fetch('/__save_json__', { method: 'POST', headers, body: JSON.stringify({ name, content }) })
             }
@@ -1554,7 +1656,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             // Reset permission update flags in localStorage after autosave
             try {
-                const permissionFlags = localStorage.getItem('json_editor_needs_permission_update')
+                const permissionFlags = safeLocalStorage.getItem('json_editor_needs_permission_update')
                 if (permissionFlags) {
                     const flags = JSON.parse(permissionFlags)
                     // Reset all permission file flags (tool, resource, prompt)
@@ -1621,7 +1723,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             console.log('🔄 Saving configuration changes...')
             const post = (name: string, content: string) => {
                 const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const storedKey = getApiKey()
                 if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
                 return fetch('/__save_json__', { method: 'POST', headers, body: JSON.stringify({ name, content }) })
             }
@@ -1655,7 +1757,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             // Step 2: Reinitialize MCP servers
             console.log('🔄 Reinitializing MCP servers...')
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             const apiKey = storedKey || config?.server?.api_key || ''
             if (apiKey) {
                 headers['Authorization'] = `Bearer ${apiKey}`
@@ -1688,12 +1790,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
 
             // Reset config update flags in localStorage after manual save/reinitialize
             try {
-                const configFlags = localStorage.getItem('json_editor_needs_config_update')
+                const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
                 if (configFlags) {
                     const flags = JSON.parse(configFlags)
                     // Reset config file flag
                     const resetFlags = { ...flags, config: false }
-                    localStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
+                    safeLocalStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
                 }
             } catch { /* ignore */ }
 
@@ -1722,7 +1824,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 timeout_s: 20,
             }
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const storedKey = getApiKey()
             if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             const resp = await fetch('/mcp/validate', { method: 'POST', headers, body: JSON.stringify(body) })
             const data = await resp.json() as any
