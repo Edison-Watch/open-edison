@@ -213,27 +213,39 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         servers: selectedServers,
       });
       
-      if (data.success) {
-        // Update results based on API response
-        const updatedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
-        selectedServers.forEach(server => {
-          const serverResult = data.results[server.name];
-          updatedResults[server.name] = serverResult ? 'success' : 'failed';
-        });
-        setVerificationResults(updatedResults);
+      // Debug: Log the API response
+      console.log('Verification API response:', data);
+      console.log('data.success:', data.success);
+      console.log('data.results:', data.results);
+      console.log('data.message:', data.message);
+      
+      // Always update results based on individual server results, regardless of overall success
+      const updatedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
+      selectedServers.forEach(server => {
+        const serverResult = data.results[server.name];
+        console.log(`Server ${server.name} result:`, serverResult, typeof serverResult);
+        console.log(`Server ${server.name} result === true:`, serverResult === true);
+        updatedResults[server.name] = serverResult === true ? 'success' : 'failed';
+      });
+      
+      console.log('Final updatedResults:', updatedResults);
+      setVerificationResults(updatedResults);
+      
+      // Check if any servers succeeded
+      const successCount = Object.values(updatedResults).filter(status => status === 'success').length;
+      
+      if (successCount > 0) {
+        // At least one server succeeded, show success message
+        setSuccessMessage(`Verification completed: ${successCount}/${selectedServers.length} servers verified successfully`);
+        setError(null);
         
         // Move to next step after a short delay to show results
         setTimeout(() => {
           setStep(5);
         }, 2000);
       } else {
-        // Mark all as failed on error
-        const failedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
-        selectedServers.forEach(server => {
-          failedResults[server.name] = 'failed';
-        });
-        setVerificationResults(failedResults);
-        setError(data.message);
+        // All servers failed
+        setError('All servers failed verification. Please check your server configurations.');
         setSuccessMessage(null);
       }
     } catch (err) {

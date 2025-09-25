@@ -219,7 +219,7 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             f"Skipping verification for remote server '{server.name}' pending OAuth",
                             style="bold fg:ansiyellow",
                         )
-                        return True
+                        return False  # OAuth required but not available = verification failed
 
         # Remote servers
         if server.is_remote_server():
@@ -274,8 +274,10 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             server.name, remote_url
                         )
                     # If OAuth is needed or we are already authenticated, don't initiate browser flows here
-                    if oauth_info.status in (OAuthStatus.NEEDS_AUTH, OAuthStatus.AUTHENTICATED):
+                    if oauth_info.status == OAuthStatus.AUTHENTICATED:
                         return True
+                    if oauth_info.status == OAuthStatus.NEEDS_AUTH:
+                        return False  # OAuth needed but not available = verification failed
                     # NOT_REQUIRED: quick unauthenticated ping
                     # TODO: In debug mode, do not suppress child process output.
                     questionary.print(
@@ -331,6 +333,8 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         host_local: FastMCP[Any] | None = None
         try:
             # TODO: In debug mode, do not suppress child process output.
+            print(f"DEBUG: Server config for {server.name}: {server}")
+            print(f"DEBUG: Backend config: {backend_cfg_local}")
             log.info("Checking properties of '{}'...", server.name)
             with suppress_fds(suppress_stdout=True, suppress_stderr=True):
                 proxy_local = FastMCP.as_proxy(backend_cfg_local)
@@ -339,9 +343,23 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             log.info("MCP properties check succeeded for '{}'", server.name)
 
             async def _list_tools_only() -> Any:
-                return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
+                print(f"DEBUG: About to call list_tools for {server.name}")
+                result = await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
+                print(f"DEBUG: list_tools completed for {server.name}: {result}")
+                return result
 
-            await asyncio.wait_for(_list_tools_only(), timeout=30.0)
+            print(f"DEBUG: About to wait for list_tools with timeout for {server.name}")
+            result = await asyncio.wait_for(_list_tools_only(), timeout=30.0)
+            print(f"DEBUG: list_tools wait completed for {server.name}: {result}")
+
+            # Check if this is a remote server that returned empty results
+            # This indicates the connection failed but didn't throw an exception
+            if not result or len(result) == 0:
+                print(
+                    f"DEBUG: Remote server {server.name} returned empty results, treating as failed"
+                )
+                return False
+
             return True
         except Exception as e:
             print(f"DEBUG: Exception caught in verify_mcp_server for {server.name}: {e}")

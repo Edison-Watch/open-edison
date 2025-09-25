@@ -249,15 +249,17 @@ async def verify_servers(request: VerificationRequest):
         for server_config in request.servers:
             try:
                 mcp_config = convert_from_server_config(server_config)
-                print(f"DEBUG: About to verify server: {server_config.name}")
+                print(f"Verifying server: {server_config.name}")
                 is_valid = verify_mcp_server(mcp_config)
-                print(f"DEBUG: verify_mcp_server returned: {is_valid} for {server_config.name}")
+                print(f"Server {server_config.name} verification result: {is_valid}")
                 results[server_config.name] = is_valid
             except Exception as e:
                 results[server_config.name] = False
                 print(f"Verification error for {server_config.name}: {e}")
 
         success_count = sum(1 for valid in results.values() if valid is True)  # type: ignore
+        print(f"Final results: {results}")
+        print(f"Success count: {success_count}")
 
         return VerificationResponse(
             success=success_count > 0,
