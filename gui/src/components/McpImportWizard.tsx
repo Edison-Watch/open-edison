@@ -100,11 +100,11 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   };
 
   const handleServerToggle = (server: ServerConfig) => {
-    setSelectedServers(prev => 
-      prev.includes(server) 
-        ? prev.filter(s => s.name !== server.name)
-        : [...prev, server]
-    );
+    // Prevent deselection of already selected servers
+    if (selectedServers.includes(server)) {
+      return; // Do nothing if trying to deselect
+    }
+    setSelectedServers(prev => [...prev, server]);
   };
 
   const goToStep = (targetStep: number) => {
@@ -555,31 +555,45 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
 
   const renderStep3 = () => (
     <div>
-      <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers</h3>
+      <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers (coming soon)</h3>
       <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
         Select which servers to import to Open Edison:
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
-        {importedServers.map(server => (
-          <label key={server.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '4px' }}>
-            <input
-              type="checkbox"
-              checked={selectedServers.includes(server)}
-              onChange={() => handleServerToggle(server)}
-            />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 'bold' }}>{server.name}</div>
-              <div style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>
-                {server.command} {server.args.join(' ')}
-              </div>
-              {server.roots && server.roots.length > 0 && (
-                <div style={{ fontSize: '0.75rem', color: '#95a5a6' }}>
-                  Roots: {server.roots.join(', ')}
+        {importedServers.map(server => {
+          const isSelected = selectedServers.includes(server);
+          return (
+            <label key={server.name} style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              padding: '0.5rem', 
+              border: '1px solid #bdc3c7', 
+              borderRadius: '4px',
+              opacity: isSelected ? 0.6 : 1,
+              backgroundColor: isSelected ? '#f8f9fa' : 'transparent'
+            }}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                disabled={isSelected}
+                onChange={() => handleServerToggle(server)}
+                style={{ cursor: isSelected ? 'not-allowed' : 'pointer' }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 'bold', color: isSelected ? '#95a5a6' : '#2c3e50' }}>{server.name}</div>
+                <div style={{ fontSize: '0.875rem', color: isSelected ? '#bdc3c7' : '#7f8c8d' }}>
+                  {server.command} {server.args.join(' ')}
                 </div>
-              )}
-            </div>
-          </label>
-        ))}
+                {server.roots && server.roots.length > 0 && (
+                  <div style={{ fontSize: '0.75rem', color: isSelected ? '#d5dbdb' : '#95a5a6' }}>
+                    Roots: {server.roots.join(', ')}
+                  </div>
+                )}
+              </div>
+            </label>
+          );
+        })}
       </div>
       <button
         onClick={proceedToVerification}
