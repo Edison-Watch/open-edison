@@ -7,6 +7,7 @@ import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
 import AgentDataflow from './components/AgentDataflow'
 import Stats from './components/Stats'
+import Kpis from './components/Kpis'
 import DateRangeSlider from './components/DateRangeSlider'
 
 // Ensure dev default API key is present as early as possible (before effects)
@@ -154,6 +155,37 @@ export function App(): React.JSX.Element {
             })
             .filter((s) => s.tool_calls.length > 0)
     }, [filtered, rangeMs])
+
+    // Compute previous period window (same length immediately before current)
+    const prevTimeFiltered = useMemo(() => {
+        let currStart: number | null = null
+        let currEnd: number | null = null
+        if (typeof rangeMs?.start === 'number' && typeof rangeMs?.end === 'number') {
+            currStart = rangeMs.start
+            currEnd = rangeMs.end
+        } else if (startDay && endDay) {
+            // Interpret as local dates
+            const s = new Date(`${startDay}T00:00:00`).getTime()
+            // end inclusive to end-of-day
+            const e = new Date(`${endDay}T23:59:59.999`).getTime()
+            if (!Number.isNaN(s) && !Number.isNaN(e)) { currStart = s; currEnd = e }
+        }
+        if (currStart == null || currEnd == null) return []
+        const dur = Math.max(0, currEnd - currStart)
+        if (dur <= 0) return []
+        const prevStart = currStart - dur
+        const prevEnd = currStart
+        // Filter across all sessions (not day-limited) for the previous window
+        return uiSessions
+            .map((s) => {
+                const calls = s.tool_calls.filter((tc) => {
+                    const t = Date.parse(String((tc as any)?.timestamp))
+                    return !Number.isNaN(t) && t >= prevStart && t <= prevEnd
+                })
+                return { ...s, tool_calls: calls }
+            })
+            .filter((s) => s.tool_calls.length > 0)
+    }, [uiSessions, rangeMs, startDay, endDay])
 
     const totalCalls = useMemo(() => {
         const base = filtered.reduce((acc, s) => acc + s.tool_calls.length, 0)
@@ -598,6 +630,7 @@ export function App(): React.JSX.Element {
                 <ConfigurationManager projectRoot={projectRoot} />
             ) : (
                 <div className="space-y-4">
+                    <Kpis sessions={timeFiltered} prevSessions={prevTimeFiltered} />
                     {/* Date range selector for Observability (mirrors Sessions) */}
                     <DateRangeSlider
                         sessions={uiSessions}
