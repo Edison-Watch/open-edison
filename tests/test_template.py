@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 import requests
-import uvicorn
 from fastapi.testclient import TestClient
 
 from src.config import Config, LoggingConfig, MCPServerConfig, ServerConfig
@@ -86,12 +85,12 @@ class BackgroundServerTemplate(TestTemplate):
                     s.bind(("127.0.0.1", 0))
                     return s.getsockname()[1]
 
-            test_api_port = get_free_port()
             test_mcp_port = get_free_port()
+            test_api_port = test_mcp_port + 1
 
             self.base_url = f"http://127.0.0.1:{test_api_port}"
 
-            # Start server in background thread - only start FastAPI management server for tests
+            # Start server in background thread - run both FastAPI (api) and FastMCP servers
             def run_server() -> None:
                 asyncio.set_event_loop(asyncio.new_event_loop())
                 loop = asyncio.get_event_loop()
@@ -99,21 +98,8 @@ class BackgroundServerTemplate(TestTemplate):
                 # Create a new OpenEdisonProxy with dynamic ports
                 self.server_proxy = OpenEdisonProxy(host="127.0.0.1", port=test_mcp_port)
 
-                # Initialize SingleUserMCP with current config
-                loop.run_until_complete(self.server_proxy.single_user_mcp.initialize())
-
-                app = self.server_proxy.fastapi_app
-
-                print(f"DEBUG: Registered routes: {[route.path for route in app.routes]}")
-
-                uvicorn_config = uvicorn.Config(
-                    app=app,
-                    host="127.0.0.1",
-                    port=test_api_port,  # Use dynamic port
-                    log_level="critical",  # Suppress uvicorn logs in tests
-                )
-                server = uvicorn.Server(uvicorn_config)
-                loop.run_until_complete(server.serve())
+                # Start both servers (FastAPI on port+1 and FastMCP on port)
+                loop.run_until_complete(self.server_proxy.start())
 
             self.server_thread = threading.Thread(target=run_server, daemon=True)
             self.server_thread.start()

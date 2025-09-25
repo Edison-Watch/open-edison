@@ -29,6 +29,7 @@ from src.config import (
     ensure_permissions_file,
     get_config_dir,
 )
+from src.middleware.pii_obfuscation import PIIObfuscationMiddleware
 from src.middleware.session_tracking import (
     SessionTrackingMiddleware,
     get_current_session_data_tracker,
@@ -110,6 +111,8 @@ class SingleUserMCP(FastMCP[Any]):
 
         # Add session tracking middleware for data access monitoring
         self.add_middleware(SessionTrackingMiddleware())
+
+        self.add_middleware(PIIObfuscationMiddleware())
 
         # Cache for tool schemas: { server_name: { tool_name: { input_schema, output_schema } } }
         self._tool_schemas: dict[str, dict[str, dict[str, Any | None]]] = {}
