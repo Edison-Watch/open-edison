@@ -220,4 +220,5 @@ frontend/package-lock.json
 install_id
 dev_config_dir/
 sessions.db
+ngrok.yml
 .env
