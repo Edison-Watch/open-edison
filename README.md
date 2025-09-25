@@ -35,6 +35,26 @@ OpenEdison helps address the [lethal trifecta problem](https://simonwillison.net
 - 🔗 **Simple API** - REST API for managing MCP servers and proxying requests
 - 🐳 **Docker support** - Run in a container for easy deployment
 
+<details>
+<summary>🤝 Quick integration with LangGraph and other agent frameworks</summary>
+
+Open-Edison integrates with LangGraph, LangChain, and plain Python agents by decorating your tools/functions with <code>@edison.track()</code>. This provides immediate observability and policy enforcement without invasive changes.
+
+<div align="center">
+  <h4>🔎 Dataflow observability (LangGraph demo)</h4>
+  <img src="media/agent_dataflowgraph_example.gif" alt="Open Edison dataflow observability while running the LangGraph long_running_toolstorm_agent.py demo" width="720">
+</div>
+
+<div align="center">
+  <h4>⚡️ One-line tool integration</h4>
+  <p>Just add <code>@edison.track()</code> to your tools/functions to enable Open-Edison controls and observability.</p>
+  <img src="media/agent_integration.gif" alt="Adding @edison.track() to an existing agent or tool" width="720">
+</div>
+
+Read more in [docs/langgraph_quickstart.md](docs/quick-reference/langgraph_quickstart.md)
+
+</details>
+
 ## About Edison.watch 🏢
 
 Edison helps you gain observability, control, and policy enforcement for AI interactions with systems of records, existing company software and data. Reduce risks of AI-caused data leakage with streamlined setup for cross-system governance.

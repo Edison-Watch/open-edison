@@ -27,7 +27,7 @@ from langchain_openai import ChatOpenAI  # type: ignore[reportMissingTypeStubs]
 from langgraph.prebuilt import create_react_agent  # type: ignore[reportMissingTypeStubs]
 from loguru import logger as log
 
-from src.langgraph_integration import Edison  # type: ignore[reportMissingTypeStubs]
+from open_edison import Edison
 
 load_dotenv()
 

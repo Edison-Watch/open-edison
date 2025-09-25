@@ -221,3 +221,5 @@ install_id
 dev_config_dir/
 sessions.db
 .env
+.DS_Store
+typings/

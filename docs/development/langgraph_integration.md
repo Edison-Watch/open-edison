@@ -52,7 +52,7 @@ All routes are API-key protected (same dependency as other management endpoints)
 ```python
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from src.langgraph_integration import Edison
+from open_edison import Edison
 
 edison = Edison()  # uses OPEN_EDISON_API_BASE and OPEN_EDISON_API_KEY
 

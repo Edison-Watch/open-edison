@@ -31,7 +31,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-from src.langgraph_integration import Edison
+from open_edison import Edison
 
 # Edison reads OPEN_EDISON_API_BASE / OPEN_EDISON_API_KEY from env
 edison = Edison()
@@ -67,7 +67,7 @@ diff agent_no_firewall.py agent_firewall.py
 ```text
 examples/langgraph/agent_no_firewall.py                     examples/langgraph/agent_firewall.py                       
                                                                                                                         
-                                                            from src.langgraph_integration import Edison                
+                                                            from open_edison import Edison                
                                                             edison = Edison()                                           
                                                                                                                         
 @tool                                                       @tool                                                       
