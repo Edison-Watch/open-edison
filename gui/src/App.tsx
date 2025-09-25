@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [isWizardMode, setIsWizardMode] = useState(false);
+  const [serverConfig, setServerConfig] = useState<{ host: string; port: number } | null>(null);
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
@@ -31,6 +32,24 @@ const App: React.FC = () => {
     return () => {
       window.removeEventListener('popstate', checkWizardMode);
     };
+  }, []);
+
+  // Fetch server configuration
+  useEffect(() => {
+    const fetchServerConfig = async () => {
+      if (window.electronAPI && window.electronAPI.getServerConfig) {
+        try {
+          const config = await window.electronAPI.getServerConfig();
+          setServerConfig(config);
+        } catch (error) {
+          console.error('Failed to fetch server config:', error);
+          // Fallback to default values
+          setServerConfig({ host: 'localhost', port: 3001 });
+        }
+      }
+    };
+
+    fetchServerConfig();
   }, []);
 
   // Listen for backend logs at App level to persist across tab switches
@@ -142,7 +161,7 @@ const App: React.FC = () => {
         {activeTab === 'overview' && <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />}
         {activeTab === 'dashboard' && (
           <iframe
-            src="http://localhost:5173"
+            src={serverConfig ? `http://${serverConfig.host}:${serverConfig.port + 1}` : 'http://localhost:000'}
             style={{ width: '100%', height: '100%', border: 'none' }}
             title="Open Edison Dashboard"
           />

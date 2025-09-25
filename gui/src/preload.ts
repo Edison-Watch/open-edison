@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkPathExists: (path: string) => ipcRenderer.invoke('check-path-exists', path),
   getInstallationStatus: () => ipcRenderer.invoke('get-installation-status'),
   
+  // Server configuration methods
+  getServerConfig: () => ipcRenderer.invoke('get-server-config'),
+  
   // Platform info
   platform: process.platform,
   
@@ -58,6 +61,7 @@ declare global {
       getApplicationSupportPath: () => Promise<string>
       checkPathExists: (path: string) => Promise<boolean>
       getInstallationStatus: () => Promise<boolean>
+      getServerConfig: () => Promise<{ host: string; port: number }>
       getSetupWizardApiStatus: () => Promise<{ running: boolean; port: number }>
       restartSetupWizardApi: () => Promise<boolean>
       onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => void

@@ -14,7 +14,7 @@ let isBackendRunning = false
 let isSetupWizardApiRunning = false
 
 let BACKEND_PORT = 3001
-const FRONTEND_PORT = 5173
+const FRONTEND_PORT = 3001
 const SETUP_WIZARD_API_PORT = 3002
 
 // Force first install mode (for testing/development)
@@ -501,7 +501,7 @@ async function startMainApplication() {
   // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
   
   // Always start frontend server (needed for proper asset loading)
-  await startFrontend(host, port+1)
+  // await startFrontend(host, port+1)
   
   // Create the main window
   await createWindow()
@@ -803,4 +803,9 @@ ipcMain.handle('wizard-completed', async () => {
     console.log('Wizard completed but not in first install mode, ignoring...')
     return { success: false, error: 'Not in first install mode' }
   }
+})
+
+// IPC handler to get server configuration
+ipcMain.handle('get-server-config', async () => {
+  return await readServerConfig()
 })
