@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [isWizardMode, setIsWizardMode] = useState(false);
-  const [serverConfig, setServerConfig] = useState<{ host: string; port: number } | null>(null);
+  const [serverConfig, setServerConfig] = useState<{ host: string; port: number; api_key?: string } | null>(null);
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
@@ -161,20 +161,26 @@ const App: React.FC = () => {
         {activeTab === 'overview' && <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />}
         {activeTab === 'dashboard' && (
           <iframe
-            src={serverConfig ? `http://${serverConfig.host}:${serverConfig.port + 1}/dashboard?api_key=dev-api-key-change-me` : 'http://localhost:3001/dashboard?api_key=dev-api-key-change-me'}
+            src={(() => {
+              const host = serverConfig?.host || 'localhost'
+              const port = (serverConfig?.port || 3000) + 1
+              const key = serverConfig?.api_key || 'dev-api-key-change-me'
+              const qp = new URLSearchParams({ api_key: key }).toString()
+              return `http://${host}:${port}/dashboard?${qp}`
+            })()}
             style={{ width: '100%', height: '100%', border: 'none' }}
             title="Open Edison Dashboard"
             allow="storage-access *; localStorage *; sessionStorage *;"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-storage-access-by-user-activation"
             onLoad={(e) => {
               // Inject API key into the iframe
               try {
                 const iframe = e.target as HTMLIFrameElement;
                 if (iframe.contentWindow) {
                   // Inject a script that sets the API key globally
+                  const apiKey = serverConfig?.api_key || 'dev-api-key-change-me';
                   const script = `
-                    window.OPEN_EDISON_API_KEY = 'dev-api-key-change-me';
-                    console.log('API key injected:', window.OPEN_EDISON_API_KEY);
+                    window.OPEN_EDISON_API_KEY = ${JSON.stringify(apiKey)};
+                    try { localStorage.setItem('api_key', ${JSON.stringify(apiKey)}); } catch {}
                   `;
                   (iframe.contentWindow as any).eval(script);
                 }

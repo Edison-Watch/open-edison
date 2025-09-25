@@ -61,7 +61,7 @@ declare global {
       getApplicationSupportPath: () => Promise<string>
       checkPathExists: (path: string) => Promise<boolean>
       getInstallationStatus: () => Promise<boolean>
-      getServerConfig: () => Promise<{ host: string; port: number }>
+      getServerConfig: () => Promise<{ host: string; port: number; api_key?: string }>
       getSetupWizardApiStatus: () => Promise<{ running: boolean; port: number }>
       restartSetupWizardApi: () => Promise<boolean>
       onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => void

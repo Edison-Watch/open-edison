@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
-import { readFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
 
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null
@@ -21,20 +21,48 @@ const SETUP_WIZARD_API_PORT = 3002
 const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || process.argv.includes('--force-first-install')
 
 // Read host and port from config.json
-async function readServerConfig(): Promise<{ host: string; port: number }> {
+async function readServerConfig(): Promise<{ host: string; port: number; api_key?: string }> {
   const configPath = join(app.getPath('userData'), 'config.json')
   try {
     const configData = await readFile(configPath, 'utf8')
     const config = JSON.parse(configData)
+
+    // Normalize structure if needed
+    let dirty = false
+    if (!config.server || typeof config.server !== 'object') {
+      config.server = { host: 'localhost', port: 3001 }
+      dirty = true
+    }
+    if (typeof config.server.port !== 'number') {
+      config.server.port = 3001
+      dirty = true
+    }
+    if (!config.server.api_key || typeof config.server.api_key !== 'string') {
+      config.server.api_key = 'dev-api-key-change-me'
+      dirty = true
+    }
+    if (!Array.isArray(config.mcp_servers)) {
+      config.mcp_servers = []
+      dirty = true
+    }
+    if (dirty) {
+      try {
+        await writeFile(configPath, JSON.stringify(config, null, 2), 'utf8')
+      } catch (e) {
+        console.warn('Failed to normalize config.json:', e)
+      }
+    }
     return {
       host: config.server?.host || 'localhost',
-      port: config.server?.port || 3000
+      port: config.server?.port || 3001,
+      api_key: config.server?.api_key
     }
   } catch (error) {
     console.error('Failed to read config.json:', error)
     return {
       host: 'localhost',
-      port: 3000
+      port: 3001,
+      api_key: 'dev-api-key-change-me'
     }
   }
 }
@@ -718,9 +746,10 @@ const createDefaultConfigFile = async (fileName: string, targetPath: string) => 
       defaultContent = JSON.stringify({
         "server": {
           "host": "localhost",
-          "port": 3000
+          "port": 3000,
+          "api_key": "dev-api-key-change-me"
         },
-        "mcp_servers": {},
+        "mcp_servers": [],
         "logging": {
           "level": "INFO"
         }
