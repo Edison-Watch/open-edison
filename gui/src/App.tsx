@@ -70,6 +70,10 @@ const App: React.FC = () => {
     return (
       <McpImportWizard
         onClose={() => {
+          // When wizard is closed (X button), always trigger main application startup
+          if (window.electronAPI && window.electronAPI.wizardCompleted) {
+            window.electronAPI.wizardCompleted();
+          }
           if (window.electronAPI && window.electronAPI.closeWindow) {
             window.electronAPI.closeWindow();
           }
