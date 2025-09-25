@@ -37,6 +37,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [selectedServers, setSelectedServers] = useState<ServerConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [skipOAuth, setSkipOAuth] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -67,6 +68,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const detectClients = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const data = await wizardApiService.detectClients();
@@ -74,13 +76,16 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       if (data.success) {
         setAvailableClients(data.clients);
         if (data.clients.length === 0) {
-          setError('No MCP clients detected. Please install Cursor, VSCode, Claude Code, or Claude Desktop.');
+          setError('No MCP clients detected. Currently only Cursor, VSCode, Claude Code, or Claude Desktop are supported.');
+          setSuccessMessage(null);
         }
       } else {
         setError(data.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
       setError('Failed to connect to Setup Wizard API server. Please ensure it is running.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -107,6 +112,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       setStep(targetStep);
       setVisitedSteps(prev => new Set([...prev, targetStep]));
       setError(null);
+      setSuccessMessage(null);
     }
   };
 
@@ -137,6 +143,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const proceedToImport = () => {
     if (selectedClients.length === 0) {
       setError('Please select at least one client to import from.');
+      setSuccessMessage(null);
       return;
     }
     setVisitedSteps(prev => new Set([...prev, 2]));
@@ -147,6 +154,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const importServers = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const data = await wizardApiService.importServers({
@@ -161,12 +169,14 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         setStep(3);
       } else {
         setError(data.message);
+        setSuccessMessage(null);
         if (data.errors.length > 0) {
           setError(data.errors.join('; '));
         }
       }
     } catch (err) {
       setError('Failed to import servers. Please check your connection.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -175,6 +185,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const proceedToVerification = () => {
     if (selectedServers.length === 0) {
       setError('Please select at least one server to import.');
+      setSuccessMessage(null);
       return;
     }
     setStep(4);
@@ -184,6 +195,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const verifyServers = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const data = await wizardApiService.verifyServers({
@@ -194,9 +206,11 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         setStep(5);
       } else {
         setError(data.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
       setError('Failed to verify servers. Please check your connection.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -236,6 +250,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const saveConfiguration = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       if (dryRun) {
@@ -253,10 +268,12 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           setStep(6);
         } else {
           setError(data.message);
+        setSuccessMessage(null);
         }
       }
     } catch (err) {
       setError('Failed to save configuration. Please try again.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -265,6 +282,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const loadBackupInfo = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const data = await wizardApiService.getBackupInfo();
@@ -275,9 +293,11 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         setReplaceClients(selectedClients);
       } else {
         setError(data.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
       setError('Failed to load backup information. Please try again.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -294,6 +314,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const replaceMcpServers = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const response = await wizardApiService.replaceMcpServers({
@@ -310,15 +331,17 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         setReplaceResults(response.results);
         setError(null);
         if (dryRun) {
-          setError('Dry run completed successfully. No changes were made.');
+          setSuccessMessage('Dry run completed successfully. No changes were made.');
         } else {
-          setError('MCP servers replaced successfully! Your original configurations have been backed up.');
+          setSuccessMessage('MCP servers replaced successfully! Your original configurations have been backed up.');
         }
       } else {
         setError(response.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
       setError('Failed to replace MCP servers. Please try again.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -327,6 +350,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const restoreMcpServers = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const response = await wizardApiService.restoreClients({
@@ -338,15 +362,17 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       if (response.success) {
         setError(null);
         if (dryRun) {
-          setError('Dry run completed successfully. No changes were made.');
+          setSuccessMessage('Dry run completed successfully. No changes were made.');
         } else {
-          setError('MCP servers restored successfully!');
+          setSuccessMessage('MCP servers restored successfully!');
         }
       } else {
         setError(response.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
       setError('Failed to restore MCP servers. Please try again.');
+      setSuccessMessage(null);
     } finally {
       setLoading(false);
     }
@@ -358,6 +384,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       // User wants to auto-import, proceed to step 1
       setVisitedSteps(prev => new Set([...prev, 1]));
       setStep(1);
+      setError(null);
+      setSuccessMessage(null);
       detectClients();
     } else {
       // User doesn't want to import, complete the wizard to start main application
@@ -1046,6 +1074,20 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             color: '#c0392b'
           }}>
             {error}
+          </div>
+        )}
+
+        {/* Success message display */}
+        {successMessage && (
+          <div style={{
+            background: '#d5f4e6',
+            border: '1px solid #27ae60',
+            borderRadius: '4px',
+            padding: '0.75rem',
+            marginBottom: '1rem',
+            color: '#27ae60'
+          }}>
+            {successMessage}
           </div>
         )}
 

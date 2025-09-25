@@ -43,7 +43,7 @@ def find_vscode_user_mcp_file() -> list[Path]:
             candidate = (base / "User" / filename).resolve()
             if candidate.exists():
                 results.append(candidate)
-    return list(set(results))
+    return results
 
 
 def find_claude_code_user_settings_file() -> list[Path]:

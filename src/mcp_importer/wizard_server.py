@@ -24,7 +24,7 @@ from src.mcp_importer.api import (
     verify_mcp_server,
 )
 from src.mcp_importer.parsers import deduplicate_by_name
-
+from loguru import logger as log
 
 # Pydantic models for API requests/responses
 class ServerConfig(BaseModel):
@@ -349,7 +349,8 @@ async def replace_mcp_servers(request: ReplaceRequest):
 
         for client_name in request.clients:
             try:
-                client = CLIENT(client_name)
+                client = CLIENT(client_name.lower())
+                log.debug(f"Exporting Open Edison to {client_name}")
                 result = export_edison_to(
                     client,
                     url=request.url,
@@ -519,19 +520,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"Starting Setup Wizard API server on {args.host}:{args.port}")
-    print("Available endpoints:")
-    print("  GET  /health - Health check")
-    print("  GET  /clients - Detect available MCP clients")
-    print("  POST /import - Import MCP servers")
-    print("  POST /verify - Verify server configurations")
-    print("  POST /oauth - Authorize OAuth for remote servers")
-    print("  POST /save - Save imported servers to config")
-    print("  POST /export - Export to MCP clients")
-    print("  POST /replace - Replace MCP servers with Open Edison (with backup)")
-    print("  GET  /backups - Get backup information for all clients")
-    print("  POST /restore - Restore client configurations")
-    print("  GET  /config - Get current configuration")
+    log.info(f"Starting Setup Wizard API server on {args.host}:{args.port}")
 
     uvicorn.run(
         "src.mcp_importer.wizard_server:app",
