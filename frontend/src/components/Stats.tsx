@@ -303,7 +303,7 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
     const callsValues = useMemo(() => callsOverTime.map(b => b.value), [callsOverTime])
     const callsChartRef = useRef<any>(null)
     const callsMA = useMemo(() => {
-        const w = 24 // 24-hour moving average over hourly buckets
+        const w = 168 // 7-day moving average over hourly buckets
         const out: number[] = []
         for (let i = 0; i < callsValues.length; i += 1) {
             const a = Math.max(0, i - (w - 1))
@@ -365,7 +365,7 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                 <div className="flex items-center gap-2 mb-1 text-[10px]">
                     <button className={`badge ${callsScale === 'linear' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setCallsScale('linear')}>Linear</button>
                     <button className={`badge ${callsScale === 'logarithmic' ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setCallsScale('logarithmic')}>Log</button>
-                    <button className={`badge ${showMA ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setShowMA((prev) => !prev)}>24-hour Moving Average</button>
+                    <button className={`badge ${showMA ? 'bg-app-accent/10 text-app-accent' : ''}`} onClick={() => setShowMA((prev) => !prev)}>7-day Moving Average</button>
                     <button className="badge" onClick={() => {
                         try { callsChartRef.current?.resetZoom?.() } catch { /* noop */ }
                     }}>Reset zoom</button>
@@ -392,7 +392,17 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                         interaction: { mode: 'index', intersect: false },
                         plugins: {
                             legend: { labels: { color: '#a0a7b4' } },
-                            tooltip: { mode: 'index', intersect: false },
+                            tooltip: {
+                                mode: 'index', intersect: false,
+                                callbacks: {
+                                    title: (items: any[]) => items?.[0]?.label ? `Hour ${fmtDate(String(items[0].label))}` : '',
+                                    label: (ctx: any) => {
+                                        const dsLabel = ctx?.dataset?.label || 'value'
+                                        const v = Number(ctx?.parsed?.y ?? ctx?.raw)
+                                        return `${dsLabel}: ${fmtSI(v)} calls`
+                                    },
+                                },
+                            },
                             decimation: { enabled: callsValues.length > 2, algorithm: 'min-max' } as any,
                             zoom: {
                                 pan: { enabled: true, mode: 'x' },
@@ -420,16 +430,23 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                                         if (typeof idx === 'number') {
                                             const lbl = callsLabels[idx]!
                                             onHoverTimeChange?.(String(lbl).slice(0, 10))
+                                            // Broadcast to other charts listening for crosshair sync
+                                            const ev = new CustomEvent('chart-hover', { detail: { source: 'calls', index: idx, label: String(lbl) } })
+                                            window.dispatchEvent(ev)
                                         }
                                     } catch { /* noop */ }
                                 },
-                                onLeave: () => onHoverTimeChange?.(null),
+                                onLeave: () => {
+                                    onHoverTimeChange?.(null)
+                                    const ev = new CustomEvent('chart-hover-leave', { detail: { source: 'calls' } })
+                                    window.dispatchEvent(ev)
+                                },
                             },
                         } as any,
                         animation: false,
                         scales: {
-                            x: { offset: false, bounds: 'ticks', alignToPixels: true, ticks: { color: '#a0a7b4', callback: (v: string | number) => fmtDate(String(v)), maxTicksLimit: 10 }, grid: { color: 'rgba(160,167,180,0.15)' } },
-                            y: { type: callsScale, min: (callsScale === 'linear' ? 0 : undefined) as any, ticks: { color: '#a0a7b4', callback: (val: any) => fmtSI(Number(val)) }, grid: { color: 'rgba(160,167,180,0.15)' } },
+                            x: { offset: false, bounds: 'ticks', alignToPixels: true, ticks: { color: '#a0a7b4', callback: (v: string | number) => fmtDate(String(v)), maxTicksLimit: 10 }, grid: { color: 'rgba(160,167,180,0.15)' }, title: { display: true, text: 'Hour (local time)' } },
+                            y: { type: callsScale, min: (callsScale === 'linear' ? 0 : undefined) as any, ticks: { color: '#a0a7b4', callback: (val: any) => fmtSI(Number(val)) }, grid: { color: 'rgba(160,167,180,0.15)' }, title: { display: true, text: 'Calls' } },
                         },
                     }} />)}
             </Panel>
@@ -496,9 +513,9 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => { const v = Number(ctx?.parsed?.y ?? ctx?.raw); return `Calls: ${fmtSI(v)}` }, title: (items: any[]) => { const l = items?.[0]?.label || ''; return `${topBy === 'tool' ? 'Tool' : 'Server'}: ${l}` } } } },
                         animation: false,
-                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 45, minRotation: 45 }, grid: { display: false } }, y: { type: 'logarithmic', ticks: { color: '#a0a7b4', callback: (v: any) => fmtSI(Number(v)) } } },
+                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 45, minRotation: 45, callback: (_v: any, index: number) => { const label = (topBy === 'tool' ? toolsHist : serversHist)[index]?.label || ''; return label.length > 20 ? label.slice(0, 20) + '…' : label } }, grid: { display: false }, title: { display: true, text: `${topBy === 'tool' ? 'Tool' : 'Server'}` } }, y: { type: 'logarithmic', ticks: { color: '#a0a7b4', callback: (v: any) => fmtSI(Number(v)) }, title: { display: true, text: 'Calls (log scale)' } } },
                     }} />)}
             </Panel>
             {expandTopCalls && (
@@ -551,9 +568,9 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items: any[]) => `Calls per session: ${items?.[0]?.label ?? ''}`, label: (ctx: any) => { const v = Number(ctx?.parsed?.y ?? ctx?.raw); return `Sessions: ${fmtSI(v)}` } } } },
                         animation: false,
-                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 }, title: { display: true, text: 'Calls in session' } }, y: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Sessions' } } },
                     }} />)}
             </Panel>
             {expandSessionLen && (
@@ -602,9 +619,9 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items: any[]) => `Duration: ${items?.[0]?.label ?? ''}`, label: (ctx: any) => { const v = Number(ctx?.parsed?.y ?? ctx?.raw); return `Calls: ${fmtSI(v)}` } } } },
                         animation: false,
-                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: true, maxRotation: 0, minRotation: 0 }, title: { display: true, text: 'Duration (log bins)' } }, y: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Calls' } } },
                     }} />)}
                 {!isEmpty && <div className="text-[10px] text-app-muted mt-2">p50 {fmtSecs(pct.p50)}, p90 {fmtSecs(pct.p90)}, p95 {fmtSecs(pct.p95)}</div>}
             </Panel>
@@ -651,15 +668,15 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                         labels: perc.xs.map(x => fmtSecs(x)),
                         datasets: [
                             { label: 'percent', data: perc.ys.map(v => Math.max(0, Math.min(100, v))), borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.2)', tension: 0, stepped: true, pointRadius: 0 },
-                            { label: '100%', data: perc.xs.map(() => 100), borderColor: 'rgba(160,167,180,0.6)', borderDash: [6, 4], pointRadius: 0, borderWidth: 1 },
+                            { label: '100% (reference)', data: perc.xs.map(() => 100), borderColor: 'rgba(160,167,180,0.6)', borderDash: [6, 4], pointRadius: 0, borderWidth: 1 },
                         ],
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { labels: { color: '#a0a7b4' } } },
+                        plugins: { legend: { labels: { color: '#a0a7b4' } }, tooltip: { callbacks: { label: (ctx: any) => { const isRef = String(ctx?.dataset?.label || '').startsWith('100%'); if (isRef) return ''; const v = Number(ctx?.parsed?.y ?? ctx?.raw); return `Percent: ${Math.round(v)}%` }, title: (items: any[]) => { const l = items?.[0]?.label || ''; return `<= ${l}` } } } },
                         scales: {
-                            x: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Seconds' } },
-                            y: { ticks: { color: '#a0a7b4', callback: (v: any) => `${v}%` }, title: { display: true, text: 'Percent' }, min: 0, max: 100 },
+                            x: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Duration (seconds)' } },
+                            y: { ticks: { color: '#a0a7b4', callback: (v: any) => `${v}%` }, title: { display: true, text: 'Percent of calls' }, min: 0, max: 100 },
                         },
                     }} />)}
                 {!isEmpty && <div className="text-[10px] text-app-muted mt-1">p50 {fmtSecs(pct.p50)}, p90 {fmtSecs(pct.p90)}, p95 {fmtSecs(pct.p95)}</div>}
@@ -717,9 +734,9 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items: any[]) => `Combo: ${items?.[0]?.label ?? ''}`, label: (ctx: any) => { const v = Number(ctx?.parsed?.y ?? ctx?.raw); return `Sessions: ${fmtSI(v)}` } } } },
                         animation: false,
-                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 0, minRotation: 0 } }, y: { ticks: { color: '#a0a7b4' } } },
+                        scales: { x: { ticks: { color: '#a0a7b4', autoSkip: false, maxRotation: 0, minRotation: 0 }, title: { display: true, text: 'Trifecta combination (P/U/E)' } }, y: { ticks: { color: '#a0a7b4' }, title: { display: true, text: 'Sessions' } } },
                     }} />)}
                 {!isEmpty && <div className="text-[10px] text-app-muted mt-2">Legend: P=Private, U=Untrusted, E=External</div>}
             </Panel>

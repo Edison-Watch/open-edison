@@ -177,6 +177,26 @@ export function DateRangeSlider({
         return count
     }, [value, sessions])
 
+    const selectionDurationMs = useMemo(() => {
+        const [a, b] = value
+        return Math.max(0, b - a)
+    }, [value])
+
+    const selectionDurationLabel = useMemo(() => {
+        const ms = selectionDurationMs
+        let seconds = Math.floor(ms / 1000)
+        const days = Math.floor(seconds / 86400)
+        seconds -= days * 86400
+        const hours = Math.floor(seconds / 3600)
+        seconds -= hours * 3600
+        const minutes = Math.floor(seconds / 60)
+        seconds -= minutes * 60
+        if (days > 0) return `${days}d${hours > 0 ? ` ${hours}h` : ''}`
+        if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+        if (minutes > 0) return `${minutes}m${seconds > 0 ? ` ${seconds}s` : ''}`
+        return `${seconds}s`
+    }, [selectionDurationMs])
+
     // Reflect external hoverDay to sparkline active tooltip
     useEffect(() => {
         try {
@@ -196,6 +216,35 @@ export function DateRangeSlider({
         } catch { /* noop */ }
     }, [hoverTimeLabel, days])
 
+    // Listen for global chart hover events to sync crosshair
+    useEffect(() => {
+        const onHover = (e: any) => {
+            try {
+                const idx = Number(e?.detail?.index)
+                if (!Number.isFinite(idx)) return
+                const chart = sparkRef.current
+                if (!chart) return
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }])
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }], { x: 0, y: 0 })
+                chart.update()
+            } catch { /* noop */ }
+        }
+        const onLeave = () => {
+            try {
+                const chart = sparkRef.current
+                if (!chart) return
+                chart.setActiveElements([])
+                chart.update()
+            } catch { /* noop */ }
+        }
+        window.addEventListener('chart-hover', onHover as any)
+        window.addEventListener('chart-hover-leave', onLeave as any)
+        return () => {
+            window.removeEventListener('chart-hover', onHover as any)
+            window.removeEventListener('chart-hover-leave', onLeave as any)
+        }
+    }, [])
+
     if (days.length === 0) return null
 
     return (
@@ -204,6 +253,7 @@ export function DateRangeSlider({
                 <div className="flex items-center gap-2 text-xs text-app-muted">
                     <div>Date range (drag handles or bar)</div>
                     <span className="badge">{inRangeCount} sessions</span>
+                    <span className="badge">{selectionDurationLabel}</span>
                 </div>
                 <div className="relative">
                     <button className="badge" style={{ background: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text)' }} onClick={() => setOpen(v => !v)}>Quick ranges</button>

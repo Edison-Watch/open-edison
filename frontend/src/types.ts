@@ -1,6 +1,7 @@
 export type ToolCall = {
   id: string
   tool_name: string
+  tool_description?: string | null
   parameters: Record<string, unknown>
   timestamp: string
   duration_ms?: number | null

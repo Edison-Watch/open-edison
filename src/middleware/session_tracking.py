@@ -51,6 +51,7 @@ class ToolCall:
     tool_name: str
     parameters: dict[str, Any]
     timestamp: datetime
+    tool_description: str | None = None
     duration_ms: float | None = None
     status: str = "pending"
     result: Any | None = None
@@ -213,6 +214,7 @@ def _persist_session_to_db(session: MCPSession) -> None:
             {
                 "id": tc.id,
                 "tool_name": tc.tool_name,
+                "tool_description": tc.tool_description,
                 "parameters": tc.parameters,
                 "timestamp": tc.timestamp.isoformat(),
                 "duration_ms": tc.duration_ms,
@@ -377,6 +379,7 @@ class SessionTrackingMiddleware(Middleware):
         new_tool_call = ToolCall(
             id=str(uuid.uuid4()),
             tool_name=context.message.name,
+            tool_description=Permissions().get_tool_permission(context.message.name).description,
             parameters=context.message.arguments or {},
             timestamp=datetime.now(),
         )
