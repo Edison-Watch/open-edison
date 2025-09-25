@@ -10,6 +10,9 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# from src.mcp_importer.parsers import deduplicate_by_name  # Using custom deduplication logic
+from loguru import logger as log
 from pydantic import BaseModel
 
 from src.config import MCPServerConfig, get_config_dir
@@ -23,8 +26,7 @@ from src.mcp_importer.api import (
     save_imported_servers,
     verify_mcp_server,
 )
-from src.mcp_importer.parsers import deduplicate_by_name
-from loguru import logger as log
+
 
 # Pydantic models for API requests/responses
 class ServerConfig(BaseModel):
@@ -33,6 +35,7 @@ class ServerConfig(BaseModel):
     args: list[str]
     env: dict[str, str]
     enabled: bool
+    client: str | None = None  # Track which client this server came from
     roots: list[str] | None = None
 
 
@@ -186,30 +189,46 @@ async def import_mcp_servers(request: ImportRequest):
         all_servers = []
         errors = []
 
+        # Track client-server relationships
+        client_server_map: dict[str, list[MCPServerConfig]] = {}
+
         for client_name in request.clients:
             try:
                 # Convert string to CLIENT enum
                 client = CLIENT(client_name)
                 servers = import_from(client)
+                client_server_map[client_name] = servers
                 all_servers.extend(servers)  # type: ignore
             except ValueError:
                 errors.append(f"Unknown client: {client_name}")  # type: ignore
             except Exception as e:
                 errors.append(f"Error importing from {client_name}: {str(e)}")  # type: ignore
 
-        # Deduplicate servers
-        all_servers = deduplicate_by_name(all_servers)  # type: ignore
+        # Don't deduplicate servers since we want to keep client associations
+        # all_servers = deduplicate_by_name(all_servers)  # type: ignore
 
-        # Convert to API format
-        server_configs: list[ServerConfig] = [
-            convert_to_server_config(server) for server in all_servers
-        ]
+        # Convert to API format with client information
+        server_configs: list[ServerConfig] = []
+        for client_name, servers in client_server_map.items():
+            for server in servers:
+                server_config = convert_to_server_config(server)
+                server_config.client = client_name
+                server_configs.append(server_config)
+
+        # Deduplicate servers by name, keeping the first occurrence
+        # This ensures we don't have duplicate servers in the final result
+        seen_names: set[str] = set()
+        deduplicated_servers: list[ServerConfig] = []
+        for server_config in server_configs:
+            if server_config.name not in seen_names:
+                seen_names.add(server_config.name)
+                deduplicated_servers.append(server_config)
 
         return ImportResponse(
-            success=len(server_configs) > 0,
-            servers=server_configs,
+            success=len(deduplicated_servers) > 0,
+            servers=deduplicated_servers,
             errors=errors,  # type: ignore
-            message=f"Imported {len(server_configs)} servers from {len(request.clients)} clients",
+            message=f"Imported {len(deduplicated_servers)} servers from {len(request.clients)} clients",
         )
 
     except Exception as e:
@@ -338,7 +357,7 @@ async def export_to_clients(request: ExportRequest):
 @app.post("/replace", response_model=ReplaceResponse)  # noqa
 async def replace_mcp_servers(request: ReplaceRequest):
     """Replace existing MCP server configurations with Open Edison.
-    
+
     This will:
     1. Backup existing MCP configurations
     2. Replace them with Open Edison configuration
@@ -400,10 +419,10 @@ async def get_backup_info():
     """Get information about available backups for all clients."""
     try:
         backups: dict[str, Any] = {}
-        
+
         # Get detected clients and their paths
         detected_clients = detect_clients()
-        
+
         for client in detected_clients:
             try:
                 # Use the existing export functionality to get target paths
@@ -416,10 +435,10 @@ async def get_backup_info():
                     force=False,
                     create_if_missing=False,
                 )
-                
+
                 target_path = result.target_path
                 backup_path = result.backup_path
-                
+
                 backups[client.value] = {
                     "has_backup": backup_path is not None,
                     "backup_path": str(backup_path) if backup_path else None,
@@ -461,7 +480,9 @@ async def restore_client_configs(request: RestoreRequest) -> dict[str, Any]:
         for client_name in request.clients:
             try:
                 client = CLIENT(client_name)
-                result = restore_client(client, server_name=request.server_name, dry_run=request.dry_run)
+                result = restore_client(
+                    client, server_name=request.server_name, dry_run=request.dry_run
+                )
                 results[client_name] = {
                     "success": getattr(result, "wrote_changes", False),
                     "restored_from_backup": str(getattr(result, "restored_from_backup", None))

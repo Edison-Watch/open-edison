@@ -8,6 +8,7 @@ interface ServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   roots?: string[];
+  client?: string; // Track which client this server came from
 }
 
 interface ImportResponse {
@@ -50,6 +51,9 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [replaceResults, setReplaceResults] = useState<any>(null);
   const [backupInfo, setBackupInfo] = useState<any>(null);
   const [showReplacePreview, setShowReplacePreview] = useState(false);
+  
+  // Verification state
+  const [verificationResults, setVerificationResults] = useState<Record<string, 'pending' | 'success' | 'failed'>>({});
 
   // Step 1: Detect available clients
   useEffect(() => {
@@ -197,18 +201,48 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setError(null);
     setSuccessMessage(null);
     
+    // Initialize all servers as pending
+    const initialResults: Record<string, 'pending' | 'success' | 'failed'> = {};
+    selectedServers.forEach(server => {
+      initialResults[server.name] = 'pending';
+    });
+    setVerificationResults(initialResults);
+    
     try {
       const data = await wizardApiService.verifyServers({
         servers: selectedServers,
       });
       
       if (data.success) {
-        setStep(5);
+        // Update results based on API response
+        const updatedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
+        selectedServers.forEach(server => {
+          const serverResult = data.results[server.name];
+          updatedResults[server.name] = serverResult ? 'success' : 'failed';
+        });
+        setVerificationResults(updatedResults);
+        
+        // Move to next step after a short delay to show results
+        setTimeout(() => {
+          setStep(5);
+        }, 2000);
       } else {
+        // Mark all as failed on error
+        const failedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
+        selectedServers.forEach(server => {
+          failedResults[server.name] = 'failed';
+        });
+        setVerificationResults(failedResults);
         setError(data.message);
         setSuccessMessage(null);
       }
     } catch (err) {
+      // Mark all as failed on exception
+      const failedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
+      selectedServers.forEach(server => {
+        failedResults[server.name] = 'failed';
+      });
+      setVerificationResults(failedResults);
       setError('Failed to verify servers. Please check your connection.');
       setSuccessMessage(null);
     } finally {
@@ -553,93 +587,280 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     </div>
   );
 
-  const renderStep3 = () => (
-    <div>
-      <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers (coming soon)</h3>
-      <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
-        Select which servers to import to Open Edison:
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
-        {importedServers.map(server => {
-          const isSelected = selectedServers.includes(server);
-          return (
-            <label key={server.name} style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem', 
-              padding: '0.5rem', 
-              border: '1px solid #bdc3c7', 
-              borderRadius: '4px',
-              opacity: isSelected ? 0.6 : 1,
-              backgroundColor: isSelected ? '#f8f9fa' : 'transparent'
-            }}>
-              <input
-                type="checkbox"
-                checked={isSelected}
-                disabled={isSelected}
-                onChange={() => handleServerToggle(server)}
-                style={{ cursor: isSelected ? 'not-allowed' : 'pointer' }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 'bold', color: isSelected ? '#95a5a6' : '#2c3e50' }}>{server.name}</div>
-                <div style={{ fontSize: '0.875rem', color: isSelected ? '#bdc3c7' : '#7f8c8d' }}>
-                  {server.command} {server.args.join(' ')}
-                </div>
-                {server.roots && server.roots.length > 0 && (
-                  <div style={{ fontSize: '0.75rem', color: isSelected ? '#d5dbdb' : '#95a5a6' }}>
-                    Roots: {server.roots.join(', ')}
-                  </div>
-                )}
-              </div>
-            </label>
-          );
-        })}
-      </div>
-      <button
-        onClick={proceedToVerification}
-        disabled={selectedServers.length === 0}
-        style={{
-          background: '#3498db',
-          color: 'white',
-          border: 'none',
-          padding: '0.75rem 1.5rem',
-          borderRadius: '6px',
-          cursor: selectedServers.length === 0 ? 'not-allowed' : 'pointer',
-          opacity: selectedServers.length === 0 ? 0.5 : 1,
-          marginTop: '1rem'
-        }}
-      >
-        Verify Selected Servers ({selectedServers.length})
-      </button>
-    </div>
-  );
-
-  const renderStep4 = () => (
-    <div>
-      <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 4: Verifying Servers</h3>
-      {loading ? (
-        <p>Verifying server configurations...</p>
-      ) : (
-        <div>
-          <p>Server verification completed!</p>
-          <button
-            onClick={() => setStep(5)}
-            style={{
-              background: '#3498db',
-              color: 'white',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
+  const renderStep3 = () => {
+    // Group servers by client
+    const renderClientSection = (client: string) => {
+      const clientServers = importedServers.filter(server => server.client === client);
+      
+      // If no servers found for this client, show a message
+      if (clientServers.length === 0) {
+        return (
+          <div key={client} style={{ marginBottom: '1rem' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.75rem',
+              backgroundColor: '#ecf0f1',
+              border: '1px solid #bdc3c7',
               borderRadius: '6px',
-              cursor: 'pointer',
-              marginTop: '1rem'
-            }}
-          >
-            Continue to Save Configuration
-          </button>
+              fontWeight: 'bold',
+              color: '#2c3e50'
+            }}>
+              <span style={{ textTransform: 'capitalize' }}>{client}</span>
+              <span style={{ fontSize: '0.875rem', color: '#7f8c8d', marginLeft: 'auto' }}>
+                No servers found
+              </span>
+            </div>
+          </div>
+        );
+      }
+      const isExpanded = true; // Always expanded for now
+      
+      return (
+        <div key={client} style={{ marginBottom: '1rem' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem',
+            backgroundColor: '#ecf0f1',
+            border: '1px solid #bdc3c7',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            color: '#2c3e50'
+          }}>
+            <span style={{ fontSize: '1.2rem' }}>{isExpanded ? '▼' : '▶'}</span>
+            <span style={{ textTransform: 'capitalize' }}>{client}</span>
+            <span style={{ fontSize: '0.875rem', color: '#7f8c8d', marginLeft: 'auto' }}>
+              {clientServers.length} server{clientServers.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          
+          {isExpanded && (
+            <div style={{ 
+              marginTop: '0.5rem', 
+              paddingLeft: '1rem',
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '0.5rem' 
+            }}>
+              {clientServers.map(server => {
+                const isSelected = selectedServers.includes(server);
+                return (
+                  <label key={server.name} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.5rem', 
+                    padding: '0.5rem', 
+                    border: '1px solid #bdc3c7', 
+                    borderRadius: '4px',
+                    opacity: isSelected ? 0.6 : 1,
+                    backgroundColor: isSelected ? '#f8f9fa' : 'transparent'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isSelected}
+                      onChange={() => handleServerToggle(server)}
+                      style={{ cursor: isSelected ? 'not-allowed' : 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', color: isSelected ? '#95a5a6' : '#2c3e50' }}>{server.name}</div>
+                      <div style={{ fontSize: '0.875rem', color: isSelected ? '#bdc3c7' : '#7f8c8d' }}>
+                        {server.command} {server.args.join(' ')}
+                      </div>
+                      {server.roots && server.roots.length > 0 && (
+                        <div style={{ fontSize: '0.75rem', color: isSelected ? '#d5dbdb' : '#95a5a6' }}>
+                          Roots: {server.roots.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  );
+      );
+    };
+
+    return (
+      <div>
+        <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers (coming soon)</h3>
+        <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
+          Select which servers to import to Open Edison:
+        </p>
+        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          {selectedClients.map(client => renderClientSection(client))}
+        </div>
+        <button
+          onClick={proceedToVerification}
+          disabled={selectedServers.length === 0}
+          style={{
+            background: '#3498db',
+            color: 'white',
+            border: 'none',
+            padding: '0.75rem 1.5rem',
+            borderRadius: '6px',
+            cursor: selectedServers.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: selectedServers.length === 0 ? 0.5 : 1,
+            marginTop: '1rem'
+          }}
+        >
+          Verify Selected Servers ({selectedServers.length})
+        </button>
+      </div>
+    );
+  };
+
+  const renderStep4 = () => {
+    const getStatusColor = (status: 'pending' | 'success' | 'failed') => {
+      switch (status) {
+        case 'pending':
+          return '#f39c12'; // Orange
+        case 'success':
+          return '#27ae60'; // Green
+        case 'failed':
+          return '#e74c3c'; // Red
+        default:
+          return '#7f8c8d'; // Gray
+      }
+    };
+
+    const getStatusText = (status: 'pending' | 'success' | 'failed') => {
+      switch (status) {
+        case 'pending':
+          return 'In progress';
+        case 'success':
+          return 'Success';
+        case 'failed':
+          return 'Failed';
+        default:
+          return 'Unknown';
+      }
+    };
+
+    return (
+      <div>
+        <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 4: Verifying Servers</h3>
+        {loading ? (
+          <div>
+            <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>Verifying server configurations...</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {selectedServers.map(server => {
+                const status = verificationResults[server.name] || 'pending';
+                const client = server.client || 'Unknown';
+                return (
+                  <div key={server.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    border: '1px solid #bdc3c7',
+                    borderRadius: '4px',
+                    backgroundColor: '#f8f9fa'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
+                        Tool: {client} | Server: {server.name}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.875rem', 
+                        color: getStatusColor(status),
+                        fontWeight: 'bold'
+                      }}>
+                        Status: {getStatusText(status)}
+                      </div>
+                    </div>
+                    {status === 'pending' && (
+                      <div style={{ 
+                        width: '20px', 
+                        height: '20px', 
+                        border: '2px solid #f39c12',
+                        borderTop: '2px solid transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                    )}
+                    {status === 'success' && (
+                      <div style={{ color: '#27ae60', fontSize: '1.2rem' }}>✓</div>
+                    )}
+                    {status === 'failed' && (
+                      <div style={{ color: '#e74c3c', fontSize: '1.2rem' }}>✗</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>Server verification completed!</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+              {selectedServers.map(server => {
+                const status = verificationResults[server.name] || 'failed';
+                const client = server.client || 'Unknown';
+                return (
+                  <div key={server.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    border: '1px solid #bdc3c7',
+                    borderRadius: '4px',
+                    backgroundColor: status === 'success' ? '#d5f4e6' : '#fadbd8'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
+                        Tool: {client} | Server: {server.name}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.875rem', 
+                        color: getStatusColor(status),
+                        fontWeight: 'bold'
+                      }}>
+                        Status: {getStatusText(status)}
+                      </div>
+                    </div>
+                    {status === 'success' && (
+                      <div style={{ color: '#27ae60', fontSize: '1.2rem' }}>✓</div>
+                    )}
+                    {status === 'failed' && (
+                      <div style={{ color: '#e74c3c', fontSize: '1.2rem' }}>✗</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setStep(5)}
+              style={{
+                background: '#3498db',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                marginTop: '1rem'
+              }}
+            >
+              Continue to Save Configuration
+            </button>
+          </div>
+        )}
+        <style>
+          {`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}
+        </style>
+      </div>
+    );
+  };
 
   const renderStep5 = () => (
     <div>

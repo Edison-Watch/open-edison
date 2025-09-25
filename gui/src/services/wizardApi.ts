@@ -11,6 +11,7 @@ export interface ServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   roots?: string[];
+  client?: string; // Track which client this server came from
 }
 
 export interface ImportRequest {
