@@ -344,6 +344,8 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             await asyncio.wait_for(_list_tools_only(), timeout=30.0)
             return True
         except Exception as e:
+            print(f"DEBUG: Exception caught in verify_mcp_server for {server.name}: {e}")
+            print(f"DEBUG: Exception type: {type(e)}")
             questionary.print(
                 f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
             )

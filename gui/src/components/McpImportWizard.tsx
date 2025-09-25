@@ -764,7 +764,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
-                        Tool: {client} | Server: {server.name}
+                        {client}: {server.name}
                       </div>
                       <div style={{ 
                         fontSize: '0.875rem', 
