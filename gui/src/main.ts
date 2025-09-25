@@ -498,7 +498,7 @@ async function startMainApplication() {
   await startBackend(host, port)
   
   // Start Setup Wizard API server
-  await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+  // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
   
   // Always start frontend server (needed for proper asset loading)
   await startFrontend(host, port+1)
@@ -535,28 +535,24 @@ app.whenReady().then(async () => {
 
 // Quit when all windows are closed
 app.on('window-all-closed', () => {
-  // Kill backend process when app closes
-  if (backendProcess) {
-    console.log('Terminating backend process...')
-    backendProcess.kill()
-  }
-  
-  // Kill Setup Wizard API process when app closes
-  if (setupWizardApiProcess) {
-    console.log('Terminating Setup Wizard API process...')
-    setupWizardApiProcess.kill()
-  }
-  
-  // Kill frontend process when app closes
-  if (frontendProcess) {
-    console.log('Terminating frontend process...')
-    frontendProcess.kill()
-  }
-  
-  
-  // On macOS, keep the app running even when all windows are closed
-  if (process.platform !== 'darwin') {
-    app.quit()
+  if (process.platform != 'darwin') {
+    // Kill backend process when app closes
+    if (backendProcess) {
+      console.log('Terminating backend process...')
+      backendProcess.kill()
+    }
+    
+    // Kill Setup Wizard API process when app closes
+    if (setupWizardApiProcess) {
+      console.log('Terminating Setup Wizard API process...')
+      setupWizardApiProcess.kill()
+    }
+    
+    // Kill frontend process when app closes
+    if (frontendProcess) {
+      console.log('Terminating frontend process...')
+      frontendProcess.kill()
+    }
   }
 })
 
