@@ -57,7 +57,9 @@ class TestTemplate:
     def test_client(self):
         """FastAPI TestClient bound to an OpenEdisonProxy using default config."""
         proxy = OpenEdisonProxy(host="localhost", port=3000)
-        client = TestClient(proxy.fastapi_app)
+        # Include default Authorization header so auth-protected endpoints pass
+        api_key = Config().server.api_key
+        client = TestClient(proxy.fastapi_app, headers={"Authorization": f"Bearer {api_key}"})
         yield client
 
 

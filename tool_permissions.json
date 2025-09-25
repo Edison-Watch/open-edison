@@ -240,5 +240,98 @@
       "read_untrusted_public_data": false,
       "acl": "PUBLIC"
     }
+  },
+  "agent": {
+    "web_search": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "fetch_url": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "http_head": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "summarize": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "regex_extract": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "token_count": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "add": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "multiply": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "random_int": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "now_iso": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "sleep_ms": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "list_top": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "dict_keys": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    }
   }
 }

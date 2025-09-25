@@ -178,11 +178,12 @@ class DataAccessTracker:
         # Get tool permissions and update trifecta flags
         perms = Permissions()
         permissions = perms.get_tool_permission(tool_name)
+        enabled = perms.is_tool_enabled(tool_name)
 
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
         # Check if tool is enabled
-        if not perms.is_tool_enabled(tool_name):
+        if not enabled:
             log.warning(f"🚫 BLOCKING tool call {tool_name} - tool is disabled")
             record_tool_call_blocked(tool_name, "disabled")
             events.fire_and_forget(

@@ -3,9 +3,19 @@ import './index.css'
 import Editor from '@monaco-editor/react'
 import { useSessions } from './hooks'
 import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus, ToolSchemasResponse, ToolSchemaEntry } from './types'
-import { Timeline } from './components/Timeline'
 import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
+import AgentDataflow from './components/AgentDataflow'
+import Stats from './components/Stats'
+import DateRangeSlider from './components/DateRangeSlider'
+
+// Ensure dev default API key is present as early as possible (before effects)
+try {
+    if (typeof window !== 'undefined') {
+        const existing = localStorage.getItem('api_key')
+        if (!existing) localStorage.setItem('api_key', 'dev-api-key-change-me')
+    }
+} catch { /* ignore */ }
 
 // Module-level cache of tool schemas, refreshed on reinitialize
 let TOOL_SCHEMAS: Record<string, Record<string, ToolSchemaEntry>> = {}
@@ -56,11 +66,19 @@ function summarizeJsonSchema(schema: unknown): { entries: Array<{ name: string; 
 
 async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<string, Record<string, ToolSchemaEntry>>> {
     try {
-        const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
-            cache: 'no-cache',
-            headers: { 'Cache-Control': 'no-cache' }
-        })
-        if (!configResponse.ok) return {}
+        const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+        const headersCfg: Record<string, string> = { 'Cache-Control': 'no-cache' }
+        if (storedKey) headersCfg['Authorization'] = `Bearer ${storedKey}`
+        const isDev = !!((import.meta as any)?.env?.DEV)
+        let configResponse: Response
+        if (isDev && projectRoot) {
+            configResponse = await fetch(`/@fs${projectRoot}/config.json`, { cache: 'no-cache', headers: headersCfg })
+            if (!configResponse.ok) configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfg })
+            if (!configResponse.ok) return {}
+        } else {
+            configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfg })
+            if (!configResponse.ok) return {}
+        }
         const configData = await configResponse.json()
         const apiKey = configData?.server?.api_key || ''
         const headers: Record<string, string> = { 'Accept': 'application/json' }
@@ -73,7 +91,6 @@ async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<str
         return {}
     }
 }
-
 
 export function App(): React.JSX.Element {
     // Always read from sessions.db (canonical name)
@@ -100,6 +117,9 @@ export function App(): React.JSX.Element {
     const [startDay, setStartDay] = useState<string>('')
     const [endDay, setEndDay] = useState<string>('')
     const [showUnknown, setShowUnknown] = useState<boolean>(false)
+    const [hoverTimeLabel, setHoverTimeLabel] = useState<string | null>(null)
+    const [rangeMs, setRangeMs] = useState<{ start: number; end: number } | null>(null)
+    const [nowMs, setNowMs] = useState<number>(() => Date.now())
 
     const compareDays = (a?: string, b?: string) => {
         if (!a && !b) return 0
@@ -118,6 +138,22 @@ export function App(): React.JSX.Element {
     }, [uiSessions, startDay, endDay])
 
     const unknownSessions = useMemo(() => uiSessions.filter((s) => !s.day), [uiSessions])
+
+    // Further filter by precise ms time range for Observability (sub-day windows)
+    const timeFiltered = useMemo(() => {
+        const a = rangeMs?.start
+        const b = rangeMs?.end
+        if (typeof a !== 'number' || typeof b !== 'number') return filtered
+        return filtered
+            .map((s) => {
+                const calls = s.tool_calls.filter((tc) => {
+                    const t = Date.parse(String((tc as any)?.timestamp))
+                    return !Number.isNaN(t) && t >= a && t <= b
+                })
+                return { ...s, tool_calls: calls }
+            })
+            .filter((s) => s.tool_calls.length > 0)
+    }, [filtered, rangeMs])
 
     const totalCalls = useMemo(() => {
         const base = filtered.reduce((acc, s) => acc + s.tool_calls.length, 0)
@@ -148,10 +184,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability'>(() => {
         try {
             const saved = localStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -160,7 +196,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -199,9 +235,12 @@ export function App(): React.JSX.Element {
     }, [lastBannerAt])
     const approveItem = async (item: PendingApproval) => {
         try {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             await fetch(`/api/approve_or_deny`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name, command: "approve" })
             })
             setUiToast({ message: `Approved ${item.kind} '${item.name}'`, type: 'success' })
@@ -214,9 +253,12 @@ export function App(): React.JSX.Element {
 
     const denyItem = async (item: PendingApproval) => {
         try {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             await fetch(`/api/approve_or_deny`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ session_id: item.sessionId, kind: item.kind, name: item.name, command: "deny" })
             })
             setUiToast({ message: `Denied ${item.kind} '${item.name}'`, type: 'success' })
@@ -235,16 +277,22 @@ export function App(): React.JSX.Element {
                 console.log('🔄 Starting MCP status check...')
 
                 // Load config to get server settings
-                const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
-                    cache: 'no-cache',
-                    headers: { 'Cache-Control': 'no-cache' }
-                })
+                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const headersCfg: Record<string, string> = { 'Cache-Control': 'no-cache' }
+                if (storedKey) headersCfg['Authorization'] = `Bearer ${storedKey}`
+                const isDev = !!((import.meta as any)?.env?.DEV)
+                let configResponse: Response
+                if (isDev && projectRoot) {
+                    configResponse = await fetch(`/@fs${projectRoot}/config.json`, { cache: 'no-cache', headers: headersCfg })
+                    if (!configResponse.ok) configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfg })
+                } else {
+                    configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfg })
+                }
                 if (!configResponse.ok) {
                     console.log('❌ Failed to load config.json')
                     setMcpStatus('offline')
                     return
                 }
-
                 const configData = await configResponse.json()
                 const serverHost = configData?.server?.host || 'localhost'
                 const basePort = configData?.server?.port || 3000
@@ -332,6 +380,18 @@ export function App(): React.JSX.Element {
         }
         void registerSW();
 
+        // Reply to service worker's request for API key
+        const onKeyRequest = (ev: MessageEvent) => {
+            try {
+                const msg = (ev && ev.data) || {}
+                if (msg && msg.type === 'OE_GET_API_KEY') {
+                    const apiKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                    try { (ev.ports && ev.ports[0])?.postMessage({ type: 'OE_API_KEY', apiKey }) } catch { /* ignore */ }
+                }
+            } catch { /* ignore */ }
+        }
+        window.addEventListener('message', onKeyRequest)
+
         // Listen for SW messages that ask us to enqueue a pending approval
         const onMessage = (ev: MessageEvent) => {
             try {
@@ -367,6 +427,7 @@ export function App(): React.JSX.Element {
                 if (data?.type === 'sessions_db_changed') {
                     // Bump reload counter to trigger re-fetch in hooks/useSessions via keying
                     setReloadCounter((n) => n + 1)
+                    setNowMs(Date.now())
                     return
                 }
                 if (data?.type === 'mcp_pre_block') {
@@ -407,115 +468,24 @@ export function App(): React.JSX.Element {
                                     body,
                                     data: { sessionId, kind: data.kind, name: data.name }
                                 })
-                                return true
                             }
                         } catch { /* ignore */ }
-                        return false
                     }
-
-                    const fallbackInline = () => {
-                        if (typeof Notification === 'undefined') return
-                        const show = () => {
-                            try {
-                                const n = new Notification(title, { body })
-                                n.onclick = async () => {
-                                    try {
-                                        const ok = window.confirm(`Allow ${data.kind} '${data.name}' for this session?`)
-                                        if (ok && sessionId) {
-                                            await fetch(`/api/approve_or_deny`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ session_id: sessionId, kind: data.kind, name: data.name, command: "approve" })
-                                            })
-                                        }
-                                    } catch { /* ignore */ }
-                                }
-                            } catch { /* ignore */ }
-                        }
-                        if (Notification.permission === 'granted') show()
-                        else if (Notification.permission !== 'denied') {
-                            Notification.requestPermission().then((p) => { if (p === 'granted') show() }).catch(() => { })
-                        }
-                    }
-
-                    // Prefer SW (action buttons) and fall back to inline notification + confirm
-                    void trySW().then((ok) => { if (!ok) fallbackInline() })
-                } else if (data?.type === 'mcp_approved_once') {
-                    const msg = `Approved ${data.kind} '${data.name}'`
-                    setUiToast({ message: msg, type: 'success' })
-                } else if (data?.type === 'mcp_server_warning') {
-                    const server = (data?.server || '').toString()
-                    const code = (data?.code || '').toString()
-                    let detail: string
-                    if (code === 'no_objects' || code === 'empty_after_validation') {
-                        detail = 'Server exposes no tools/resources/templates/prompts. Likely misconfiguration of the server in config.json'
-                    } else if (code === 'missing_url') {
-                        detail = 'Remote server has no URL configured. Check config.json'
-                    } else {
-                        detail = data?.message || `MCP server warning (${code})`
-                    }
-                    const prefix = server ? `Error in setting up '${server}': ` : 'Server setup error: '
-                    const msg = `${prefix}${detail}`
-                    setUiToast({ message: msg, type: 'error' })
-                    // Removed tile highlight dispatch
-                } else if (data?.type === 'server_startup' || data?.type === 'localstorage_reset') {
-                    // Reset localStorage when server starts or when explicitly requested
-                    try {
-                        // Clear all localStorage items used by the app
-                        localStorage.removeItem('json_editor_needs_permission_update')
-                        localStorage.removeItem('json_editor_needs_config_update')
-                        localStorage.removeItem('api_key')
-
-                        // Show a toast notification
-                        const message = data?.type === 'server_startup'
-                            ? 'Server restarted'
-                            : 'localStorage reset'
-                        setUiToast({ message, type: 'success' })
-
-                        // Reload the page to ensure clean state
-                        setTimeout(() => {
-                            window.location.reload()
-                        }, 1000)
-                    } catch (error) {
-                        console.error('Server restarted, but failed to reset localStorage:', error)
-                        setUiToast({ message: 'Server restarted, but failed to reset localStorage', type: 'error' })
-                    }
+                    void trySW()
                 }
+                // For any other events, still tick now to advance live ranges
+                setNowMs(Date.now())
             } catch { /* ignore */ }
         }
-        es.onerror = () => { /* auto-retry by browser */ }
-        return () => {
-            es.close()
-            try { navigator.serviceWorker?.removeEventListener?.('message', onMessage) } catch { /* ignore */ }
+        es.onerror = () => {
+            try { es.close() } catch { /* ignore */ }
         }
-    }, [])
 
-    // On first render, parse URL params to enqueue pending approval when the page is opened by SW with params
-    useEffect(() => {
-        try {
-            const url = new URL(window.location.href)
-            const s = url.searchParams.get('pa_s') || ''
-            const k = (url.searchParams.get('pa_k') || '') as 'tool' | 'resource' | 'prompt' | ''
-            const n = url.searchParams.get('pa_n') || ''
-            if (s && k && n) {
-                const newItem: PendingApproval = {
-                    id: `${Date.now()}-${k}-${n}-${Math.random()}`,
-                    sessionId: s,
-                    kind: k as any,
-                    name: n,
-                }
-                setPendingApprovals(prev => {
-                    if (prev.some(p => p.sessionId === newItem.sessionId && p.kind === newItem.kind && p.name === newItem.name)) return prev
-                    return [...prev, newItem]
-                })
-                setLastBannerAt(Date.now())
-                // Clean the URL so params don't linger
-                try {
-                    const clean = url.origin + url.pathname
-                    window.history.replaceState({}, '', clean)
-                } catch { /* ignore */ }
-            }
-        } catch { /* ignore */ }
+        return () => {
+            try { es.close() } catch { /* ignore */ }
+            navigator.serviceWorker?.removeEventListener?.('message', onMessage)
+            window.removeEventListener('message', onKeyRequest)
+        }
     }, [])
 
     return (
@@ -534,6 +504,7 @@ export function App(): React.JSX.Element {
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
                         <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
                         {theme === 'light' ? 'Dark' : 'Light'} mode
@@ -578,43 +549,17 @@ export function App(): React.JSX.Element {
                         </div>
                     </div>
 
-                    {/* Day controls */}
-                    <div className="card flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-                        <div className="flex flex-col">
-                            <label className="text-xs text-app-muted mb-1">Start day</label>
-                            <input
-                                type="date"
-                                className="button !py-2 !px-3"
-                                value={startDay}
-                                onChange={(e) => setStartDay(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-xs text-app-muted mb-1">End day</label>
-                            <input
-                                type="date"
-                                className="button !py-2 !px-3"
-                                value={endDay}
-                                onChange={(e) => setEndDay(e.target.value)}
-                            />
-                        </div>
-                        <button className="button" onClick={() => { setStartDay(''); setEndDay('') }}>Clear</button>
-                        <div className="flex items-center gap-2 ml-auto">
-                            <span className="text-xs text-app-muted">Show unknown date</span>
-                            <Toggle checked={showUnknown} onChange={setShowUnknown} />
-                            {unknownSessions.length > 0 && !showUnknown && (
-                                <span className="text-xs text-app-muted">({unknownSessions.length} hidden)</span>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Timeline with drag selection (exclude unknown-date to avoid crowding) */}
-                    <Timeline
-                        sessions={filtered}
-                        startDay={startDay}
-                        endDay={endDay}
-                        onRangeChange={(s, e) => { setStartDay(s); setEndDay(e) }}
+                    {/* Date range selector (shared with Observability) */}
+                    <DateRangeSlider
+                        sessions={uiSessions}
+                        startTimeLabel={startDay}
+                        endTimeLabel={endDay}
+                        onTimeRangeChange={(s: string, e: string) => { setStartDay(s); setEndDay(e) }}
+                        nowMs={nowMs}
                     />
+                    {/* Toggle moved into table header */}
+
+                    {/* Timeline removed */}
 
                     {loading && <div>Loading…</div>}
                     {error && (
@@ -627,7 +572,18 @@ export function App(): React.JSX.Element {
                         <div className="muted" style={{ marginTop: 12 }}>No sessions recorded yet.</div>
                     )}
 
-                    <SessionTable sessions={filtered} />
+                    <SessionTable
+                        sessions={filtered}
+                        headerRight={(
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-app-muted">Show unknown date</span>
+                                <Toggle checked={showUnknown} onChange={setShowUnknown} />
+                                {unknownSessions.length > 0 && !showUnknown && (
+                                    <span className="text-xs text-app-muted">({unknownSessions.length} hidden)</span>
+                                )}
+                            </div>
+                        )}
+                    />
 
                     {showUnknown && unknownSessions.length > 0 && (
                         <div className="space-y-2">
@@ -638,8 +594,30 @@ export function App(): React.JSX.Element {
                 </div>
             ) : view === 'configs' ? (
                 <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} theme={theme} />
-            ) : (
+            ) : view === 'manager' ? (
                 <ConfigurationManager projectRoot={projectRoot} />
+            ) : (
+                <div className="space-y-4">
+                    {/* Date range selector for Observability (mirrors Sessions) */}
+                    <DateRangeSlider
+                        sessions={uiSessions}
+                        startTimeLabel={startDay}
+                        endTimeLabel={endDay}
+                        onTimeRangeChange={(s: string, e: string) => { setStartDay(s); setEndDay(e) }}
+                        hoverTimeLabel={hoverTimeLabel}
+                        onHoverTimeChange={setHoverTimeLabel}
+                        onTimeRangeMsChange={(s, e) => setRangeMs({ start: s, end: e })}
+                        nowMs={nowMs}
+                    />
+                    <AgentDataflow sessions={uiSessions as any} startDay={startDay} endDay={endDay} msStart={rangeMs?.start} msEnd={rangeMs?.end} />
+                    <Stats
+                        sessions={timeFiltered}
+                        onTimeRangeChange={(s, e) => { setStartDay(s); setEndDay(e) }}
+                        onHoverTimeChange={setHoverTimeLabel}
+                        rangeStartMs={rangeMs?.start}
+                        rangeEndMs={rangeMs?.end}
+                    />
+                </div>
             )}
             {/* In-page approval banner (fallback for OS notifications) */}
             {pendingApprovals.length > 0 && pendingApprovals[0] && (
@@ -764,22 +742,29 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                     const flags = JSON.parse(configFlags)
 
                     if (flags.config) {
-                        const configResponse = await fetch(`/@fs${projectRoot}/config.json`, {
-                            cache: 'no-cache',
-                            headers: { 'Cache-Control': 'no-cache' }
-                        })
-
-                        if (configResponse.ok) {
-                            const savedConfig = await configResponse.json()
-                            const currentConfig = JSON.parse(content.config)
-                            const configsMatch = JSON.stringify(savedConfig) === JSON.stringify(currentConfig)
-
-                            if (configsMatch) {
-                                // Configurations match, clear the flag
-                                console.log('🔄 Configurations match, clearing config update flag')
-                                const resetFlags = { ...flags, config: false }
-                                localStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
+                        let configResponse: Response
+                        const storedKeyUpd = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                        const headersCfgUpd: Record<string, string> = { 'Cache-Control': 'no-cache' }
+                        if (storedKeyUpd) headersCfgUpd['Authorization'] = `Bearer ${storedKeyUpd}`
+                        if (projectRoot) {
+                            configResponse = await fetch(`/@fs${projectRoot}/config.json`, { cache: 'no-cache', headers: headersCfgUpd })
+                            if (!configResponse.ok) {
+                                configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfgUpd })
+                                if (!configResponse.ok) return {}
                             }
+                        } else {
+                            configResponse = await fetch(`/config.json`, { cache: 'no-cache', headers: headersCfgUpd })
+                            if (!configResponse.ok) return {}
+                        }
+                        const savedConfig = await configResponse.json()
+                        const currentConfig = JSON.parse(content.config)
+                        const configsMatch = JSON.stringify(savedConfig) === JSON.stringify(currentConfig)
+
+                        if (configsMatch) {
+                            // Configurations match, clear the flag
+                            console.log('🔄 Configurations match, clearing config update flag')
+                            const resetFlags = { ...flags, config: false }
+                            localStorage.setItem('json_editor_needs_config_update', JSON.stringify(resetFlags))
                         }
                     }
                 }
@@ -857,7 +842,10 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
         const load = async () => {
             try {
                 setLoadingKey(active)
-                const resp = await fetch(`/@fs${f.path}`)
+                const storedKeyFile = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const headersFile: Record<string, string> = {}
+                if (storedKeyFile) headersFile['Authorization'] = `Bearer ${storedKeyFile}`
+                const resp = await fetch(`/@fs${f.path}`, { headers: headersFile })
                 if (!resp.ok) throw new Error(`Cannot read ${f.name}`)
                 const txt = await resp.text()
                 setContent(prev => ({ ...prev, [active]: txt }))
@@ -945,17 +933,23 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
             // if (file.key === 'tool' || file.key === 'resource' || file.key === 'prompt') {
             console.log(`🔄 Clearing permission caches after ${file.name} save...`)
             // Load config to get server settings
-            const configResponse = await fetch('/config.json', {
+            const storedKeyCfg = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            const headersCfgRoot: Record<string, string> = { 'Cache-Control': 'no-cache' }
+            if (storedKeyCfg) headersCfgRoot['Authorization'] = `Bearer ${storedKeyCfg}`
+            const configResponse: Response = await fetch('/config.json', {
                 cache: 'no-cache',
-                headers: { 'Cache-Control': 'no-cache' }
+                headers: headersCfgRoot
             })
             if (configResponse.ok) {
                 const configData = await configResponse.json()
                 const serverHost = configData?.server?.host || 'localhost'
                 const serverPort = (configData?.server?.port || 3000) + 1 // API runs on port + 1
+                const headersPerm: Record<string, string> = { 'Content-Type': 'application/json' }
+                const derivedApiKey = (configData?.server?.api_key || '') as string
+                if (derivedApiKey) headersPerm['Authorization'] = `Bearer ${derivedApiKey}`
                 const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: headersPerm
                 })
                 if (cacheResponse.ok) {
                     const cacheResult = await cacheResponse.json()
@@ -1285,72 +1279,60 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setLoading(true)
             setError('')
             try {
+                const storedKeyBulk = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                const headersBulk: Record<string, string> = { 'Cache-Control': 'no-cache' }
+                if (storedKeyBulk) headersBulk['Authorization'] = `Bearer ${storedKeyBulk}`
                 const [c, t, r, p] = await Promise.all([
-                    fetch(`/@fs${projectRoot}/${CONFIG_NAME}`, {
-                        cache: 'no-cache',
-                        headers: { 'Cache-Control': 'no-cache' }
-                    }),
-                    fetch(`/@fs${projectRoot}/${TOOL_NAME}`, {
-                        cache: 'no-cache',
-                        headers: { 'Cache-Control': 'no-cache' }
-                    }),
-                    fetch(`/@fs${projectRoot}/${RESOURCE_NAME}`, {
-                        cache: 'no-cache',
-                        headers: { 'Cache-Control': 'no-cache' }
-                    }),
-                    fetch(`/@fs${projectRoot}/${PROMPT_NAME}`, {
-                        cache: 'no-cache',
-                        headers: { 'Cache-Control': 'no-cache' }
-                    }),
+                    fetch(`/@fs${projectRoot}/${CONFIG_NAME}`, { cache: 'no-cache', headers: headersBulk }),
+                    fetch(`/@fs${projectRoot}/${TOOL_NAME}`, { cache: 'no-cache', headers: headersBulk }),
+                    fetch(`/@fs${projectRoot}/${RESOURCE_NAME}`, { cache: 'no-cache', headers: headersBulk }),
+                    fetch(`/@fs${projectRoot}/${PROMPT_NAME}`, { cache: 'no-cache', headers: headersBulk }),
                 ])
-                if (!c.ok) throw new Error('Failed to load config.json')
-                if (!t.ok) throw new Error('Failed to load tool_permissions.json')
-                if (!r.ok) throw new Error('Failed to load resource_permissions.json')
-                if (!p.ok) throw new Error('Failed to load prompt_permissions.json')
-                const cJson = await c.json()
-                const tJson = await t.json()
-                const rJson = await r.json()
-                const pJson = await p.json()
+                if (!c.ok || !t.ok || !r.ok || !p.ok) {
+                    setError('Failed to load one or more JSON files. Ensure they exist or use Save to create them.')
+                    return
+                }
+                const [cText, tText, rText, pText] = await Promise.all([c.text(), t.text(), r.text(), p.text()])
                 if (!active) return
                 // Derive server defaults prioritizing config.json servers, then add extras from permissions
-                const configServers: string[] = Array.isArray((cJson as any)?.mcp_servers)
-                    ? ((cJson as any).mcp_servers as Array<{ name: string }>).map((s) => String(s.name || '').trim())
+                const configServers: string[] = Array.isArray((JSON.parse(cText) as any)?.mcp_servers)
+                    ? ((JSON.parse(cText) as any).mcp_servers as Array<{ name: string }>).map((s) => String(s.name || '').trim())
                     : []
                 const keysFrom = (obj: any) => Object.keys(obj || {}).filter((k) => k !== '_metadata' && k !== 'builtin')
                 const permNames = new Set<string>([
-                    ...keysFrom(tJson),
-                    ...keysFrom(rJson),
-                    ...keysFrom(pJson),
+                    ...keysFrom(JSON.parse(tText) as any),
+                    ...keysFrom(JSON.parse(rText) as any),
+                    ...keysFrom(JSON.parse(pText) as any),
                 ].map((n) => String(n || '').trim()))
 
                 // Start with config servers, in declared order
                 const defsOrdered: MCPServerDefault[] = configServers.map((name) => ({
                     name,
-                    tools: (tJson as any)?.[name],
-                    resources: (rJson as any)?.[name],
-                    prompts: (pJson as any)?.[name],
+                    tools: (JSON.parse(tText) as any)?.[name],
+                    resources: (JSON.parse(rText) as any)?.[name],
+                    prompts: (JSON.parse(pText) as any)?.[name],
                 }))
                 // Append permission-only servers not present in config
                 for (const extra of Array.from(permNames)) {
                     if (!configServers.map((n) => n.toLowerCase()).includes(extra.toLowerCase())) {
                         defsOrdered.push({
                             name: extra,
-                            tools: (tJson as any)?.[extra],
-                            resources: (rJson as any)?.[extra],
-                            prompts: (pJson as any)?.[extra],
+                            tools: (JSON.parse(tText) as any)?.[extra],
+                            resources: (JSON.parse(rText) as any)?.[extra],
+                            prompts: (JSON.parse(pText) as any)?.[extra],
                         })
                     }
                 }
                 const defs: MCPServerDefault[] = defsOrdered
                 setDefaults(defs)
-                setConfig(cJson as ConfigFile)
-                setOrigConfig(cJson as ConfigFile)
-                setToolPerms(tJson as ToolPerms)
-                setResourcePerms(rJson as ResourcePerms)
-                setPromptPerms(pJson as PromptPerms)
-                setOrigToolPerms(tJson as ToolPerms)
-                setOrigResourcePerms(rJson as ResourcePerms)
-                setOrigPromptPerms(pJson as PromptPerms)
+                setConfig(JSON.parse(cText) as ConfigFile)
+                setOrigConfig(JSON.parse(cText) as ConfigFile)
+                setToolPerms(JSON.parse(tText) as ToolPerms)
+                setResourcePerms(JSON.parse(rText) as ResourcePerms)
+                setPromptPerms(JSON.parse(pText) as PromptPerms)
+                setOrigToolPerms(JSON.parse(tText) as ToolPerms)
+                setOrigResourcePerms(JSON.parse(rText) as ResourcePerms)
+                setOrigPromptPerms(JSON.parse(pText) as PromptPerms)
             } catch (e) {
                 if (!active) return
                 setError(e instanceof Error ? e.message : 'Failed to load data')
@@ -1487,9 +1469,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
             setConfig(nextCfg as any)
 
             // Persist to backend immediately
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             const resp = await fetch('/__save_json__', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ name: 'config.json', content: JSON.stringify(nextCfg, null, 4) })
             })
             if (!resp.ok) throw new Error('Save failed')
@@ -1515,9 +1500,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         setSaving(true)
         setToast(null)
         try {
-            const post = (name: string, content: string) => fetch('/__save_json__', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
-            })
+            const post = (name: string, content: string) => {
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+                return fetch('/__save_json__', { method: 'POST', headers, body: JSON.stringify({ name, content }) })
+            }
             const cfgToSave = onlyChanges && origConfig && config
                 ? buildConfigSaveObject(origConfig, config)
                 : config
@@ -1545,9 +1533,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 // Get server config from the loaded config
                 const serverHost = config?.server?.host || 'localhost'
                 const serverPort = (config?.server?.port || 3000) + 1 // API runs on port + 1
+                const headersPerm: Record<string, string> = { 'Content-Type': 'application/json' }
+                const derivedApiKey = (config?.server?.api_key || '') as string
+                if (derivedApiKey) headersPerm['Authorization'] = `Bearer ${derivedApiKey}`
                 const cacheResponse = await fetch(`http://${serverHost}:${serverPort}/api/permissions-changed`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: headersPerm
                 })
                 if (cacheResponse.ok) {
                     const cacheResult = await cacheResponse.json()
@@ -1628,9 +1619,12 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         try {
             // Step 1: Save configuration changes first
             console.log('🔄 Saving configuration changes...')
-            const post = (name: string, content: string) => fetch('/__save_json__', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content })
-            })
+            const post = (name: string, content: string) => {
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                const storedKey = (() => { try { return localStorage.getItem('api_key') || '' } catch { return '' } })()
+                if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+                return fetch('/__save_json__', { method: 'POST', headers, body: JSON.stringify({ name, content }) })
+            }
 
             const cfgToSave = origConfig && config
                 ? buildConfigSaveObject(origConfig, config)

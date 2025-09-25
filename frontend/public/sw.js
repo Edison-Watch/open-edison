@@ -33,6 +33,35 @@ self.addEventListener('message', (event) => {
     }
 });
 
+async function fetchWithAuth(path, init, payload) {
+    try {
+        const headers = Object.assign({ 'Content-Type': 'application/json' }, (init && init.headers) || {})
+        // Try to use apiKey passed in payload, else try to read from an active client via postMessage
+        let apiKey = payload && payload.apiKey ? String(payload.apiKey) : ''
+        if (!apiKey) {
+            try {
+                const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+                const first = clientsList && clientsList[0]
+                if (first) {
+                    // Request api key from the page; page should respond with { type: 'OE_API_KEY', apiKey }
+                    const channel = new MessageChannel()
+                    const apiKeyPromise = new Promise((resolve) => {
+                        channel.port1.onmessage = (ev) => {
+                            try { resolve((ev.data && ev.data.apiKey) || '') } catch { resolve('') }
+                        }
+                    })
+                    first.postMessage({ type: 'OE_GET_API_KEY' }, [channel.port2])
+                    apiKey = String(await Promise.race([apiKeyPromise, new Promise((r) => setTimeout(() => r(''), 300))]))
+                }
+            } catch { /* ignore */ }
+        }
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+        return await fetch(path, Object.assign({}, init, { headers }))
+    } catch (e) {
+        return await fetch(path, init)
+    }
+}
+
 // Handle action button clicks and generic clicks
 self.addEventListener('notificationclick', (event) => {
     try {
@@ -44,32 +73,32 @@ self.addEventListener('notificationclick', (event) => {
             const body = {
                 session_id: payload.sessionId,
                 kind: payload.kind,
-                name: payload.name
+                name: payload.name,
+                command: 'approve'
             };
             event.waitUntil(
-                fetch('/api/approve', {
+                fetchWithAuth('/api/approve_or_deny', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
-                }).catch(() => { })
+                }, payload).catch(() => { })
             );
             return;
         }
 
         if (action === 'deny') {
-            // Send deny request to backend
             const body = {
-                session_id: data.sessionId,
-                kind: data.kind,
-                name: data.name,
+                session_id: payload.sessionId,
+                kind: payload.kind,
+                name: payload.name,
                 command: 'deny'
             };
             event.waitUntil(
-                fetch('/api/approve_or_deny', {
+                fetchWithAuth('/api/approve_or_deny', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
-                }).catch(() => { })
+                }, payload).catch(() => { })
             );
             return;
         }
