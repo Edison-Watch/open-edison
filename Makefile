@@ -82,7 +82,7 @@ TEST_TARGETS = tests/
 .PHONY: test
 test: check_uv ## Run project tests (use PYTEST_ARGS to pass extra flags, e.g. PYTEST_ARGS='-k pattern')
 	@echo "$(GREEN)🧪Running tests...$(RESET)"
-	$(TEST) $(PYTEST_ARGS) $(TEST_TARGETS)
+	PYTHONWARNINGS="ignore:.*split_arg_string.*:DeprecationWarning" $(TEST) $(PYTEST_ARGS) $(TEST_TARGETS)
 	@echo "$(GREEN)✅Tests passed.$(RESET)"
 
 # Run a specific test/file by passing node id via T, e.g.:

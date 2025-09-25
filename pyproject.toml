@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.117"
+version = "0.1.118"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -28,6 +28,7 @@ dependencies = [
     "langchain-openai>=0.3.33",
     "langgraph>=0.6.7",
     "beautifulsoup4>=4.13.5",
+    "presidio-analyzer>=2.2.360",
 ]
 requires-python = ">=3.12"
 
@@ -128,10 +129,13 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -W ignore::DeprecationWarning:spacy.cli._util -W ignore::DeprecationWarning:weasel.util.config -W ignore::DeprecationWarning:click.parser"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+]
+filterwarnings = [
+    "ignore:.*split_arg_string.*:DeprecationWarning"
 ]
 
 [tool.pyright]
