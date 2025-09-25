@@ -74,7 +74,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       const data = await wizardApiService.detectClients();
       
       if (data.success) {
-        setAvailableClients(data.clients);
+        setAvailableClients(data.clients.sort());
         if (data.clients.length === 0) {
           setError('No MCP clients detected. Currently only Cursor, VSCode, Claude Code, or Claude Desktop are supported.');
           setSuccessMessage(null);
