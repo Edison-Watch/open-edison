@@ -333,8 +333,6 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
         host_local: FastMCP[Any] | None = None
         try:
             # TODO: In debug mode, do not suppress child process output.
-            print(f"DEBUG: Server config for {server.name}: {server}")
-            print(f"DEBUG: Backend config: {backend_cfg_local}")
             log.info("Checking properties of '{}'...", server.name)
             with suppress_fds(suppress_stdout=True, suppress_stderr=True):
                 proxy_local = FastMCP.as_proxy(backend_cfg_local)
@@ -343,27 +341,19 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             log.info("MCP properties check succeeded for '{}'", server.name)
 
             async def _list_tools_only() -> Any:
-                print(f"DEBUG: About to call list_tools for {server.name}")
-                result = await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
-                print(f"DEBUG: list_tools completed for {server.name}: {result}")
-                return result
+                return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-            print(f"DEBUG: About to wait for list_tools with timeout for {server.name}")
             result = await asyncio.wait_for(_list_tools_only(), timeout=30.0)
-            print(f"DEBUG: list_tools wait completed for {server.name}: {result}")
 
-            # Check if this is a remote server that returned empty results
-            # This indicates the connection failed but didn't throw an exception
+            # Check if empty results and treat as failed
             if not result or len(result) == 0:
-                print(
-                    f"DEBUG: Remote server {server.name} returned empty results, treating as failed"
+                log.debug(
+                    f"Remote server {server.name} returned empty results, treating as failed"
                 )
                 return False
 
             return True
         except Exception as e:
-            print(f"DEBUG: Exception caught in verify_mcp_server for {server.name}: {e}")
-            print(f"DEBUG: Exception type: {type(e)}")
             questionary.print(
                 f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
             )

@@ -233,10 +233,13 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       
       // Check if any servers succeeded
       const successCount = Object.values(updatedResults).filter(status => status === 'success').length;
+      const failureCount = Object.values(updatedResults).filter(status => status === 'failed').length;
       
-      if (successCount > 0) {
-        // At least one server succeeded, show success message
-        setSuccessMessage(`Verification completed: ${successCount}/${selectedServers.length} servers verified successfully`);
+      // Always show verification completed message
+      setSuccessMessage(`Verification completed: ${successCount} succeeded, ${failureCount} failed`);
+      
+      if (successCount > 0 && failureCount === 0) {
+        // All servers succeeded, clear any errors and auto-advance
         setError(null);
         
         // Move to next step after a short delay to show results
@@ -244,9 +247,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           setStep(5);
         }, 2000);
       } else {
-        // All servers failed
-        setError('All servers failed verification. Please check your server configurations.');
-        setSuccessMessage(null);
+        // Mixed results or all failed - don't auto-advance, let user see the results
+        setError(null);
       }
     } catch (err) {
       // Mark all as failed on exception
@@ -835,6 +837,15 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       }}>
                         Status: {getStatusText(status)}
                       </div>
+                      {status === 'failed' && (
+                        <div style={{ 
+                          fontSize: '0.75rem', 
+                          color: '#7f8c8d',
+                          marginTop: '0.25rem'
+                        }}>
+                          Command: {server.command} {server.args.join(' ')}
+                        </div>
+                      )}
                     </div>
                     {status === 'success' && (
                       <div style={{ color: '#27ae60', fontSize: '1.2rem' }}>✓</div>
