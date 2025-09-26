@@ -386,6 +386,47 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 	@cp -R frontend/dist/* src/frontend_dist/
 	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
 
+########################################################
+# PyInstaller (freeze backend) and Electron dist
+########################################################
+
+.PHONY: pyinstall electron_dist app_dist
+
+pyinstall: check_uv frontend_pack ## Build standalone backend binary with PyInstaller (depends on frontend_pack)
+	@echo "$(YELLOW)🏗️  Building PyInstaller binary...$(RESET)"
+	@uv run pyinstaller -F -n open-edison-backend -p src \
+		--hidden-import=sqlite3 \
+		--hidden-import=_sqlite3 \
+		--hidden-import=pysqlite2 \
+		--hidden-import=MySQLdb \
+		--collect-submodules sqlalchemy.dialects \
+		main.py
+	@echo "$(GREEN)✅ PyInstaller binary at dist/open-edison-backend$(RESET)"
+
+.PHONY: pyinstall_clean
+pyinstall_clean: ## Clean PyInstaller outputs (binary, build dir, spec, copied backend)
+	@echo "$(YELLOW)🧹 Cleaning PyInstaller artifacts...$(RESET)"
+	@rm -rf build
+	@rm -f open-edison-backend.spec
+	@rm -f dist/open-edison-backend
+	@rm -rf gui/extraResources/backend
+	@echo "$(GREEN)✅ PyInstaller artifacts cleaned.$(RESET)"
+
+electron_dist: ## Build Electron distribution (requires pyinstall run to copy backend)
+	@echo "$(YELLOW)📦 Preparing Electron app with bundled backend...$(RESET)"
+	@if [ ! -f "dist/open-edison-backend" ]; then \
+		echo "$(RED)❌ dist/open-edison-backend not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@mkdir -p gui/extraResources/backend
+	@cp dist/open-edison-backend gui/extraResources/backend/
+	@echo "$(YELLOW)🏗️  Building Electron app...$(RESET)"
+	@cd gui && npm run dist
+	@echo "$(GREEN)✅ Electron app built to gui/release/$(RESET)"
+
+app_dist: pyinstall electron_dist ## Build full macOS app bundle (backend + frontend + GUI)
+	@:
+
 .PHONY: gui_dev gui_pack frontend_pack
 .PHONY: gui_run gui_run_wizard install-check
 

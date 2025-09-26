@@ -28,6 +28,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory containing config.json and related files. If omitted, uses OPEN_EDISON_CONFIG_DIR or package root.",
     )
 
+    parser.add_argument(
+        "--get-config-dir",
+        action="store_true",
+        help="Print the resolved Open Edison configuration directory and exit.",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -56,6 +62,12 @@ def main(argv: list[str] | None = None) -> NoReturn:
     config_dir_arg = getattr(args, "config_dir", None)
     if config_dir_arg is not None:
         os.environ["OPEN_EDISON_CONFIG_DIR"] = str(Path(config_dir_arg).expanduser().resolve())
+
+    # Handle query-only mode to get the resolved config directory
+    if getattr(args, "get_config_dir", False):
+        # Print only the directory path, no extra output
+        print(get_config_dir())
+        raise SystemExit(0)
 
     try:
         asyncio.run(_run_server(args))
