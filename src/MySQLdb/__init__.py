@@ -5,11 +5,11 @@ SQLAlchemy probes for MySQLdb. If MySQL is required, install mysqlclient.
 """
 
 
-class _MissingMySQLClient(Exception):
+class _MissingMySQLClientError(Exception):
     pass
 
 
-def connect(*args, **kwargs):  # pragma: no cover
-    raise _MissingMySQLClient(
+def connect(*args, **kwargs):  # noqa
+    raise _MissingMySQLClientError(
         "MySQLdb shim: mysqlclient is not bundled. Install mysqlclient to use MySQL."
     )

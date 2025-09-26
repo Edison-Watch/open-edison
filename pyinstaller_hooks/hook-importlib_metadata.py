@@ -1,3 +1,5 @@
+import contextlib
+
 from PyInstaller.utils.hooks import copy_metadata
 
 datas = []
@@ -10,7 +12,5 @@ for pkg in [
     "pydantic",
     "loguru",
 ]:
-    try:
+    with contextlib.suppress(Exception):
         datas += copy_metadata(pkg)
-    except Exception:
-        pass

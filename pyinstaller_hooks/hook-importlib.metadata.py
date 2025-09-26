@@ -1,3 +1,5 @@
+import contextlib
+
 from PyInstaller.utils.hooks import copy_metadata
 
 datas = []
@@ -5,7 +7,5 @@ datas = []
 for pkg in [
     "fastmcp",
 ]:
-    try:
+    with contextlib.suppress(Exception):
         datas += copy_metadata(pkg)
-    except Exception:
-        pass
