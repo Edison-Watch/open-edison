@@ -387,19 +387,38 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
 
 .PHONY: gui_dev gui_pack frontend_pack
-gui_dev: ## Run the desktop app in development mode
+.PHONY: gui_run gui_run_wizard install-check
+
+install-check: ## Ensure GUI dependencies are installed
+	@echo "$(YELLOW)🔍 Checking GUI dependencies...$(RESET)"
+	@if ! command -v node > /dev/null 2>&1; then \
+		echo "$(RED)❌ Node.js is not installed. Please install Node.js (v18+).$(RESET)"; \
+		exit 1; \
+	fi
+	@if ! command -v npm > /dev/null 2>&1; then \
+		echo "$(RED)❌ npm is not installed. Please install npm.$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -d "gui/node_modules" ] || [ ! -d "gui/node_modules/vite" ]; then \
+		echo "$(YELLOW)📦 Installing GUI dependencies...$(RESET)"; \
+		cd gui && npm install; \
+	else \
+		echo "$(GREEN)✅ GUI dependencies present.$(RESET)"; \
+	fi
+
+gui_dev: install-check ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
 	@cd gui && npm run dev
 
-gui_run: ## Run the desktop app in development mode
+gui_run: install-check ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop...$(RESET)"
 	@cd gui && npm run electron
 
-gui_run_wizard: ## Run the desktop app in development mode
+gui_run_wizard: install-check ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop with wizard...$(RESET)"
 	@cd gui && npm run first-install
 
-gui_pack: ## Build the desktop app for distribution
+gui_pack: install-check ## Build the desktop app for distribution
 	@echo "$(YELLOW)🏗️  Building desktop app (Electron) for distribution...$(RESET)"
 	@cd gui && npm install && npm run build
 	@echo "$(YELLOW)📦 Building Electron distribution packages...$(RESET)"

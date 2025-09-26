@@ -52,25 +52,25 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         mode: 'cors',
         headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
       });
-      
+
       if (apiResponse.ok) {
         console.log('✅ API server is running on port 3001');
         setServerApiStatus({ running: true, port: 3001 });
       }
-      
+
       // If API server not responding, try the MCP server (port 3000)
       const mcpResponse = await fetch('http://localhost:3001/mcp/status', {
         method: 'GET',
         mode: 'cors',
         headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` }
       });
-      
+
       if (mcpResponse.ok) {
         console.log('✅ MCP server is running on port 3000');
         setServerMcpStatus({ running: true, port: 3000 });
         return;
       }
-      
+
       console.log('❌ No servers responding');
       setServerMcpStatus({ running: false, port: 3000 });
       setServerApiStatus({ running: false, port: 3001 });
@@ -152,7 +152,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
     try {
       addLog('Sending help request...');
-      
+
       // Prepare email content
       const subject = `Open Edison Help Request - ${new Date().toLocaleString()}`;
       let emailBody = `Help Request Details:\n\n`;
@@ -160,28 +160,28 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       emailBody += `Timestamp: ${new Date().toISOString()}\n`;
       emailBody += `Server Status: ${serverMcpStatus.running ? 'Online' : 'Offline'}\n`;
       emailBody += `API Status: ${serverApiStatus.running ? 'Online' : 'Offline'}\n\n`;
-      
+
       if (includeDebugLogs) {
         emailBody += `Debug Logs:\n`;
         emailBody += `================\n`;
         emailBody += logs.map(log => `[${log.timestamp}] ${log.message}`).join('\n');
         emailBody += `\n\n`;
       }
-      
+
       // Create mailto link
       const mailtoLink = `mailto:support@edison.watch?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
-      
+
       // Open default email client
       window.open(mailtoLink, '_blank');
-      
+
       addLog('Help request prepared! Your default email client should open with the message ready to send.');
       addLog('Please review and send the email to support@edison.watch');
-      
+
     } catch (error) {
       addLog('Error preparing help request. Please try again.');
       console.error('Help request error:', error);
     }
-    
+
     closeHelpModal();
   };
 
@@ -190,12 +190,12 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     console.log('startNgrok called, ngrokRunning:', ngrokRunning);
     console.log('ngrokAuthToken:', ngrokAuthToken);
     console.log('window.electronAPI:', window.electronAPI);
-    
+
     // Simple test to see if button click works
     console.log('Button clicked! startNgrok function called.');
     // Clear error banner on retry
     setNgrokErrorMessage(null);
-    
+
     if (ngrokRunning) {
       addLog('Ngrok is already running');
       return;
@@ -208,7 +208,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
     try {
       addLog('Starting ngrok tunnel...');
-      
+
       // Use Electron API to spawn ngrok process
       if (window.electronAPI && window.electronAPI.spawnProcess) {
         console.log('Electron API available, spawning process...');
@@ -218,17 +218,17 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           args.push('--domain', ngrokDomain);
         }
         const env = { ...process.env };
-        
+
         console.log('Spawning ngrok with args:', args);
         console.log('Environment:', env);
-        
+
         const processId = await window.electronAPI.spawnProcess('ngrok', args, env);
         console.log('Process spawned with ID:', processId);
-        
+
         setNgrokProcess(processId);
         setNgrokRunning(true);
         addLog(`Ngrok started with process ID: ${processId}`);
-        
+
         // Set the ngrok URL
         if (ngrokDomain) {
           setNgrokUrl(`https://${ngrokDomain}`);
@@ -236,9 +236,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           // For free ngrok, we'll need to parse the output to get the actual URL
           setNgrokUrl('https://your-domain.ngrok-free.app');
         }
-        
+
         addLog(`Ngrok tunnel is starting...`);
-        
+
         // Set a timeout to check if the process is still running after a few seconds
         setTimeout(() => {
           if (ngrokRunning && ngrokProcess === processId) {
@@ -259,7 +259,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
   const stopNgrok = async () => {
     console.log('stopNgrok called, ngrokRunning:', ngrokRunning, 'ngrokProcess:', ngrokProcess);
-    
+
     if (!ngrokRunning || !ngrokProcess) {
       addLog('Ngrok is not running');
       return;
@@ -267,7 +267,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
     try {
       addLog('Stopping ngrok tunnel...');
-      
+
       if (window.electronAPI && window.electronAPI.terminateProcess) {
         console.log('Terminating process:', ngrokProcess);
         await window.electronAPI.terminateProcess(ngrokProcess);
@@ -276,7 +276,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         console.log('Electron API not available for termination');
         addLog('Electron API not available for process management');
       }
-      
+
       setNgrokProcess(null);
       setNgrokRunning(false);
       setNgrokUrl('');
@@ -316,7 +316,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
             setNgrokHealth('online');
             return;
           }
-        } catch {}
+        } catch { }
       }
       setNgrokHealth('offline');
     } catch {
@@ -383,9 +383,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           setNgrokUrl('');
         }
       };
-      
+
       window.electronAPI.onProcessError(handleProcessError);
-      
+
       // Cleanup listener on unmount
       return () => {
         if (window.electronAPI && window.electronAPI.removeProcessErrorListener) {
@@ -415,9 +415,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           setNgrokUrl('');
         }
       };
-      
+
       window.electronAPI.onProcessExitError(handleProcessExitError);
-      
+
       // Cleanup listener on unmount
       return () => {
         if (window.electronAPI && window.electronAPI.removeProcessExitErrorListener) {
@@ -457,7 +457,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return streamMatch && levelMatch;
   }).map(log => {
     let message = log.message;
-    
+
     // Apply verbose logs setting
     if (verboseLogs && log.message.includes(' - ')) {
       // Keep the full message with timestamp and level info
@@ -469,13 +469,13 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         message = log.message.substring(lastDashIndex + 3);
       }
     }
-    
+
     // Add stream prefix if enabled
     if (showStream) {
       const streamType = log.type === 'stderr' ? 'Err' : 'Out';
       message = `[${streamType}] ${message}`;
     }
-    
+
     return {
       timestamp: showDate ? log.timestamp : '',
       message
@@ -498,7 +498,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
           Server Status
         </h2>
-        
+
         <div style={{
           padding: '1rem',
           borderRadius: '6px',
@@ -587,7 +587,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         marginBottom: '2rem',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <div 
+        <div
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -598,19 +598,19 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           onClick={() => setShowLocalInstructions(!showLocalInstructions)}
         >
           <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>
-            📋 Using Open Edison with you local agent
+            📋 Using Open Edison with your local agent
           </h2>
           <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>
             {showLocalInstructions ? '▼' : '▶'}
           </span>
         </div>
-        
+
         {showLocalInstructions && (
           <div style={{ marginTop: '1rem' }}>
             <p style={{ color: '#7f8c8d', marginBottom: '1rem', lineHeight: '1.6' }}>
               To connect to Open Edison to your local agent that supports MCP, use the following configuration. The wizard can do this for you for the following tools: VSCode, Cursor, Claude Desdktop and Claude Code.
             </p>
-            
+
             <div style={{
               background: '#f8f9fa',
               border: '1px solid #e9ecef',
@@ -621,7 +621,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
               overflow: 'auto',
               whiteSpace: 'pre-wrap'
             }}>
-{`{
+              {`{
   "mcpServers": {
     "open-edison": {
       "command": "npx",
@@ -630,10 +630,10 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   }
 }`}
             </div>
-            
+
             <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
               <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
-                <strong>Note:</strong> Replace <code>your-api-key</code> with your actual API key from the configuration. 
+                <strong>Note:</strong> Replace <code>your-api-key</code> with your actual API key from the configuration.
                 The default key is <code>dev-api-key-change-me</code>.
               </p>
             </div>
@@ -649,7 +649,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
         marginBottom: '2rem',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <div 
+        <div
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -666,13 +666,13 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
             {showWebclientInstructions ? '▼' : '▶'}
           </span>
         </div>
-        
+
         {showWebclientInstructions && (
           <div style={{ marginTop: '1rem' }}>
             <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
               To use Open Edison with web-based AI clients like ChatGPT or Claude.ai, you'll need to set up an ngrok tunnel to expose your local Open Edison instance to the internet.
             </p>
-            
+
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 1: Install ngrok</h3>
               <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
@@ -690,14 +690,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
                 whiteSpace: 'pre-wrap',
                 marginBottom: '1rem'
               }}>
-{`# macOS (using Homebrew)
+                {`# macOS (using Homebrew)
 brew install ngrok
 
 # Or download from https://ngrok.com/download
 # Then add to your PATH`}
               </div>
             </div>
-            
+
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 2: Create ngrok Account</h3>
               <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
@@ -706,13 +706,13 @@ brew install ngrok
                 <li style={{ marginBottom: '0.5rem' }}>Create a domain name in the "Domains" page</li>
               </ol>
             </div>
-            
+
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 3: Configure ngrok</h3>
               <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 Add your ngrok credentials to the configuration:
               </p>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
@@ -733,7 +733,7 @@ brew install ngrok
                     }}
                   />
                 </div>
-                
+
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
                     ngrok Domain:
@@ -754,7 +754,7 @@ brew install ngrok
                   />
                 </div>
               </div>
-              
+
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   onClick={startNgrok}
@@ -813,7 +813,7 @@ brew install ngrok
                     </button>
                   </div>
                 )}
-                
+
                 {ngrokRunning && (
                   <button
                     onClick={stopNgrok}
@@ -839,7 +839,7 @@ brew install ngrok
                   </button>
                 )}
               </div>
-              
+
               {ngrokRunning && (
                 <div style={{
                   marginTop: '1rem',
@@ -859,13 +859,13 @@ brew install ngrok
                 </div>
               )}
             </div>
-            
+
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Alternative: Manual ngrok Setup</h3>
               <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 If you prefer to run ngrok manually, create a <code>ngrok.yml</code> file with this configuration:
               </p>
-              
+
               <div style={{
                 background: '#f8f9fa',
                 border: '1px solid #e9ecef',
@@ -877,7 +877,7 @@ brew install ngrok
                 whiteSpace: 'pre-wrap',
                 marginBottom: '1rem'
               }}>
-{`version: 3
+                {`version: 3
 
 agent:
   authtoken: ${ngrokAuthToken || 'YOUR_NGROK_AUTH_TOKEN'}
@@ -889,11 +889,11 @@ endpoints:
       url: http://localhost:3000
       protocol: http1`}
               </div>
-              
+
               <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 Then run this command in your terminal:
               </p>
-              
+
               <div style={{
                 background: '#2c3e50',
                 color: '#ecf0f1',
@@ -908,7 +908,7 @@ endpoints:
                 ngrok start --config=ngrok.yml open-edison-mcp
               </div>
             </div>
-            
+
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 4: Enable Developer Mode in ChatGPT</h3>
               <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
@@ -919,7 +919,7 @@ endpoints:
                 <li style={{ marginBottom: '0.5rem' }}>Enable <strong>"Developer Mode (beta)"</strong></li>
               </ol>
             </div>
-            
+
             <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
               <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
                 <strong>Next:</strong> Once configured, you can add Open Edison to ChatGPT using your ngrok URL as the MCP Server URL (e.g., <code>https://your-domain.ngrok-free.app/mcp/</code>).
@@ -948,7 +948,7 @@ endpoints:
           background: showLogsSection ? '#f8f9fa' : 'white',
           transition: 'all 0.3s ease'
         }}
-        onClick={() => setShowLogsSection(!showLogsSection)}
+          onClick={() => setShowLogsSection(!showLogsSection)}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
@@ -1001,10 +1001,10 @@ endpoints:
         }}>
           <div style={{ padding: '2rem' }}>
             {/* Log Filters */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '1rem', 
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
               marginBottom: '1rem',
               flexWrap: 'wrap'
             }}>
@@ -1087,7 +1087,7 @@ endpoints:
               whiteSpace: 'pre-wrap',
               transition: 'all 0.3s ease'
             }}>
-              {filteredLogs.length === 0 ? 'Server logs will appear here...' : 
+              {filteredLogs.length === 0 ? 'Server logs will appear here...' :
                 filteredLogs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
               }
             </div>
@@ -1149,17 +1149,17 @@ endpoints:
             <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
               💬 Get Help
             </h2>
-            
+
             <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
               Having issues with Open Edison? Let us know what's going wrong and we'll help you out!
             </p>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '0.5rem', 
-                fontWeight: '500', 
-                color: '#2c3e50' 
+              <label style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: '500',
+                color: '#2c3e50'
               }}>
                 Describe your issue:
               </label>
@@ -1189,9 +1189,9 @@ endpoints:
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
                 gap: '0.5rem',
                 cursor: 'pointer',
                 fontSize: '0.875rem',
@@ -1205,9 +1205,9 @@ endpoints:
                 />
                 <span>Attach debug logs to help with troubleshooting</span>
               </label>
-              <p style={{ 
-                fontSize: '0.75rem', 
-                color: '#7f8c8d', 
+              <p style={{
+                fontSize: '0.75rem',
+                color: '#7f8c8d',
                 margin: '0.25rem 0 0 1.5rem',
                 lineHeight: '1.4'
               }}>
