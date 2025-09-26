@@ -46,7 +46,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [previewData, setPreviewData] = useState<any>(null);
   const [activePreviewTab, setActivePreviewTab] = useState(0);
   const [autoImport, setAutoImport] = useState<boolean | null>(null);
-
+  const [wizardReady, setWizardReady] = useState(false);
+  const [checkingWizard, setCheckingWizard] = useState(true);
   // New state for export/replace step
   const [replaceClients, setReplaceClients] = useState<string[]>([]);
   const [replaceResults, setReplaceResults] = useState<any>(null);
@@ -62,6 +63,34 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       detectClients();
     }
   }, [step]);
+
+  // On mount: poll the Setup Wizard API /health until ready
+  useEffect(() => {
+    let isCancelled = false;
+    const check = async () => {
+      try {
+        const res = await wizardApiService.healthCheck();
+        if (!isCancelled && res && res.status === 'healthy') {
+          setWizardReady(true);
+          setCheckingWizard(false);
+          return;
+        }
+      } catch {
+        // keep checking
+      }
+      if (!isCancelled) {
+        setWizardReady(false);
+        setCheckingWizard(true);
+      }
+    };
+    // immediate check, then poll
+    check();
+    const id = setInterval(check, 1000);
+    return () => {
+      isCancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   // Step 6: Load backup info for replace step
   useEffect(() => {
@@ -430,6 +459,9 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const handleWelcomeChoice = (choice: boolean) => {
     setAutoImport(choice);
     if (choice) {
+      if (!wizardReady) {
+        return;
+      }
       // User wants to auto-import, proceed to step 1
       setVisitedSteps(prev => new Set([...prev, 1]));
       setStep(1);
@@ -463,20 +495,35 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           onClick={() => handleWelcomeChoice(true)}
+          disabled={!wizardReady || checkingWizard}
           style={{
             background: '#27ae60',
             color: 'white',
             border: 'none',
             padding: '1rem 2rem',
             borderRadius: '8px',
-            cursor: 'pointer',
+            cursor: (!wizardReady || checkingWizard) ? 'not-allowed' : 'pointer',
+            opacity: (!wizardReady || checkingWizard) ? 0.6 : 1,
             fontSize: '1rem',
             fontWeight: 'bold',
             minWidth: '200px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
           }}
         >
-          Yes, Import My Servers
+          {checkingWizard && (
+            <span style={{
+              display: 'inline-block',
+              width: '16px',
+              height: '16px',
+              border: '2px solid rgba(255,255,255,0.7)',
+              borderTop: '2px solid transparent',
+              borderRadius: '50%',
+              marginRight: '8px',
+              verticalAlign: 'middle',
+              animation: 'spin 1s linear infinite'
+            }} />
+          )}
+          {checkingWizard ? 'Starting…' : 'Yes, Import My Servers'}
         </button>
         <button
           onClick={() => handleWelcomeChoice(false)}
@@ -505,6 +552,19 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       }}>
         You can always import servers later from the settings menu.
       </p>
+      {!wizardReady && (
+        <p style={{ color: '#7f8c8d', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+          Preparing Setup Wizard API…
+        </p>
+      )}
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </div>
   );
 

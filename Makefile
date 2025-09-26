@@ -386,7 +386,11 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 	@cp -R frontend/dist/* src/frontend_dist/
 	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
 
-.PHONY: gui_dev gui_pack frontend_pack
+########################################################
+# GUI
+########################################################
+
+.PHONY: gui gui_dev gui_pack frontend_pack
 .PHONY: gui_run gui_run_wizard install-check
 
 install-check: ## Ensure GUI dependencies are installed
@@ -406,15 +410,15 @@ install-check: ## Ensure GUI dependencies are installed
 		echo "$(GREEN)✅ GUI dependencies present.$(RESET)"; \
 	fi
 
-gui_dev: install-check ## Run the desktop app in development mode
+gui_dev: install-check gui_pack ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
 	@cd gui && OPEN_EDISON_GUI_MODE=development npm run dev
 
-gui_run: install-check ## Run the desktop app in development mode
+gui_run: install-check gui_pack ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop...$(RESET)"
 	@cd gui && npm run electron
 
-gui_run_wizard: install-check ## Run the desktop app in development mode
+gui_run_wizard: install-check gui_pack ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop with wizard...$(RESET)"
 	@cd gui && npm run first-install
 
@@ -424,6 +428,72 @@ gui_pack: install-check ## Build the desktop app for distribution
 	@echo "$(YELLOW)📦 Building Electron distribution packages...$(RESET)"
 	@cd gui && npm run dist
 	@echo "$(GREEN)✅ Desktop app packaged to gui/release/.$(RESET)"
+
+
+########################################################
+# PyInstaller (freeze backend) and Electron dist
+########################################################
+
+.PHONY: pyinstall electron_dist app_dist
+
+pyinstall: check_uv frontend_pack ## Build standalone backend binary with PyInstaller (depends on frontend_pack)
+	@echo "$(YELLOW)🏗️  Building PyInstaller binary...$(RESET)"
+	@uv run pyinstaller -F -n open-edison-backend -p src \
+		--additional-hooks-dir pyinstaller_hooks \
+		--add-data "src/frontend_dist:src/frontend_dist" \
+		--collect-submodules uvicorn \
+		--hidden-import=sqlite3 \
+		--hidden-import=_sqlite3 \
+		--hidden-import=pysqlite2 \
+		--hidden-import=MySQLdb \
+		--collect-submodules sqlalchemy.dialects \
+		main.py
+	@echo "$(GREEN)✅ PyInstaller binary at dist/open-edison-backend$(RESET)"
+	@echo "$(YELLOW)🏗️  Building Setup Wizard API binary...$(RESET)"
+	@uv run pyinstaller -F -n open-edison-wizard -p src \
+		--additional-hooks-dir pyinstaller_hooks \
+		--collect-submodules uvicorn \
+		src/mcp_importer/wizard_server.py
+	@echo "$(GREEN)✅ PyInstaller binary at dist/open-edison-wizard$(RESET)"
+
+.PHONY: pyinstall_clean
+pyinstall_clean: ## Clean PyInstaller outputs (binary, build dir, spec, copied backend)
+	@echo "$(YELLOW)🧹 Cleaning PyInstaller artifacts...$(RESET)"
+	@rm -rf build
+	@rm -f open-edison-backend.spec
+	@rm -f open-edison-wizard.spec
+	@rm -f dist/open-edison-backend
+	@rm -f dist/open-edison-wizard
+	@echo "$(GREEN)✅ PyInstaller artifacts cleaned.$(RESET)"
+
+electron_dist: ## Build Electron distribution (requires pyinstall run to copy backend)
+	@echo "$(YELLOW)📦 Preparing Electron app with bundled backend...$(RESET)"
+	@if [ ! -f "dist/open-edison-backend" ]; then \
+		echo "$(RED)❌ dist/open-edison-backend not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "dist/open-edison-wizard" ]; then \
+		echo "$(RED)❌ dist/open-edison-wizard not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@mkdir -p gui/extraResources/backend
+	@cp dist/open-edison-backend gui/extraResources/backend/
+	@cp dist/open-edison-wizard gui/extraResources/backend/
+	@echo "$(YELLOW)🏗️  Building Electron app...$(RESET)"
+	@cd gui && npm run dist
+	@echo "$(GREEN)✅ Electron app built to gui/release/$(RESET)"
+
+electron_dist_clean: pyinstall_clean ## Clean Electron distribution outputs
+	@echo "$(YELLOW)🧹 Cleaning Electron distribution artifacts...$(RESET)"
+	@rm -rf gui/extraResources/backend
+	@rm -rf gui/release
+	@rm -rf gui/dist
+	@echo "$(GREEN)✅ Electron distribution artifacts cleaned.$(RESET)"
+
+
+app_dist: pyinstall electron_dist ## Build full macOS app bundle (backend + frontend + GUI)
+	@:
+
 
 ########################################################
 # Package Build (Python wheel + packaged frontend)

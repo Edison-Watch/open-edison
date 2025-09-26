@@ -1,5 +1,5 @@
 {
-  "name": "Open Edison",
+  "name": "open-edison-desktop",
   "version": "0.1.0",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
@@ -17,17 +17,17 @@
   },
   "author": "Open Edison Team",
   "dependencies": {
-    "electron": "^32.3.3",
     "electron-updater": "^6.1.7"
   },
   "devDependencies": {
+    "electron": "^32.3.3",
     "@types/electron": "^1.4.38",
     "@types/node": "^20.19.17",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^24.13.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.5.4",
@@ -43,6 +43,16 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "extraResources/backend",
+        "to": "backend"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "backend/**"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

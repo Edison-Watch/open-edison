@@ -133,26 +133,34 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
     // Get the project root (parent directory of gui folder)
     const projectRoot = join(__dirname, '..', '..')
 
-    // Try different methods to start the backend
-    const startMethods = [
-      () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 0: Try uv open-edison (recommended for uv users)
-      // () => spawn('uv', ['run', 'open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 1: Try uvx open-edison (recommended for uv users)
-      // () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 1: Try uvx open-edison (recommended for uv users)
-      // () => spawn('uvx', ['open-edison'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 2: Try open-edison command (if installed globally)
-      // () => spawn('open-edison', [], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 3: Try python -m src.cli
-      // () => spawn('python', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 4: Try python3 -m src.cli
-      // () => spawn('python3', ['-m', 'src.cli'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 5: Try direct python execution
-      // () => spawn('python', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
-      // // Method 6: Try python3 direct execution
-      // () => spawn('python3', ['main.py'], { cwd: projectRoot, stdio: 'pipe', shell: true })
-    ]
+    // Prepare logging to file in production
+    const fs = require('fs') as typeof import('fs')
+    const isPackaged = app.isPackaged === true
+    const logDir = app.getPath('userData')
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true })
+      }
+    } catch { }
+    const logFilePath = join(logDir, 'backend.log')
+    const logStream = fs.createWriteStream(logFilePath, { flags: 'a' })
+
+    // Decide how to start backend based on environment
+    const startMethods = (() => {
+      if (isPackaged) {
+        // Production: spawn bundled PyInstaller binary from Resources
+        const backendExecutable = process.platform === 'win32' ? 'open-edison-backend.exe' : 'open-edison-backend'
+        const resourcesPath = process.resourcesPath
+        const bundledPath = join(resourcesPath, 'backend', backendExecutable)
+        return [
+          () => spawn(bundledPath, [], { cwd: resourcesPath, stdio: 'pipe', shell: false })
+        ]
+      }
+      // Development: fall back to uv/python
+      return [
+        () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true })
+      ]
+    })()
 
     let methodIndex = 0
     let startupSuccessful = false
@@ -161,33 +169,36 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
       try {
         console.log(`Trying startup method ${methodIndex + 1}...`)
         backendProcess = startMethods[methodIndex]()
-
-        backendProcess.stdout?.on('data', (data) => {
+        backendProcess.stdout?.on('data', (data: Buffer) => {
           const message = data.toString()
           console.log('OpenEdison:', message)
+          try { logStream.write(message) } catch { }
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stdout', message })
           }
         })
 
-        backendProcess.stderr?.on('data', (data) => {
+        backendProcess.stderr?.on('data', (data: Buffer) => {
           const message = data.toString()
           console.log('OpenEdison:', message)
+          try { logStream.write(message) } catch { }
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stderr', message })
           }
         })
 
-        backendProcess.on('error', (error) => {
+        backendProcess.on('error', (error: Error) => {
           console.log(`Method ${methodIndex + 1} failed:`, error.message)
+          try { logStream.write(`[spawn-error] ${error.message}\n`) } catch { }
           methodIndex++
         })
 
-        backendProcess.on('exit', (code) => {
+        backendProcess.on('exit', (code: number) => {
           console.log('Backend process exited with code:', code)
           isBackendRunning = false
+          try { logStream.end(`\n[exit ${code}]\n`) } catch { }
         })
 
         // Wait a moment for the server to start
@@ -217,6 +228,12 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
 
   } catch (error) {
     console.error('Error starting backend:', error)
+    try {
+      const fs = require('fs') as typeof import('fs')
+      const logDir = app.getPath('userData')
+      const logFilePath = join(logDir, 'backend.log')
+      fs.appendFileSync(logFilePath, `[fatal] ${String(error)}\n`)
+    } catch { }
   }
 }
 
@@ -240,38 +257,62 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
     // Get the project root (parent directory of gui folder)
     const projectRoot = join(__dirname, '..', '..')
 
-    // Start the Setup Wizard API server
-    setupWizardApiProcess = spawn('uv', ['run', 'python', '-m', 'src.mcp_importer.wizard_server', '--host', host, '--port', port.toString()], {
-      cwd: projectRoot,
-      stdio: 'pipe',
-      shell: true
-    })
+    const fs = require('fs') as typeof import('fs')
+    const resourcesPath = process.resourcesPath
+    const isPackaged = app.isPackaged === true
+    // Prepare logging
+    const logDir = app.getPath('userData')
+    try { if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true }) } catch { }
+    const logFilePath = join(logDir, 'wizard-api.log')
+    const logStream = fs.createWriteStream(logFilePath, { flags: 'a' })
 
-    setupWizardApiProcess.stdout?.on('data', (data) => {
+    if (isPackaged) {
+      // Spawn bundled wizard binary
+      const wizardExecutable = process.platform === 'win32' ? 'open-edison-wizard.exe' : 'open-edison-wizard'
+      const bundledPath = join(resourcesPath, 'backend', wizardExecutable)
+      setupWizardApiProcess = spawn(bundledPath, ['--host', host, '--port', port.toString()], {
+        cwd: resourcesPath,
+        stdio: 'pipe',
+        shell: false
+      })
+    } else {
+      // Dev: uv run python -m src.mcp_importer.wizard_server
+      setupWizardApiProcess = spawn('uv', ['run', 'python', '-m', 'src.mcp_importer.wizard_server', '--host', host, '--port', port.toString()], {
+        cwd: projectRoot,
+        stdio: 'pipe',
+        shell: true
+      })
+    }
+
+    setupWizardApiProcess.stdout?.on('data', (data: Buffer) => {
       const message = data.toString()
       console.log('Setup-Wizard-API:', message)
+      try { logStream.write(message) } catch { }
       // Send log to renderer process
       if (mainWindow) {
         mainWindow.webContents.send('setup-wizard-api-log', { type: 'stdout', message })
       }
     })
 
-    setupWizardApiProcess.stderr?.on('data', (data) => {
+    setupWizardApiProcess.stderr?.on('data', (data: Buffer) => {
       const message = data.toString()
       console.log('Setup-Wizard-API:', message)
+      try { logStream.write(message) } catch { }
       // Send log to renderer process
       if (mainWindow) {
         mainWindow.webContents.send('setup-wizard-api-log', { type: 'stderr', message })
       }
     })
 
-    setupWizardApiProcess.on('error', (error) => {
+    setupWizardApiProcess.on('error', (error: Error) => {
       console.log('Setup Wizard API startup failed:', error.message)
+      try { logStream.write(`[spawn-error] ${error.message}\n`) } catch { }
     })
 
-    setupWizardApiProcess.on('exit', (code) => {
+    setupWizardApiProcess.on('exit', (code: number) => {
       console.log('Setup Wizard API process exited with code:', code)
       isSetupWizardApiRunning = false
+      try { logStream.end(`\n[exit ${code}]\n`) } catch { }
     })
 
     // Wait a moment for the server to start
@@ -312,11 +353,11 @@ async function startFrontend(host: string = 'localhost', port: number = 3001): P
       shell: true
     })
 
-    frontendProcess.stdout?.on('data', (data) => {
+    frontendProcess.stdout?.on('data', (data: Buffer) => {
       console.log('Frontend stdout:', data.toString())
     })
 
-    frontendProcess.stderr?.on('data', (data) => {
+    frontendProcess.stderr?.on('data', (data: Buffer) => {
       console.log('Frontend stderr:', data.toString())
     })
 
@@ -353,11 +394,11 @@ async function startReactDevServer(): Promise<void> {
       shell: true
     })
 
-    reactProcess.stdout?.on('data', (data) => {
+    reactProcess.stdout?.on('data', (data: Buffer) => {
       console.log('React stdout:', data.toString())
     })
 
-    reactProcess.stderr?.on('data', (data) => {
+    reactProcess.stderr?.on('data', (data: Buffer) => {
       console.log('React stderr:', data.toString())
     })
 
@@ -745,10 +786,62 @@ ipcMain.handle('check-path-exists', async (event, path: string) => {
   }
 })
 
+// Get Open Edison config directory
+const getConfigDir = async (): Promise<string> => {
+  const fs = require('fs') as typeof import('fs')
+  const path = require('path') as typeof import('path')
+  const { spawn } = require('child_process') as typeof import('child_process')
+  const projectRoot = path.join(__dirname, '..', '..')
+
+  // In production, prefer Electron's userData directory
+  if (app.isPackaged) {
+    const configDir = app.getPath('userData')
+    try {
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true })
+        console.log(`Created application directory: ${configDir}`)
+      }
+    } catch { }
+    console.log('Using Open Edison config directory (packaged):', configDir)
+    return configDir
+  }
+
+  console.log('Getting Open Edison config directory from the backend (dev)...')
+
+  const configDirProcess = spawn('uv', ['run', 'python', '-m', 'src.gui', '--get-config-dir'], {
+    cwd: projectRoot,
+    stdio: 'pipe',
+    shell: true
+  })
+
+  const configDir: string = await new Promise<string>((resolve, reject) => {
+    let output = ''
+    configDirProcess.stdout?.on('data', (data: Buffer) => {
+      output += data.toString()
+    })
+    configDirProcess.on('close', (code: number) => {
+      if (code === 0) {
+        resolve(output.trim())
+      } else {
+        reject(new Error(`Process exited with code ${code}`))
+      }
+    })
+    configDirProcess.on('error', (err: Error) => reject(err))
+  })
+
+  console.log('Using Open Edison config directory:', configDir)
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
+    console.log(`Created application directory: ${configDir}`)
+  }
+  return configDir
+}
+
 // Check Open Edison installation and initialize if needed
 const installOpenEdison = async (): Promise<boolean> => {
   try {
-    const appSupportPath = app.getPath('userData')
+    let appSupportPath = app.getPath('userData')
+    let newAppSupportPath = appSupportPath
     console.log('App support path:', appSupportPath)
     const fs = require('fs')
     const path = require('path')
@@ -758,6 +851,15 @@ const installOpenEdison = async (): Promise<boolean> => {
     // Assert that the application support directory exists
     if (!folderExists) {
       throw new Error(`Application directory ${appSupportPath} does not exist`)
+    }
+
+    try {
+      newAppSupportPath = await getConfigDir()
+      appSupportPath = newAppSupportPath
+      app.setPath('userData', appSupportPath)
+      console.log('Set app support path to:', appSupportPath)
+    } catch (error) {
+      console.error('Error getting Open Edison config directory, will use default:', error)
     }
 
     // Check for required configuration files
@@ -995,7 +1097,7 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     console.log(`Process spawned with ID: ${processId}`)
 
     // Handle process output
-    childProcess.stdout?.on('data', (data) => {
+    childProcess.stdout?.on('data', (data: Buffer) => {
       const output = data.toString()
       console.log(`${command} stdout:`, output)
 
@@ -1011,20 +1113,18 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
         }
       }
     })
-
-    childProcess.stderr?.on('data', (data) => {
+    childProcess.stderr?.on('data', (data: Buffer) => {
       console.log(`${command} stderr:`, data.toString())
     })
 
-    childProcess.on('error', (error) => {
+    childProcess.on('error', (error: Error) => {
       console.error(`Process ${command} error:`, error)
       // Send error to renderer process
       if (mainWindow) {
         mainWindow.webContents.send('process-error', { processId, error: error.message })
       }
     })
-
-    childProcess.on('exit', (code) => {
+    childProcess.on('exit', (code: number) => {
       console.log(`Process ${command} exited with code:`, code)
       processes.delete(processId)
 
