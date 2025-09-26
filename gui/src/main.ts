@@ -847,8 +847,35 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
   try {
     console.log(`Spawning process: ${command} ${args.join(' ')}`)
     const { spawn } = require('child_process')
-    const childProcess = spawn(command, args, { 
-      env: { ...process.env, ...env },
+    const fs = require('fs')
+
+    // Ensure PATH includes common Homebrew locations (macOS GUI apps often have a minimal PATH)
+    const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
+    const mergedPath = `${extraPaths.join(':')}:${process.env.PATH || ''}`
+
+    // Try to resolve absolute command path for ngrok specifically
+    let resolvedCommand = command
+    if (command === 'ngrok') {
+      const candidates = [
+        process.env.NGROK_PATH,
+        '/opt/homebrew/bin/ngrok',
+        '/usr/local/bin/ngrok',
+        '/usr/bin/ngrok'
+      ].filter(Boolean)
+      for (const candidate of candidates) {
+        try {
+          if (candidate && fs.existsSync(candidate)) {
+            resolvedCommand = candidate
+            break
+          }
+        } catch {}
+      }
+    }
+
+    console.log(`Using command: ${resolvedCommand} (PATH=${mergedPath})`)
+
+    const childProcess = spawn(resolvedCommand, args, { 
+      env: { ...process.env, PATH: mergedPath, ...env },
       stdio: 'pipe',
       shell: true
     })
