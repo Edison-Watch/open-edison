@@ -157,7 +157,7 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
         
         backendProcess.stdout?.on('data', (data) => {
           const message = data.toString()
-          console.log('Api-OpenEdison:', message)
+          console.log('OpenEdison:', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stdout', message })
@@ -166,7 +166,7 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
 
         backendProcess.stderr?.on('data', (data) => {
           const message = data.toString()
-          console.log('Mcp-OpenEdison:', message)
+          console.log('OpenEdison:', message)
           // Send log to renderer process
           if (mainWindow) {
             mainWindow.webContents.send('backend-log', { type: 'stderr', message })
@@ -242,7 +242,7 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
     
     setupWizardApiProcess.stdout?.on('data', (data) => {
       const message = data.toString()
-      console.log('Setup-Wizard-API-1:', message)
+      console.log('Setup-Wizard-API:', message)
       // Send log to renderer process
       if (mainWindow) {
         mainWindow.webContents.send('setup-wizard-api-log', { type: 'stdout', message })
@@ -251,7 +251,7 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
 
     setupWizardApiProcess.stderr?.on('data', (data) => {
       const message = data.toString()
-      console.log('Setup-Wizard-API-2:', message)
+      console.log('Setup-Wizard-API:', message)
       // Send log to renderer process
       if (mainWindow) {
         mainWindow.webContents.send('setup-wizard-api-log', { type: 'stderr', message })
@@ -837,4 +837,91 @@ ipcMain.handle('wizard-completed', async () => {
 // IPC handler to get server configuration
 ipcMain.handle('get-server-config', async () => {
   return await readServerConfig()
+})
+
+// Store processes for management
+const processes = new Map<any, ChildProcess>()
+
+// Process management handlers
+ipcMain.handle('spawn-process', async (event, command: string, args: string[], env: any) => {
+  try {
+    console.log(`Spawning process: ${command} ${args.join(' ')}`)
+    const { spawn } = require('child_process')
+    const childProcess = spawn(command, args, { 
+      env: { ...process.env, ...env },
+      stdio: 'pipe',
+      shell: true
+    })
+    
+    // Store process reference for cleanup
+    const processId = Date.now() // Simple ID for tracking
+    processes.set(processId, childProcess)
+    
+    console.log(`Process spawned with ID: ${processId}`)
+    
+    // Handle process output
+    childProcess.stdout?.on('data', (data) => {
+      const output = data.toString()
+      console.log(`${command} stdout:`, output)
+      
+      // For ngrok, try to extract the tunnel URL
+      if (command === 'ngrok') {
+        const urlMatch = output.match(/https:\/\/[a-zA-Z0-9-]+\.ngrok-free\.app/)
+        if (urlMatch) {
+          console.log('Found ngrok URL:', urlMatch[0])
+          // Send the URL to the renderer process
+          if (mainWindow) {
+            mainWindow.webContents.send('ngrok-url', urlMatch[0])
+          }
+        }
+      }
+    })
+    
+    childProcess.stderr?.on('data', (data) => {
+      console.log(`${command} stderr:`, data.toString())
+    })
+    
+    childProcess.on('error', (error) => {
+      console.error(`Process ${command} error:`, error)
+      // Send error to renderer process
+      if (mainWindow) {
+        mainWindow.webContents.send('process-error', { processId, error: error.message })
+      }
+    })
+    
+    childProcess.on('exit', (code) => {
+      console.log(`Process ${command} exited with code:`, code)
+      processes.delete(processId)
+      
+      // If process exited with error code, notify renderer
+      if (code !== 0 && mainWindow) {
+        console.log(`Sending process exit error for ${command} with code ${code}`)
+        mainWindow.webContents.send('process-exit-error', { processId, code })
+      }
+    })
+    
+    return processId
+  } catch (error) {
+    console.error('Error spawning process:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('terminate-process', async (event, processId: any) => {
+  try {
+    console.log(`Terminating process ${processId}`)
+    const childProcess = processes.get(processId)
+    
+    if (childProcess) {
+      console.log('Found process, terminating...')
+      childProcess.kill()
+      processes.delete(processId)
+      console.log('Process terminated successfully')
+    } else {
+      console.log('Process not found in registry')
+    }
+  } catch (error) {
+    console.error('Error terminating process:', error)
+    throw error
+  }
 })

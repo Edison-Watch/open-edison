@@ -43,6 +43,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Server configuration methods
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
   
+  // Process management methods
+  spawnProcess: (command: string, args: string[], env: any) => ipcRenderer.invoke('spawn-process', command, args, env),
+  terminateProcess: (processId: any) => ipcRenderer.invoke('terminate-process', processId),
+  
+  // Ngrok URL listener
+  onNgrokUrl: (callback: (url: string) => void) => {
+    ipcRenderer.on('ngrok-url', (event, url) => callback(url))
+  },
+  
+  // Process error listeners
+  onProcessError: (callback: (data: { processId: any; error: string }) => void) => {
+    ipcRenderer.on('process-error', (event, data) => callback(data))
+  },
+  
+  onProcessExitError: (callback: (data: { processId: any; code: number }) => void) => {
+    ipcRenderer.on('process-exit-error', (event, data) => callback(data))
+  },
+  
+  // Remove process error listeners
+  removeProcessErrorListener: () => {
+    ipcRenderer.removeAllListeners('process-error')
+  },
+  
+  removeProcessExitErrorListener: () => {
+    ipcRenderer.removeAllListeners('process-exit-error')
+  },
+  
   // Platform info
   platform: process.platform,
   
@@ -69,6 +96,13 @@ declare global {
       openWizardWindow: () => Promise<{ success: boolean; error?: string }>
       closeWindow: () => Promise<{ success: boolean }>
       wizardCompleted: () => Promise<{ success: boolean }>
+      spawnProcess: (command: string, args: string[], env: any) => Promise<any>
+      terminateProcess: (processId: any) => Promise<void>
+      onNgrokUrl: (callback: (url: string) => void) => void
+      onProcessError: (callback: (data: { processId: any; error: string }) => void) => void
+      onProcessExitError: (callback: (data: { processId: any; code: number }) => void) => void
+      removeProcessErrorListener: () => void
+      removeProcessExitErrorListener: () => void
       platform: string
       appVersion: string
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface ServerStatus {
   running: boolean;
@@ -21,16 +21,24 @@ interface OverviewProps {
 const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLogsExpanded }) => {
   const [serverApiStatus, setServerApiStatus] = useState<ServerStatus>({ running: false, port: 3001 });
   const [serverMcpStatus, setServerMcpStatus] = useState<ServerStatus>({ running: false, port: 3000 });
-  const [showApi, setShowApi] = useState(false);
-  const [showMcp, setShowMcp] = useState(true);
+  const [showStdout, setShowStdout] = useState(true);
+  const [showStderr, setShowStderr] = useState(true);
   const [verboseLogs, setVerboseLogs] = useState(false);
-  const [logLevel, setLogLevel] = useState('info');
+  const [logLevel, setLogLevel] = useState('warning');
   const [showDate, setShowDate] = useState(false);
   const [showStream, setShowStream] = useState(false);
   const [showLogsSection, setShowLogsSection] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpMessage, setHelpMessage] = useState('');
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
+  const [showLocalInstructions, setShowLocalInstructions] = useState(false);
+  const [showWebclientInstructions, setShowWebclientInstructions] = useState(false);
+  const [ngrokAuthToken, setNgrokAuthToken] = useState('');
+  const [ngrokDomain, setNgrokDomain] = useState('');
+  const [ngrokProcess, setNgrokProcess] = useState<any>(null);
+  const [ngrokRunning, setNgrokRunning] = useState(false);
+  const [ngrokUrl, setNgrokUrl] = useState('');
+  const [ngrokErrorMessage, setNgrokErrorMessage] = useState<string | null>(null);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -117,6 +125,24 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     setIncludeDebugLogs(false);
   };
 
+  // Wizard functions
+  const openWizard = async () => {
+    try {
+      if (window.electronAPI && window.electronAPI.openWizardWindow) {
+        const response = await window.electronAPI.openWizardWindow();
+        if (response.success) {
+          addLog('Wizard window opened successfully');
+        } else {
+          addLog(`Failed to open wizard: ${response.error || 'Unknown error'}`);
+        }
+      } else {
+        addLog('Wizard functionality not available');
+      }
+    } catch (error) {
+      addLog(`Error opening wizard: ${error}`);
+    }
+  };
+
   const submitHelpRequest = async () => {
     if (!helpMessage.trim()) {
       addLog('Please enter a message before submitting your help request.');
@@ -158,6 +184,107 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     closeHelpModal();
   };
 
+  // Ngrok process management functions
+  const startNgrok = async () => {
+    console.log('startNgrok called, ngrokRunning:', ngrokRunning);
+    console.log('ngrokAuthToken:', ngrokAuthToken);
+    console.log('window.electronAPI:', window.electronAPI);
+    
+    // Simple test to see if button click works
+    console.log('Button clicked! startNgrok function called.');
+    // Clear error banner on retry
+    setNgrokErrorMessage(null);
+    
+    if (ngrokRunning) {
+      addLog('Ngrok is already running');
+      return;
+    }
+
+    if (!ngrokAuthToken.trim()) {
+      addLog('Please enter your ngrok authtoken first');
+      return;
+    }
+
+    try {
+      addLog('Starting ngrok tunnel...');
+      
+      // Use Electron API to spawn ngrok process
+      if (window.electronAPI && window.electronAPI.spawnProcess) {
+        console.log('Electron API available, spawning process...');
+        // Use ngrok command line options directly
+        const args = ['http', '3000', '--authtoken', ngrokAuthToken];
+        if (ngrokDomain) {
+          args.push('--domain', ngrokDomain);
+        }
+        const env = { ...process.env };
+        
+        console.log('Spawning ngrok with args:', args);
+        console.log('Environment:', env);
+        
+        const processId = await window.electronAPI.spawnProcess('ngrok', args, env);
+        console.log('Process spawned with ID:', processId);
+        
+        setNgrokProcess(processId);
+        setNgrokRunning(true);
+        addLog(`Ngrok started with process ID: ${processId}`);
+        
+        // Set the ngrok URL
+        if (ngrokDomain) {
+          setNgrokUrl(`https://${ngrokDomain}`);
+        } else {
+          // For free ngrok, we'll need to parse the output to get the actual URL
+          setNgrokUrl('https://your-domain.ngrok-free.app');
+        }
+        
+        addLog(`Ngrok tunnel is starting...`);
+        
+        // Set a timeout to check if the process is still running after a few seconds
+        setTimeout(() => {
+          if (ngrokRunning && ngrokProcess === processId) {
+            // If we're still in "running" state but haven't received a URL, something might be wrong
+            addLog(`⏳ Ngrok is still starting... If this takes too long, check the logs for errors.`);
+          }
+        }, 3000);
+      } else {
+        console.log('Electron API not available');
+        addLog('Electron API not available for process management');
+      }
+    } catch (error) {
+      console.error('Error in startNgrok:', error);
+      addLog(`Error starting ngrok: ${error}`);
+      setNgrokErrorMessage(`Ngrok failed to start: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const stopNgrok = async () => {
+    console.log('stopNgrok called, ngrokRunning:', ngrokRunning, 'ngrokProcess:', ngrokProcess);
+    
+    if (!ngrokRunning || !ngrokProcess) {
+      addLog('Ngrok is not running');
+      return;
+    }
+
+    try {
+      addLog('Stopping ngrok tunnel...');
+      
+      if (window.electronAPI && window.electronAPI.terminateProcess) {
+        console.log('Terminating process:', ngrokProcess);
+        await window.electronAPI.terminateProcess(ngrokProcess);
+        addLog('Ngrok tunnel stopped');
+      } else {
+        console.log('Electron API not available for termination');
+        addLog('Electron API not available for process management');
+      }
+      
+      setNgrokProcess(null);
+      setNgrokRunning(false);
+      setNgrokUrl('');
+    } catch (error) {
+      console.error('Error in stopNgrok:', error);
+      addLog(`Error stopping ngrok: ${error}`);
+    }
+  };
+
 
 
   // Start server status monitoring
@@ -167,12 +294,126 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return () => clearInterval(interval);
   }, []);
 
+  // Cleanup ngrok process on component unmount
+  useEffect(() => {
+    return () => {
+      if (ngrokRunning && ngrokProcess) {
+        stopNgrok();
+      }
+    };
+  }, [ngrokRunning, ngrokProcess]);
+
+  // Listen for ngrok URL updates
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onNgrokUrl) {
+      window.electronAPI.onNgrokUrl((url: string) => {
+        console.log('Received ngrok URL:', url);
+        setNgrokUrl(url);
+        addLog(`Ngrok tunnel is running at: ${url}/mcp/`);
+      });
+    }
+  }, []);
+
+  // Store the current ngrok process ID in a ref to avoid stale closures
+  const ngrokProcessRef = useRef<any>(null);
+  const ngrokRunningRef = useRef<boolean>(false);
+
+  // Update refs when state changes
+  useEffect(() => {
+    ngrokProcessRef.current = ngrokProcess;
+  }, [ngrokProcess]);
+
+  useEffect(() => {
+    ngrokRunningRef.current = ngrokRunning;
+  }, [ngrokRunning]);
+
+  // Listen for process errors - set up once on mount
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onProcessError) {
+      const handleProcessError = (data: { processId: any; error: string }) => {
+        console.log('Process error:', data);
+        // Check if this is a ngrok process error using refs to avoid stale closures
+        if (data.processId === ngrokProcessRef.current || data.error.includes('ngrok') || data.error.includes('command not found')) {
+          addLog(`❌ Ngrok failed to start: ${data.error}`);
+          addLog(`💡 Please install ngrok first: brew install ngrok`);
+          setNgrokErrorMessage(`Ngrok failed to start: ${data.error}`);
+          setNgrokProcess(null);
+          setNgrokRunning(false);
+          setNgrokUrl('');
+        }
+      };
+      
+      window.electronAPI.onProcessError(handleProcessError);
+      
+      // Cleanup listener on unmount
+      return () => {
+        if (window.electronAPI && window.electronAPI.removeProcessErrorListener) {
+          window.electronAPI.removeProcessErrorListener();
+        }
+      };
+    }
+  }, []); // Empty dependency array - set up once
+
+  // Listen for process exit errors - set up once on mount
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onProcessExitError) {
+      const handleProcessExitError = (data: { processId: any; code: number }) => {
+        console.log('Process exit error:', data);
+        // Check if this is a ngrok process exit error using refs to avoid stale closures
+        if (data.processId === ngrokProcessRef.current || (data.code === 127 && ngrokRunningRef.current)) {
+          addLog(`❌ Ngrok process exited with error code: ${data.code}`);
+          if (data.code === 127) {
+            addLog(`💡 Command not found - please install ngrok: brew install ngrok`);
+            setNgrokErrorMessage('Ngrok failed to run: command not found. Install it with: brew install ngrok');
+          } else {
+            addLog(`💡 Please check if ngrok is installed: brew install ngrok`);
+            setNgrokErrorMessage(`Ngrok failed to run (exit code ${data.code}). Please check your ngrok installation.`);
+          }
+          setNgrokProcess(null);
+          setNgrokRunning(false);
+          setNgrokUrl('');
+        }
+      };
+      
+      window.electronAPI.onProcessExitError(handleProcessExitError);
+      
+      // Cleanup listener on unmount
+      return () => {
+        if (window.electronAPI && window.electronAPI.removeProcessExitErrorListener) {
+          window.electronAPI.removeProcessExitErrorListener();
+        }
+      };
+    }
+  }, []); // Empty dependency array - set up once
+
   // Note: All logs are now captured at App level for complete debugging
+
+  // Helper function to extract log level from message
+  const getLogLevel = (message: string): string => {
+    const levelMatch = message.match(/(DEBUG|INFO|WARNING|ERROR|CRITICAL)/i);
+    if (levelMatch) {
+      return levelMatch[1].toLowerCase();
+    }
+    // Default to info if no level found
+    return 'info';
+  };
+
+  // Helper function to check if log level should be shown
+  const shouldShowLogLevel = (message: string): boolean => {
+    const messageLevel = getLogLevel(message);
+    const levelHierarchy = { debug: 0, info: 1, warning: 2, error: 3, critical: 4 };
+    const selectedLevel = levelHierarchy[logLevel as keyof typeof levelHierarchy] || 1;
+    const messageLevelNum = levelHierarchy[messageLevel as keyof typeof levelHierarchy] || 1;
+    return messageLevelNum >= selectedLevel;
+  };
 
   // Filter and format logs based on current settings
   const filteredLogs = logs.filter(log => {
-    // Show MCP logs (stderr) by default, API logs (stdout) when showApi is checked
-    return (log.type === 'stderr' && showMcp) || (log.type === 'stdout' && showApi);
+    // Show stdout and stderr logs based on checkboxes
+    const streamMatch = (log.type === 'stdout' && showStdout) || (log.type === 'stderr' && showStderr);
+    // Filter by log level
+    const levelMatch = shouldShowLogLevel(log.message);
+    return streamMatch && levelMatch;
   }).map(log => {
     let message = log.message;
     
@@ -190,7 +431,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     
     // Add stream prefix if enabled
     if (showStream) {
-      const streamType = log.type === 'stderr' ? 'MCP' : 'API';
+      const streamType = log.type === 'stderr' ? 'Err' : 'Out';
       message = `[${streamType}] ${message}`;
     }
     
@@ -226,7 +467,32 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           {serverMcpStatus.running ? '✅ Server is online 🛡️' : '❌ Server is offline'}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+          <button
+            onClick={openWizard}
+            style={{
+              background: '#9b59b6',
+              color: 'white',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#8e44ad';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#9b59b6';
+            }}
+          >
+            ✨
+            Run Wizard
+          </button>
           <button
             onClick={openHelpModal}
             style={{
@@ -253,6 +519,358 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           </button>
         </div>
 
+      </div>
+
+      {/* Ngrok error banner (moved near the Run ngrok button below) */}
+
+      {/* Installation Instructions Section */}
+      <div style={{
+        background: 'white',
+        borderRadius: '8px',
+        padding: '2rem',
+        marginBottom: '2rem',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+      }}>
+        <div 
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+            marginBottom: showLocalInstructions ? '1rem' : '0'
+          }}
+          onClick={() => setShowLocalInstructions(!showLocalInstructions)}
+        >
+          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>
+            📋 Using Open Edison with you local agent
+          </h2>
+          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>
+            {showLocalInstructions ? '▼' : '▶'}
+          </span>
+        </div>
+        
+        {showLocalInstructions && (
+          <div style={{ marginTop: '1rem' }}>
+            <p style={{ color: '#7f8c8d', marginBottom: '1rem', lineHeight: '1.6' }}>
+              To connect to Open Edison to your local agent that supports MCP, use the following configuration. The wizard can do this for you for the following tools: VSCode, Cursor, Claude Desdktop and Claude Code.
+            </p>
+            
+            <div style={{
+              background: '#f8f9fa',
+              border: '1px solid #e9ecef',
+              borderRadius: '6px',
+              padding: '1rem',
+              fontFamily: 'monospace',
+              fontSize: '0.875rem',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap'
+            }}>
+{`{
+  "mcpServers": {
+    "open-edison": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp/", "--http-only", "--header", "Authorization: Bearer your-api-key"]
+    }
+  }
+}`}
+            </div>
+            
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
+              <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
+                <strong>Note:</strong> Replace <code>your-api-key</code> with your actual API key from the configuration. 
+                The default key is <code>dev-api-key-change-me</code>.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Webclient Instructions Section */}
+      <div style={{
+        background: 'white',
+        borderRadius: '8px',
+        padding: '2rem',
+        marginBottom: '2rem',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+      }}>
+        <div 
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+            marginBottom: showWebclientInstructions ? '1rem' : '0'
+          }}
+          onClick={() => setShowWebclientInstructions(!showWebclientInstructions)}
+        >
+          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>
+            🌐 Using Open Edison with webclients (e.g. chatgpt.com or claude.ai)
+          </h2>
+          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>
+            {showWebclientInstructions ? '▼' : '▶'}
+          </span>
+        </div>
+        
+        {showWebclientInstructions && (
+          <div style={{ marginTop: '1rem' }}>
+            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              To use Open Edison with web-based AI clients like ChatGPT or Claude.ai, you'll need to set up an ngrok tunnel to expose your local Open Edison instance to the internet.
+            </p>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 1: Install ngrok</h3>
+              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                First, you need to install ngrok on your system:
+              </p>
+              <div style={{
+                background: '#2c3e50',
+                color: '#ecf0f1',
+                border: '1px solid #34495e',
+                borderRadius: '6px',
+                padding: '1rem',
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                marginBottom: '1rem'
+              }}>
+{`# macOS (using Homebrew)
+brew install ngrok
+
+# Or download from https://ngrok.com/download
+# Then add to your PATH`}
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 2: Create ngrok Account</h3>
+              <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
+                <li style={{ marginBottom: '0.5rem' }}>Visit <a href="https://dashboard.ngrok.com" target="_blank" rel="noopener noreferrer" style={{ color: '#3498db' }}>https://dashboard.ngrok.com</a> to sign up for a free account</li>
+                <li style={{ marginBottom: '0.5rem' }}>Get your authtoken from the "Your Authtoken" page</li>
+                <li style={{ marginBottom: '0.5rem' }}>Create a domain name in the "Domains" page</li>
+              </ol>
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 3: Configure ngrok</h3>
+              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                Add your ngrok credentials to the configuration:
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                    ngrok Authtoken:
+                  </label>
+                  <input
+                    type="text"
+                    value={ngrokAuthToken}
+                    onChange={(e) => setNgrokAuthToken(e.target.value)}
+                    placeholder="Enter your ngrok authtoken"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '1px solid #bdc3c7',
+                      borderRadius: '6px',
+                      fontSize: '0.875rem',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                </div>
+                
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                    ngrok Domain:
+                  </label>
+                  <input
+                    type="text"
+                    value={ngrokDomain}
+                    onChange={(e) => setNgrokDomain(e.target.value)}
+                    placeholder="Enter your ngrok domain (e.g., your-domain.ngrok-free.app)"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '1px solid #bdc3c7',
+                      borderRadius: '6px',
+                      fontSize: '0.875rem',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={startNgrok}
+                  disabled={ngrokRunning}
+                  style={{
+                    background: ngrokRunning ? '#95a5a6' : '#27ae60',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    cursor: ngrokRunning ? 'not-allowed' : 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!ngrokRunning) {
+                      e.currentTarget.style.background = '#229954';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!ngrokRunning) {
+                      e.currentTarget.style.background = '#27ae60';
+                    }
+                  }}
+                >
+                  🚀 Run ngrok automatically
+                </button>
+
+                {/* Inline error near the Run button so it stays visible in context */}
+                {ngrokErrorMessage && (
+                  <div style={{
+                    background: '#fdecea',
+                    border: '1px solid #f5c6cb',
+                    color: '#a94442',
+                    borderRadius: '6px',
+                    padding: '0.5rem 0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ fontSize: '0.85rem' }}>{ngrokErrorMessage}</span>
+                    <button
+                      onClick={() => setNgrokErrorMessage(null)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#a94442',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        lineHeight: 1
+                      }}
+                      aria-label="Dismiss ngrok error"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                
+                {ngrokRunning && (
+                  <button
+                    onClick={stopNgrok}
+                    style={{
+                      background: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.75rem 1.5rem',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#c0392b';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#e74c3c';
+                    }}
+                  >
+                    🛑 Stop ngrok
+                  </button>
+                )}
+              </div>
+              
+              {ngrokRunning && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  background: '#d5f4e6',
+                  borderRadius: '6px',
+                  border: '1px solid #27ae60'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <span style={{ color: '#27ae60', fontWeight: '500' }}>✅ Ngrok is running</span>
+                  </div>
+                  {ngrokUrl && (
+                    <div style={{ fontSize: '0.875rem', color: '#2c3e50' }}>
+                      <strong>Tunnel URL:</strong> <code style={{ background: '#f8f9fa', padding: '0.25rem 0.5rem', borderRadius: '3px' }}>{ngrokUrl}/mcp/</code>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Alternative: Manual ngrok Setup</h3>
+              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                If you prefer to run ngrok manually, create a <code>ngrok.yml</code> file with this configuration:
+              </p>
+              
+              <div style={{
+                background: '#f8f9fa',
+                border: '1px solid #e9ecef',
+                borderRadius: '6px',
+                padding: '1rem',
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                marginBottom: '1rem'
+              }}>
+{`version: 3
+
+agent:
+  authtoken: ${ngrokAuthToken || 'YOUR_NGROK_AUTH_TOKEN'}
+
+endpoints:
+  - name: open-edison-mcp
+    url: ${ngrokDomain || 'YOUR_NGROK_DOMAIN'}
+    upstream:
+      url: http://localhost:3000
+      protocol: http1`}
+              </div>
+              
+              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                Then run this command in your terminal:
+              </p>
+              
+              <div style={{
+                background: '#2c3e50',
+                color: '#ecf0f1',
+                border: '1px solid #34495e',
+                borderRadius: '6px',
+                padding: '1rem',
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap'
+              }}>
+                ngrok start --config=ngrok.yml open-edison-mcp
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 4: Enable Developer Mode in ChatGPT</h3>
+              <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
+                <li style={{ marginBottom: '0.5rem' }}>Click on your profile icon in ChatGPT</li>
+                <li style={{ marginBottom: '0.5rem' }}>Select <strong>Settings</strong></li>
+                <li style={{ marginBottom: '0.5rem' }}>Go to <strong>"Connectors"</strong> in the settings menu</li>
+                <li style={{ marginBottom: '0.5rem' }}>Select <strong>"Advanced Settings"</strong></li>
+                <li style={{ marginBottom: '0.5rem' }}>Enable <strong>"Developer Mode (beta)"</strong></li>
+              </ol>
+            </div>
+            
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
+              <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
+                <strong>Next:</strong> Once configured, you can add Open Edison to ChatGPT using your ngrok URL as the MCP Server URL (e.g., <code>https://your-domain.ngrok-free.app/mcp/</code>).
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Server Logs Section */}
@@ -337,20 +955,20 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
               <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
                 <input
                   type="checkbox"
-                  checked={showMcp}
-                  onChange={(e) => setShowMcp(e.target.checked)}
+                  checked={showStdout}
+                  onChange={(e) => setShowStdout(e.target.checked)}
                   style={{ marginRight: '0.5rem' }}
                 />
-                Show MCP
+                Show stdout
               </label>
               <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
                 <input
                   type="checkbox"
-                  checked={showApi}
-                  onChange={(e) => setShowApi(e.target.checked)}
+                  checked={showStderr}
+                  onChange={(e) => setShowStderr(e.target.checked)}
                   style={{ marginRight: '0.5rem' }}
                 />
-                Show API
+                Show stderr
               </label>
               <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
                 <input
