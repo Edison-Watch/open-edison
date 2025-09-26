@@ -1,0 +1,21 @@
+appId: watch.edison.openedison
+productName: Open Edison
+files:
+  - dist/**          # your GUI build
+  - src/**           # your code
+  - package.json
+extraResources:
+  - from: ../dist/open-edison-backend
+    to: backend/open-edison-backend
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+asar: true
+asarUnpack:
+  - backend/**
+

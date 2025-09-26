@@ -44,6 +44,16 @@
       "dist/**/*",
       "node_modules/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "extraResources/backend",
+        "to": "backend"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "backend/**"
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": "dmg"

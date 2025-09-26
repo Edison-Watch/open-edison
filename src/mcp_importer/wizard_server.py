@@ -547,8 +547,9 @@ def main():
 
     log.info(f"Starting Setup Wizard API server on {args.host}:{args.port}")
 
+    # Pass the ASGI app object directly to avoid string import resolution in frozen builds
     uvicorn.run(
-        "src.mcp_importer.wizard_server:app",
+        app,
         host=args.host,
         port=args.port,
         reload=args.reload,
