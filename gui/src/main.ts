@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -12,6 +12,10 @@ let reactProcess: ChildProcess | null = null
 let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
+let dashboardView: any = null
+const DASHBOARD_HEADER_OFFSET_DIP = 120
+
+// Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
 let BACKEND_PORT = 3001
 const FRONTEND_PORT = 3001
@@ -19,6 +23,9 @@ const SETUP_WIZARD_API_PORT = 3002
 
 // Force first install mode (for testing/development)
 const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || process.argv.includes('--force-first-install')
+
+// Disable Electron security warnings (dev tool)
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 
 // Read host and port from config.json
 async function readServerConfig(): Promise<{ host: string; port: number; api_key?: string }> {
@@ -122,10 +129,10 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
     }
 
     console.log('Starting Open Edison backend server...')
-    
+
     // Get the project root (parent directory of gui folder)
     const projectRoot = join(__dirname, '..', '..')
-    
+
     // Try different methods to start the backend
     const startMethods = [
       () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true }),
@@ -154,7 +161,7 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
       try {
         console.log(`Trying startup method ${methodIndex + 1}...`)
         backendProcess = startMethods[methodIndex]()
-        
+
         backendProcess.stdout?.on('data', (data) => {
           const message = data.toString()
           console.log('OpenEdison:', message)
@@ -185,7 +192,7 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
 
         // Wait a moment for the server to start
         await new Promise(resolve => setTimeout(resolve, 3000))
-        
+
         // Check if backend is now running
         if (await checkBackendRunning(host, port)) {
           console.log('Backend server started successfully')
@@ -229,17 +236,17 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
     }
 
     console.log('Starting Setup Wizard API server...')
-    
+
     // Get the project root (parent directory of gui folder)
     const projectRoot = join(__dirname, '..', '..')
-    
+
     // Start the Setup Wizard API server
     setupWizardApiProcess = spawn('uv', ['run', 'python', '-m', 'src.mcp_importer.wizard_server', '--host', host, '--port', port.toString()], {
       cwd: projectRoot,
       stdio: 'pipe',
       shell: true
     })
-    
+
     setupWizardApiProcess.stdout?.on('data', (data) => {
       const message = data.toString()
       console.log('Setup-Wizard-API:', message)
@@ -269,7 +276,7 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
 
     // Wait a moment for the server to start
     await new Promise(resolve => setTimeout(resolve, 2000))
-    
+
     // Check if Setup Wizard API is now running
     if (await checkSetupWizardApiRunning(host, port)) {
       console.log('Setup Wizard API server started successfully')
@@ -287,17 +294,17 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
 async function startFrontend(host: string = 'localhost', port: number = 3001): Promise<void> {
   try {
     console.log('Starting frontend development server...')
-    
+
     const projectRoot = join(__dirname, '..', '..')
     const frontendDir = join(projectRoot, 'frontend')
-    
+
     // Check if frontend directory exists
     const fs = await import('fs')
     if (!fs.existsSync(frontendDir)) {
       console.error('Frontend directory not found:', frontendDir)
       return
     }
-    
+
     // Start the frontend dev server
     frontendProcess = spawn('npm', ['run', 'dev'], {
       cwd: frontendDir,
@@ -336,7 +343,7 @@ async function startFrontend(host: string = 'localhost', port: number = 3001): P
 async function startReactDevServer(): Promise<void> {
   try {
     console.log('Starting React development server...')
-    
+
     // Start the Vite dev server directly on port 5174
     // Use the parent directory where the source files and vite.config.ts are located
     const guiDir = join(__dirname, '..')
@@ -379,8 +386,10 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       contextIsolation: true,
       preload: join(__dirname, 'preload.js'),
-      webSecurity: true, // Keep web security enabled
-      allowRunningInsecureContent: false
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      // Enable <webview> tag for embedded dashboard (uses isolated guest webContents)
+      webviewTag: true
     },
     show: false, // Don't show until ready
     title: 'Open Edison Desktop'
@@ -388,7 +397,7 @@ async function createWindow(): Promise<void> {
 
   // Load the React desktop interface
   const isDev = process.env.NODE_ENV === 'development'
-  
+
   if (isDev) {
     // In development, load from the dev server
     const devUrl = `http://localhost:${FRONTEND_PORT}`
@@ -400,11 +409,56 @@ async function createWindow(): Promise<void> {
     console.log(`Loading React desktop interface from built files: ${indexPath}`)
     mainWindow.loadURL(indexPath)
   }
-  
+
   if (isDev) {
-    // Open DevTools in development
-    mainWindow.webContents.openDevTools()
+    // Open DevTools in a separate window so embedded views don't overlap
+    try { mainWindow.webContents.openDevTools({ mode: 'detach' }) } catch { mainWindow.webContents.openDevTools() }
+    // If DevTools somehow opens docked, force re-open as detached and temporarily hide dashboard view
+    mainWindow.webContents.on('devtools-opened', () => {
+      try {
+        const hasDetached = !!mainWindow?.webContents.devToolsWebContents
+        if (!hasDetached) {
+          try { dashboardView?.setVisible(false) } catch { }
+          mainWindow?.webContents.closeDevTools()
+          mainWindow?.webContents.openDevTools({ mode: 'detach' })
+          try { dashboardView?.setVisible(true) } catch { }
+        }
+        // Also open DevTools for the embedded dashboard view when main DevTools opens
+        try { dashboardView?.webContents?.openDevTools({ mode: 'detach' }) } catch { }
+      } catch { }
+    })
+    mainWindow.webContents.on('devtools-closed', () => {
+      try { dashboardView?.setVisible(true) } catch { }
+    })
   }
+
+  // Secure and configure any <webview> attachments
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    try {
+      // Enforce trusted origins only (localhost dashboard)
+      const src: string = String((params as any)?.src || '')
+      const allowed = /^http:\/\/localhost:\d+\/(?:dashboard|index\.html)/.test(src)
+      if (!allowed) {
+        console.warn('Blocking webview with untrusted src:', src)
+        event.preventDefault()
+        return
+      }
+
+      // Force a persistent partition for stable localStorage/sessionStorage
+      ; (params as any).partition = 'persist:dashboard'
+
+      // Harden guest: no Node, isolate context, strip preload unless explicitly set by us
+      webPreferences.nodeIntegration = false
+      webPreferences.contextIsolation = true
+      if (webPreferences.preload) {
+        delete (webPreferences as any).preload
+      }
+      // Optional: allow popups for OAuth flows; can also be handled via setWindowOpenHandler
+      webPreferences.javascript = true
+    } catch (e) {
+      console.warn('will-attach-webview handler error:', e)
+    }
+  })
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
@@ -429,6 +483,36 @@ async function createWindow(): Promise<void> {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription: string, validatedURL: string) => {
     console.error('Failed to load:', errorDescription, 'for URL:', validatedURL)
   })
+
+  // Application menu with a Dashboard DevTools item
+  try {
+    const template: Electron.MenuItemConstructorOptions[] = [
+      ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+      { role: 'fileMenu' },
+      { role: 'editMenu' },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' },
+          { role: 'togglefullscreen' },
+          { type: 'separator' },
+          {
+            label: 'Open Dashboard DevTools',
+            accelerator: process.platform === 'darwin' ? 'Cmd+Alt+D' : 'Ctrl+Shift+D',
+            click: () => { try { dashboardView?.webContents?.openDevTools({ mode: 'detach' }) } catch { } }
+          },
+          { type: 'separator' },
+          { role: 'toggleDevTools' }
+        ]
+      },
+      { role: 'windowMenu' },
+      { role: 'help', submenu: [] }
+    ]
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
+  } catch (e) {
+    console.warn('Failed to set application menu:', e)
+  }
 }
 
 // Create the wizard window
@@ -461,7 +545,7 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
 
   // Load the wizard interface
   const isDev = process.env.NODE_ENV === 'development'
-  
+
   if (isDev) {
     // In development, load from the dev server with wizard query parameter
     const devUrl = `http://localhost:${FRONTEND_PORT}?wizard=true`
@@ -474,7 +558,7 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
     console.log(`__dirname: ${__dirname}`)
     wizardWindow.loadURL(indexPath)
   }
-  
+
   if (isDev) {
     // Open DevTools in development
     wizardWindow.webContents.openDevTools()
@@ -502,35 +586,59 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
 // Register custom protocol for serving local files
 app.whenReady().then(() => {
   protocol.registerFileProtocol('app', (request, callback) => {
-    const url = request.url.substr(6) // Remove 'app://' prefix
-    // Remove query parameters from the URL before creating file path
+    const url = request.url.substr(6)
     const cleanUrl = url.split('?')[0]
     const filePath = join(__dirname, cleanUrl)
     console.log(`Protocol request: ${request.url} -> ${filePath}`)
     callback({ path: filePath })
   })
+
+  // Apply permissive CSP via response headers (now that app is ready)
+  const applyPermissiveCsp = (ses: Electron.Session) => {
+    ses.webRequest.onHeadersReceived((details, callback) => {
+      const headers = details.responseHeaders || {}
+      const cspValue =
+        "default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem: app: http: https: ws: wss:; " +
+        "script-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: app: http: https:; " +
+        "style-src * 'self' 'unsafe-inline' data: blob: app: http: https:; " +
+        "img-src * data: blob: app: http: https:; " +
+        "font-src * data: blob: app: http: https:; " +
+        "connect-src * data: blob: app: http: https: ws: wss:; " +
+        "media-src * data: blob: app: http: https:; " +
+        "frame-src * app: http: https:; " +
+        "frame-ancestors *; child-src * data: blob: app: http: https:; worker-src * data: blob: app: http: https:;"
+      headers['Content-Security-Policy'] = [cspValue]
+      callback({ responseHeaders: headers })
+    })
+  }
+  try {
+    applyPermissiveCsp(session.defaultSession)
+    applyPermissiveCsp(session.fromPartition('persist:dashboard'))
+  } catch (e) {
+    console.warn('CSP header injection failed:', e)
+  }
 })
 
 // Function to start the main application (backend, frontend, main window)
 async function startMainApplication() {
   console.log('Starting main application...')
   console.log('isInFirstInstallMode:', isInFirstInstallMode)
-  
+
   // Read host and port from config.json
   const { host, port } = await readServerConfig()
-  
+
   // Set the global BACKEND_PORT to the port from config
   BACKEND_PORT = port
-    
+
   // Start backend server
   await startBackend(host, port)
-  
+
   // Start Setup Wizard API server
   // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
-  
+
   // Always start frontend server (needed for proper asset loading)
   // await startFrontend(host, port+1)
-  
+
   // Create the main window
   await createWindow()
 }
@@ -542,16 +650,16 @@ app.whenReady().then(async () => {
   // Check if Open Edison is installed
   isFirstInstall = await installOpenEdison()
   console.log('Installation check result - isFirstInstall:', isFirstInstall)
-  
+
   if (isFirstInstall) {
     console.log('First install detected, starting setup wizard...')
     isInFirstInstallMode = true
     console.log('isInFirstInstallMode set to:', isInFirstInstallMode)
-    
+
     // Start only the Setup Wizard API server for the wizard
     const { host, port } = await readServerConfig()
     await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
-    
+
     // Create only the wizard window
     await createWizardWindow(true)
     console.log('Wizard window created, main application should NOT start yet')
@@ -569,13 +677,13 @@ app.on('window-all-closed', () => {
       console.log('Terminating backend process...')
       backendProcess.kill()
     }
-    
+
     // Kill Setup Wizard API process when app closes
     if (setupWizardApiProcess) {
       console.log('Terminating Setup Wizard API process...')
       setupWizardApiProcess.kill()
     }
-    
+
     // Kill frontend process when app closes
     if (frontendProcess) {
       console.log('Terminating frontend process...')
@@ -644,7 +752,7 @@ const installOpenEdison = async (): Promise<boolean> => {
     console.log('App support path:', appSupportPath)
     const fs = require('fs')
     const path = require('path')
-    
+
     const folderExists = fs.existsSync(appSupportPath)
 
     // Assert that the application support directory exists
@@ -656,10 +764,10 @@ const installOpenEdison = async (): Promise<boolean> => {
     const configFiles = [
       'config.json',
       'tool_permissions.json',
-      'resource_permissions.json', 
+      'resource_permissions.json',
       'prompt_permissions.json'
     ]
-    
+
     const configFilesExist = configFiles.every(file => {
       const filePath = path.join(appSupportPath, file)
       const exists = fs.existsSync(filePath)
@@ -671,19 +779,19 @@ const installOpenEdison = async (): Promise<boolean> => {
 
     if (!configFilesExist || FORCE_FIRST_INSTALL) {
       console.log('Open Edison installation not found, initializing...')
-      
+
       // // Create the application support directory
       // Note: since the appname matches open edison, the folder exists with electron data
       // fs.mkdirSync(appSupportPath, { recursive: true })
       // console.log(`Created application support directory: ${appSupportPath}`)
-      
+
       // Copy initial JSON files from the app bundle
       await copyInitialConfigFiles(appSupportPath)
-      
+
       console.log('Open Edison installation initialized with default configuration')
       return true // First install detected
     }
-    
+
     console.log('Open Edison installation found')
     return false // Not a first install
   } catch (error) {
@@ -697,23 +805,23 @@ const copyInitialConfigFiles = async (targetDir: string) => {
   try {
     const fs = require('fs')
     const path = require('path')
-    
+
     // List of initial configuration files to copy
     const configFiles = [
       'config.json',
-      'tool_permissions.json', 
+      'tool_permissions.json',
       'resource_permissions.json',
       'prompt_permissions.json'
     ]
-    
+
     // Get the app's resource path (where the bundled files are)
     const appPath = process.resourcesPath || __dirname
     const sourceDir = path.join(appPath, '..', '..') // Go up to the app bundle root
-    
+
     for (const fileName of configFiles) {
       const sourcePath = path.join(sourceDir, fileName)
       const targetPath = path.join(targetDir, fileName)
-      
+
       try {
         // Check if source file exists
         if (fs.existsSync(sourcePath)) {
@@ -737,9 +845,9 @@ const copyInitialConfigFiles = async (targetDir: string) => {
 // Create default configuration files
 const createDefaultConfigFile = async (fileName: string, targetPath: string) => {
   const fs = require('fs')
-  
+
   let defaultContent = '{}'
-  
+
   // Set default content based on file type
   switch (fileName) {
     case 'config.json':
@@ -761,7 +869,7 @@ const createDefaultConfigFile = async (fileName: string, targetPath: string) => 
       defaultContent = JSON.stringify({}, null, 2)
       break
   }
-  
+
   try {
     fs.writeFileSync(targetPath, defaultContent)
     console.log(`Created default ${fileName} at ${targetPath}`)
@@ -803,7 +911,7 @@ ipcMain.handle('open-wizard-window', async () => {
     // Ensure Setup Wizard API server is running
     const { host, port } = await readServerConfig()
     await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
-    
+
     await createWizardWindow()
     return { success: true }
   } catch (error) {
@@ -868,29 +976,29 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
             resolvedCommand = candidate
             break
           }
-        } catch {}
+        } catch { }
       }
     }
 
     console.log(`Using command: ${resolvedCommand} (PATH=${mergedPath})`)
 
-    const childProcess = spawn(resolvedCommand, args, { 
+    const childProcess = spawn(resolvedCommand, args, {
       env: { ...process.env, PATH: mergedPath, ...env },
       stdio: 'pipe',
       shell: true
     })
-    
+
     // Store process reference for cleanup
     const processId = Date.now() // Simple ID for tracking
     processes.set(processId, childProcess)
-    
+
     console.log(`Process spawned with ID: ${processId}`)
-    
+
     // Handle process output
     childProcess.stdout?.on('data', (data) => {
       const output = data.toString()
       console.log(`${command} stdout:`, output)
-      
+
       // For ngrok, try to extract the tunnel URL
       if (command === 'ngrok') {
         const urlMatch = output.match(/https:\/\/[a-zA-Z0-9-]+\.ngrok-free\.app/)
@@ -903,11 +1011,11 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
         }
       }
     })
-    
+
     childProcess.stderr?.on('data', (data) => {
       console.log(`${command} stderr:`, data.toString())
     })
-    
+
     childProcess.on('error', (error) => {
       console.error(`Process ${command} error:`, error)
       // Send error to renderer process
@@ -915,18 +1023,18 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
         mainWindow.webContents.send('process-error', { processId, error: error.message })
       }
     })
-    
+
     childProcess.on('exit', (code) => {
       console.log(`Process ${command} exited with code:`, code)
       processes.delete(processId)
-      
+
       // If process exited with error code, notify renderer
       if (code !== 0 && mainWindow) {
         console.log(`Sending process exit error for ${command} with code ${code}`)
         mainWindow.webContents.send('process-exit-error', { processId, code })
       }
     })
-    
+
     return processId
   } catch (error) {
     console.error('Error spawning process:', error)
@@ -938,7 +1046,7 @@ ipcMain.handle('terminate-process', async (event, processId: any) => {
   try {
     console.log(`Terminating process ${processId}`)
     const childProcess = processes.get(processId)
-    
+
     if (childProcess) {
       console.log('Found process, terminating...')
       childProcess.kill()
@@ -950,5 +1058,162 @@ ipcMain.handle('terminate-process', async (event, processId: any) => {
   } catch (error) {
     console.error('Error terminating process:', error)
     throw error
+  }
+})
+
+// Compose help email with optional logs attachment
+ipcMain.handle('compose-help-email', async (event, payload: { subject: string; body: string; attachLogs?: boolean; logsText?: string }) => {
+  try {
+    const toAddress = 'support@edison.watch'
+
+    if (process.platform === 'darwin') {
+      // On macOS, use AppleScript to compose an email with optional attachment in Mail.app
+      let attachmentPath: string | null = null
+      if (payload.attachLogs && payload.logsText) {
+        const fs = require('fs')
+        const path = require('path')
+        const dir = app.getPath('userData')
+        const filenameSafeTime = new Date().toISOString().replace(/[:.]/g, '-')
+        const filename = `open-edison-debug-logs-${filenameSafeTime}.txt`
+        attachmentPath = path.join(dir, filename)
+        try {
+          fs.writeFileSync(attachmentPath, payload.logsText, 'utf8')
+        } catch (writeErr) {
+          console.warn('Failed to write logs file for attachment:', writeErr)
+          attachmentPath = null
+        }
+      }
+
+      const escapeForAppleScript = (s: string) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const subject = escapeForAppleScript(payload.subject)
+      const body = escapeForAppleScript(payload.body + (payload.attachLogs ? '\n\n(Logs file attached.)' : ''))
+
+      const lines: string[] = []
+      lines.push('tell application "Mail"')
+      lines.push(`set newMessage to make new outgoing message with properties {subject:"${subject}", content:"${body}"}`)
+      lines.push('tell newMessage')
+      lines.push(`make new to recipient at end of to recipients with properties {address:"${toAddress}"}`)
+      if (attachmentPath) {
+        lines.push('tell content')
+        lines.push(`make new attachment with properties {file name:POSIX file "${attachmentPath}"} at after last paragraph`)
+        lines.push('end tell')
+      }
+      lines.push('activate')
+      lines.push('end tell')
+      lines.push('open newMessage')
+      lines.push('activate')
+      lines.push('end tell')
+
+      const script = lines.join('\n')
+      const child = spawn('osascript', ['-e', script], { stdio: 'pipe', shell: true })
+      return new Promise((resolve) => {
+        child.on('exit', (code) => {
+          resolve({ success: code === 0, attachmentPath })
+        })
+        child.on('error', (err) => {
+          console.error('osascript error:', err)
+          resolve({ success: false, attachmentPath, error: err instanceof Error ? err.message : String(err) })
+        })
+      })
+    }
+
+    // Fallback for non-macOS: open a mailto link without attachment
+    const mailto = `mailto:${toAddress}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(payload.body)}`
+    shell.openExternal(mailto)
+    return { success: true }
+  } catch (error) {
+    console.error('Error composing help email:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+// Dashboard view management using WebContentsView
+ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y: number; width: number; height: number }) => {
+  try {
+    if (!mainWindow) return { success: false, error: 'No main window' }
+    const { WebContentsView } = require('electron')
+    const urlInfo = await readServerConfig()
+    const host = urlInfo.host || 'localhost'
+    // Force dashboard to backend HTTP port 3001 regardless of config
+    const dashUrl = `http://${host}:3001/dashboard/`
+
+    if (!dashboardView) {
+      dashboardView = new WebContentsView({
+        webPreferences: {
+          partition: 'persist:dashboard',
+          nodeIntegration: false,
+          contextIsolation: true,
+          javascript: true,
+        }
+      })
+      dashboardView.webContents.loadURL(dashUrl)
+    }
+
+    // Attach if not already attached
+    const cv = (mainWindow as any).contentView
+    try { cv.addChildView(dashboardView) } catch { }
+    // Compute bounds below the header in DIP
+    const updateBounds = () => {
+      try {
+        const winBounds = mainWindow!.getContentBounds()
+        const x = 0
+        const y = DASHBOARD_HEADER_OFFSET_DIP
+        const width = Math.max(0, winBounds.width)
+        const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+        dashboardView.setBounds({ x, y, width, height })
+        dashboardView.setVisible(true)
+      } catch { }
+    }
+    updateBounds()
+    // Keep in sync on window resize
+    const resizeHandler = () => updateBounds()
+    try { mainWindow.on('resize', resizeHandler) } catch { }
+    return { success: true }
+  } catch (e) {
+    console.error('dashboard-create-or-show error:', e)
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
+ipcMain.handle('dashboard-set-bounds', async (event, bounds: { x: number; y: number; width: number; height: number }) => {
+  try {
+    if (!mainWindow || !dashboardView) return { success: false }
+    try {
+      const winBounds = mainWindow.getContentBounds()
+      const x = 0
+      const y = DASHBOARD_HEADER_OFFSET_DIP
+      const width = Math.max(0, winBounds.width)
+      const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+      dashboardView.setBounds({ x, y, width, height })
+      dashboardView.setVisible(true)
+    } catch { }
+    return { success: true }
+  } catch {
+    return { success: false }
+  }
+})
+
+ipcMain.handle('dashboard-hide', async () => {
+  try {
+    if (!mainWindow || !dashboardView) return { success: true }
+    const cv = (mainWindow as any).contentView
+    try { cv.removeChildView(dashboardView) } catch { }
+    try { dashboardView.setVisible(false) } catch { }
+    return { success: true }
+  } catch {
+    return { success: false }
+  }
+})
+
+// Open DevTools for the dashboard view specifically (detached)
+ipcMain.handle('dashboard-open-devtools', async () => {
+  try {
+    if (!dashboardView) return { success: false, error: 'No dashboard view' }
+    try { dashboardView.webContents.openDevTools({ mode: 'detach' }) } catch {
+      dashboardView.webContents.openDevTools()
+    }
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 })

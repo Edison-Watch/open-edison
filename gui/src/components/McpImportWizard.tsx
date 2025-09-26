@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import wizardApiService from '../services/wizardApi';
+import ClientLogo from './ClientLogo';
 
 interface ServerConfig {
   name: string;
@@ -45,13 +46,13 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [previewData, setPreviewData] = useState<any>(null);
   const [activePreviewTab, setActivePreviewTab] = useState(0);
   const [autoImport, setAutoImport] = useState<boolean | null>(null);
-  
+
   // New state for export/replace step
   const [replaceClients, setReplaceClients] = useState<string[]>([]);
   const [replaceResults, setReplaceResults] = useState<any>(null);
   const [backupInfo, setBackupInfo] = useState<any>(null);
   const [showReplacePreview, setShowReplacePreview] = useState(false);
-  
+
   // Verification state
   const [verificationResults, setVerificationResults] = useState<Record<string, 'pending' | 'success' | 'failed'>>({});
 
@@ -73,10 +74,10 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const data = await wizardApiService.detectClients();
-      
+
       if (data.success) {
         setAvailableClients(data.clients.sort());
         if (data.clients.length === 0) {
@@ -96,8 +97,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   };
 
   const handleClientToggle = (client: string) => {
-    setSelectedClients(prev => 
-      prev.includes(client) 
+    setSelectedClients(prev =>
+      prev.includes(client)
         ? prev.filter(c => c !== client)
         : [...prev, client]
     );
@@ -159,14 +160,14 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const data = await wizardApiService.importServers({
         clients: selectedClients,
         dry_run: dryRun,
         skip_oauth: skipOAuth,
       });
-      
+
       if (data.success) {
         setImportedServers(data.servers);
         setSelectedServers(data.servers); // Select all by default
@@ -200,25 +201,25 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     // Initialize all servers as pending
     const initialResults: Record<string, 'pending' | 'success' | 'failed'> = {};
     selectedServers.forEach(server => {
       initialResults[server.name] = 'pending';
     });
     setVerificationResults(initialResults);
-    
+
     try {
       const data = await wizardApiService.verifyServers({
         servers: selectedServers,
       });
-      
+
       // Debug: Log the API response
       console.log('Verification API response:', data);
       console.log('data.success:', data.success);
       console.log('data.results:', data.results);
       console.log('data.message:', data.message);
-      
+
       // Always update results based on individual server results, regardless of overall success
       const updatedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
       selectedServers.forEach(server => {
@@ -227,21 +228,21 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         console.log(`Server ${server.name} result === true:`, serverResult === true);
         updatedResults[server.name] = serverResult === true ? 'success' : 'failed';
       });
-      
+
       console.log('Final updatedResults:', updatedResults);
       setVerificationResults(updatedResults);
-      
+
       // Check if any servers succeeded
       const successCount = Object.values(updatedResults).filter(status => status === 'success').length;
       const failureCount = Object.values(updatedResults).filter(status => status === 'failed').length;
-      
+
       // Always show verification completed message
       setSuccessMessage(`Verification completed: ${successCount} succeeded, ${failureCount} failed`);
-      
+
       if (successCount > 0 && failureCount === 0) {
         // All servers succeeded, clear any errors and auto-advance
         setError(null);
-        
+
         // Move to next step after a short delay to show results
         setTimeout(() => {
           setStep(5);
@@ -290,7 +291,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       resource_permissions: {},
       prompt_permissions: {}
     };
-    
+
     setPreviewData(previewData);
     setShowPreview(true);
   };
@@ -299,7 +300,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       if (dryRun) {
         // In dry run mode, skip the actual save and just show success
@@ -310,13 +311,13 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           servers: selectedServers,
           dry_run: dryRun,
         });
-        
+
         if (data.success) {
           // Move to replace step instead of completing
           setStep(6);
         } else {
           setError(data.message);
-        setSuccessMessage(null);
+          setSuccessMessage(null);
         }
       }
     } catch (err) {
@@ -331,10 +332,10 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const data = await wizardApiService.getBackupInfo();
-      
+
       if (data.success) {
         setBackupInfo(data.backups);
         // Initialize replace clients with the clients that were originally selected for import
@@ -352,8 +353,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   };
 
   const handleReplaceClientToggle = (client: string) => {
-    setReplaceClients(prev => 
-      prev.includes(client) 
+    setReplaceClients(prev =>
+      prev.includes(client)
         ? prev.filter(c => c !== client)
         : [...prev, client]
     );
@@ -363,7 +364,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const response = await wizardApiService.replaceMcpServers({
         clients: replaceClients,
@@ -374,7 +375,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         force: false,
         create_if_missing: true
       });
-      
+
       if (response.success) {
         setReplaceResults(response.results);
         setError(null);
@@ -399,14 +400,14 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const response = await wizardApiService.restoreClients({
         clients: replaceClients,
         server_name: 'open-edison',
         dry_run: dryRun
       });
-      
+
       if (response.success) {
         setError(null);
         if (dryRun) {
@@ -451,14 +452,14 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           Welcome to Open Edison! 🎉
         </h2>
         <p style={{ color: '#7f8c8d', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
-          We've detected that this is the first time you're running our tool. 
+          We've detected that this is the first time you're running our tool.
           We'd like to help you set it up quickly and easily.
         </p>
         <p style={{ color: '#2c3e50', fontSize: '1rem', lineHeight: '1.5', marginBottom: '2rem' }}>
           Would you like to automatically import your MCP servers from other tools like Cursor, VSCode, Claude Desktop, or Claude Code?
         </p>
       </div>
-      
+
       <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
           onClick={() => handleWelcomeChoice(true)}
@@ -495,10 +496,10 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           No, Skip for Now
         </button>
       </div>
-      
-      <p style={{ 
-        color: '#7f8c8d', 
-        fontSize: '0.875rem', 
+
+      <p style={{
+        color: '#7f8c8d',
+        fontSize: '0.875rem',
         marginTop: '1.5rem',
         fontStyle: 'italic'
       }}>
@@ -527,6 +528,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       checked={selectedClients.includes(client)}
                       onChange={() => handleClientToggle(client)}
                     />
+                    <ClientLogo name={client} size={18} />
                     <span style={{ textTransform: 'capitalize' }}>{client}</span>
                   </label>
                 ))}
@@ -605,7 +607,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     // Group servers by client
     const renderClientSection = (client: string) => {
       const clientServers = importedServers.filter(server => server.client === client);
-      
+
       // If no servers found for this client, show a message
       if (clientServers.length === 0) {
         return (
@@ -630,7 +632,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         );
       }
       const isExpanded = true; // Always expanded for now
-      
+
       return (
         <div key={client} style={{ marginBottom: '1rem' }}>
           <div style={{
@@ -651,24 +653,24 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
               {clientServers.length} server{clientServers.length !== 1 ? 's' : ''}
             </span>
           </div>
-          
+
           {isExpanded && (
-            <div style={{ 
-              marginTop: '0.5rem', 
+            <div style={{
+              marginTop: '0.5rem',
               paddingLeft: '1rem',
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '0.5rem' 
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem'
             }}>
               {clientServers.map(server => {
                 const isSelected = selectedServers.includes(server);
                 return (
-                  <label key={server.name} style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '0.5rem', 
-                    padding: '0.5rem', 
-                    border: '1px solid #bdc3c7', 
+                  <label key={server.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.5rem',
+                    border: '1px solid #bdc3c7',
                     borderRadius: '4px',
                     opacity: isSelected ? 0.6 : 1,
                     backgroundColor: isSelected ? '#f8f9fa' : 'transparent'
@@ -780,8 +782,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
                         {client}: {server.name}
                       </div>
-                      <div style={{ 
-                        fontSize: '0.875rem', 
+                      <div style={{
+                        fontSize: '0.875rem',
                         color: getStatusColor(status),
                         fontWeight: 'bold'
                       }}>
@@ -789,9 +791,9 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       </div>
                     </div>
                     {status === 'pending' && (
-                      <div style={{ 
-                        width: '20px', 
-                        height: '20px', 
+                      <div style={{
+                        width: '20px',
+                        height: '20px',
                         border: '2px solid #f39c12',
                         borderTop: '2px solid transparent',
                         borderRadius: '50%',
@@ -830,16 +832,16 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
                         Tool: {client} | Server: {server.name}
                       </div>
-                      <div style={{ 
-                        fontSize: '0.875rem', 
+                      <div style={{
+                        fontSize: '0.875rem',
                         color: getStatusColor(status),
                         fontWeight: 'bold'
                       }}>
                         Status: {getStatusText(status)}
                       </div>
                       {status === 'failed' && (
-                        <div style={{ 
-                          fontSize: '0.75rem', 
+                        <div style={{
+                          fontSize: '0.75rem',
                           color: '#7f8c8d',
                           marginTop: '0.25rem'
                         }}>
@@ -892,29 +894,29 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         Ready to save {selectedServers.length} server(s) to your Open Edison configuration.
       </p>
       {dryRun && (
-        <div style={{ 
-          background: '#fff3cd', 
-          border: '1px solid #ffeaa7', 
-          borderRadius: '4px', 
-          padding: '0.75rem', 
+        <div style={{
+          background: '#fff3cd',
+          border: '1px solid #ffeaa7',
+          borderRadius: '4px',
+          padding: '0.75rem',
           marginBottom: '1rem',
           color: '#856404'
         }}>
           <strong>Dry Run Mode:</strong> No changes will be saved to your configuration.
         </div>
       )}
-      
+
       {/* Preview Section */}
       {showPreview && previewData && (
-        <div style={{ 
+        <div style={{
           marginBottom: '1rem',
           border: '1px solid #bdc3c7',
           borderRadius: '8px',
           overflow: 'hidden'
         }}>
-          <div style={{ 
-            background: '#f8f9fa', 
-            padding: '1rem', 
+          <div style={{
+            background: '#f8f9fa',
+            padding: '1rem',
             borderBottom: '1px solid #bdc3c7',
             display: 'flex',
             justifyContent: 'space-between',
@@ -934,7 +936,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
               ×
             </button>
           </div>
-          
+
           {/* Tabs for different config files */}
           <div style={{ display: 'flex', borderBottom: '1px solid #bdc3c7' }}>
             {['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'].map((fileName, index) => (
@@ -956,17 +958,17 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
               </button>
             ))}
           </div>
-          
+
           {/* Preview Content */}
-          <div style={{ 
-            padding: '1rem', 
-            maxHeight: '400px', 
+          <div style={{
+            padding: '1rem',
+            maxHeight: '400px',
             overflowY: 'auto',
             background: '#f8f9fa'
           }}>
-            <pre style={{ 
-              margin: 0, 
-              fontSize: '0.875rem', 
+            <pre style={{
+              margin: 0,
+              fontSize: '0.875rem',
               lineHeight: '1.4',
               color: '#2c3e50',
               whiteSpace: 'pre-wrap',
@@ -975,9 +977,9 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
               {(() => {
                 const fileNames = ['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'];
                 const currentFile = fileNames[activePreviewTab];
-                
+
                 if (!previewData) return 'No preview data available';
-                
+
                 // Show different data based on the active tab
                 switch (activePreviewTab) {
                   case 0: // config.json
@@ -996,7 +998,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           </div>
         </div>
       )}
-      
+
       <div style={{ display: 'flex', gap: '1rem' }}>
         <button
           onClick={showPreviewData}
@@ -1052,13 +1054,13 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       <p style={{ marginBottom: '1rem', color: '#7f8c8d', fontSize: '0.875rem' }}>
         <strong>Note:</strong> Only the clients you originally selected for import are shown below.
       </p>
-      
+
       {dryRun && (
-        <div style={{ 
-          background: '#fff3cd', 
-          border: '1px solid #ffeaa7', 
-          borderRadius: '4px', 
-          padding: '0.75rem', 
+        <div style={{
+          background: '#fff3cd',
+          border: '1px solid #ffeaa7',
+          borderRadius: '4px',
+          padding: '0.75rem',
           marginBottom: '1rem',
           color: '#856404'
         }}>
@@ -1073,7 +1075,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
             Select which MCP clients to replace with Open Edison:
           </p>
-          
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
             {selectedClients.map(client => (
               <label key={client} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '4px' }}>
@@ -1083,7 +1085,10 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                   onChange={() => handleReplaceClientToggle(client)}
                 />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>{client}</div>
+                  <div style={{ fontWeight: 'bold', textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <ClientLogo name={client} size={18} />
+                    {client}
+                  </div>
                   {backupInfo && backupInfo[client] && (
                     <div style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>
                       {backupInfo[client].has_backup ? (
@@ -1099,15 +1104,15 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           </div>
 
           {replaceResults && (
-            <div style={{ 
+            <div style={{
               marginBottom: '1rem',
               border: '1px solid #bdc3c7',
               borderRadius: '8px',
               overflow: 'hidden'
             }}>
-              <div style={{ 
-                background: '#f8f9fa', 
-                padding: '1rem', 
+              <div style={{
+                background: '#f8f9fa',
+                padding: '1rem',
                 borderBottom: '1px solid #bdc3c7',
                 fontWeight: 'bold'
               }}>
@@ -1147,7 +1152,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             >
               {loading ? 'Replacing...' : `Replace MCP Servers (${replaceClients.length})`}
             </button>
-            
+
             <button
               onClick={restoreMcpServers}
               disabled={loading || replaceClients.length === 0}
@@ -1268,7 +1273,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             >
               ‹
             </button>
-            
+
             {/* Step circles */}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               {[0, 1, 2, 3, 4, 5, 6].map(stepNum => (
@@ -1296,7 +1301,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                 </button>
               ))}
             </div>
-            
+
             {/* Next arrow */}
             <button
               onClick={goToNextStep}

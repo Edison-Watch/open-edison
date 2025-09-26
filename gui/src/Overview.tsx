@@ -40,6 +40,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [ngrokErrorMessage, setNgrokErrorMessage] = useState<string | null>(null);
   const [ngrokHealth, setNgrokHealth] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  const [autoScroll, setAutoScroll] = useState(true);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -161,21 +162,32 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       emailBody += `Server Status: ${serverMcpStatus.running ? 'Online' : 'Offline'}\n`;
       emailBody += `API Status: ${serverApiStatus.running ? 'Online' : 'Offline'}\n\n`;
 
+      // Build logs text for attachment if requested
+      let logsText: string | undefined = undefined;
       if (includeDebugLogs) {
-        emailBody += `Debug Logs:\n`;
-        emailBody += `================\n`;
-        emailBody += logs.map(log => `[${log.timestamp}] ${log.message}`).join('\n');
-        emailBody += `\n\n`;
+        logsText = logs.map(log => `[${log.timestamp}] (${log.type}) ${log.message}`).join('\n');
       }
 
-      // Create mailto link
-      const mailtoLink = `mailto:support@edison.watch?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
-
-      // Open default email client
-      window.open(mailtoLink, '_blank');
-
-      addLog('Help request prepared! Your default email client should open with the message ready to send.');
-      addLog('Please review and send the email to support@edison.watch');
+      // Prefer native composition with attachment via Electron IPC
+      if (window.electronAPI && window.electronAPI.composeHelpEmail) {
+        const result = await window.electronAPI.composeHelpEmail(subject, emailBody, includeDebugLogs, logsText);
+        if (result && result.success) {
+          addLog('Help request prepared in your email client. Please review and send.');
+          if (result.attachmentPath) {
+            addLog(`Attached logs file: ${result.attachmentPath}`);
+          }
+        } else {
+          // Fallback to mailto if IPC failed
+          const mailtoLink = `mailto:support@edison.watch?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+          window.open(mailtoLink, '_blank');
+          addLog('Fallback: opened default email client without attachment.');
+        }
+      } else {
+        // Fallback path if preload not available
+        const mailtoLink = `mailto:support@edison.watch?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+        window.open(mailtoLink, '_blank');
+        addLog('Fallback: opened default email client without attachment.');
+      }
 
     } catch (error) {
       addLog('Error preparing help request. Please try again.');
@@ -355,6 +367,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     }
   }, []);
 
+  // Ref to the logs container for autoscroll
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
+
   // Store the current ngrok process ID in a ref to avoid stale closures
   const ngrokProcessRef = useRef<any>(null);
   const ngrokRunningRef = useRef<boolean>(false);
@@ -481,6 +496,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       message
     };
   });
+
+  // Auto-scroll logs to bottom when enabled
+  useEffect(() => {
+    if (!autoScroll) return;
+    const container = logsContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, [logs, logsExpanded, showLogsSection, autoScroll]);
 
   // Disable ngrok run when missing token or domain
   const isRunNgrokDisabled = ngrokRunning || !ngrokAuthToken.trim() || !ngrokDomain.trim();
@@ -1072,10 +1095,33 @@ endpoints:
                   <option value="error">Error</option>
                 </select>
               </div>
+
+              {/* Autoscroll toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Autoscroll:</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                  <input
+                    type="radio"
+                    name="autoscroll"
+                    checked={autoScroll}
+                    onChange={() => setAutoScroll(true)}
+                  />
+                  On
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', color: '#7f8c8d' }}>
+                  <input
+                    type="radio"
+                    name="autoscroll"
+                    checked={!autoScroll}
+                    onChange={() => setAutoScroll(false)}
+                  />
+                  Off
+                </label>
+              </div>
             </div>
 
             {/* Logs Display */}
-            <div style={{
+            <div ref={logsContainerRef} style={{
               background: '#2c3e50',
               color: '#ecf0f1',
               padding: '1rem',

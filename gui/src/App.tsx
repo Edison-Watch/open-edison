@@ -28,7 +28,7 @@ const App: React.FC = () => {
 
     checkWizardMode();
     window.addEventListener('popstate', checkWizardMode);
-    
+
     return () => {
       window.removeEventListener('popstate', checkWizardMode);
     };
@@ -59,7 +59,7 @@ const App: React.FC = () => {
         // Capture ALL logs (both stderr and stdout) for complete debugging
         const timestamp = new Date().toLocaleTimeString();
         let message = log.message.trim();
-        
+
         // Extract just the message part (after the last "-") for stderr
         if (log.type === 'stderr' && message.includes(' - ')) {
           const lastDashIndex = message.lastIndexOf(' - ');
@@ -67,7 +67,7 @@ const App: React.FC = () => {
             message = message.substring(lastDashIndex + 3);
           }
         }
-        
+
         const logEntry = {
           timestamp,
           message,
@@ -154,39 +154,49 @@ const App: React.FC = () => {
         >
           Dashboard
         </button>
+        {activeTab === 'dashboard' && window.electronAPI?.guiMode === 'development' && (
+          <button
+            onClick={() => { try { window.electronAPI?.openDashboardDevTools?.() } catch { } }}
+            style={{
+              marginLeft: 'auto',
+              padding: '0.5rem 0.75rem',
+              background: '#555a',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.875rem'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#666' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#555a' }}
+            title="Open Dashboard DevTools"
+          >
+            DevTools
+          </button>
+        )}
       </div>
 
       {/* Content */}
-      <div style={{ height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
-        {activeTab === 'overview' && <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />}
+      <div style={{ height: 'calc(100vh - 120px)', overflow: 'hidden', position: 'relative' }}>
+        {activeTab === 'overview' && (
+          <div
+            style={{ width: '100%', height: '100%' }}
+            ref={(_el) => {
+              try { window.electronAPI?.hideDashboard?.() } catch { }
+            }}
+          >
+            <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />
+          </div>
+        )}
         {activeTab === 'dashboard' && (
-          <iframe
-            src={(() => {
-              const host = serverConfig?.host || 'localhost'
-              const port = (serverConfig?.port || 3000) + 1
-              const key = serverConfig?.api_key || 'dev-api-key-change-me'
-              const qp = new URLSearchParams({ api_key: key }).toString()
-              return `http://${host}:${port}/dashboard?${qp}`
-            })()}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-            title="Open Edison Dashboard"
-            allow="storage-access *; localStorage *; sessionStorage *;"
-            onLoad={(e) => {
-              // Inject API key into the iframe
-              try {
-                const iframe = e.target as HTMLIFrameElement;
-                if (iframe.contentWindow) {
-                  // Inject a script that sets the API key globally
-                  const apiKey = serverConfig?.api_key || 'dev-api-key-change-me';
-                  const script = `
-                    window.OPEN_EDISON_API_KEY = ${JSON.stringify(apiKey)};
-                    try { localStorage.setItem('api_key', ${JSON.stringify(apiKey)}); } catch {}
-                  `;
-                  (iframe.contentWindow as any).eval(script);
-                }
-              } catch (error) {
-                console.error('Failed to inject API key into iframe:', error);
-              }
+          <div
+            style={{ position: 'absolute', inset: 0, top: 0, left: 0, right: 0, bottom: 0 }}
+            ref={(el) => {
+              if (!el) return
+              const rect = el.getBoundingClientRect()
+              // Place the dashboard view below the tabs/header area only
+              const headerOffset = 0
+              window.electronAPI?.showDashboard?.({ x: 0, y: 0 + headerOffset, width: Math.round(rect.width), height: Math.round(rect.height) })
             }}
           />
         )}

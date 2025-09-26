@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Open Edison Desktop</title>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem: app: http: https: ws: wss:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: app: http: https:; style-src * 'self' 'unsafe-inline' data: blob: app: http: https:; img-src * data: blob: app: http: https:; font-src * data: blob: app: http: https:; connect-src * data: blob: app: http: https: ws: wss:; media-src * data: blob: app: http: https:; frame-src * app: http: https:; frame-ancestors *; child-src * data: blob: app: http: https:; worker-src * data: blob: app: http: https:;">
     <style>
         * {
             margin: 0;
@@ -22,9 +25,15 @@
             height: 100vh;
         }
     </style>
+    <script>
+        // Opt-in to Electron's webview tag in this renderer (satisfies TSX runtime too)
+        // Note: Actual enablement is via BrowserWindow.webPreferences.webviewTag = true
+    </script>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 </body>
+
 </html>
