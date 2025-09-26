@@ -39,6 +39,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [ngrokRunning, setNgrokRunning] = useState(false);
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [ngrokErrorMessage, setNgrokErrorMessage] = useState<string | null>(null);
+  const [ngrokHealth, setNgrokHealth] = useState<'unknown' | 'online' | 'offline'>('unknown');
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -279,6 +280,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       setNgrokProcess(null);
       setNgrokRunning(false);
       setNgrokUrl('');
+      setNgrokHealth('offline');
     } catch (error) {
       console.error('Error in stopNgrok:', error);
       addLog(`Error stopping ngrok: ${error}`);
@@ -293,6 +295,45 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Check ngrok health
+  const checkNgrokHealth = async () => {
+    try {
+      if (!ngrokUrl) {
+        setNgrokHealth('offline');
+        return;
+      }
+      // Try known endpoints in order
+      const candidates = [
+        `${ngrokUrl}/mcp/status`,
+        `${ngrokUrl}/health`,
+        `${ngrokUrl}/mcp/`
+      ];
+      for (const url of candidates) {
+        try {
+          const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+          if (resp.ok) {
+            setNgrokHealth('online');
+            return;
+          }
+        } catch {}
+      }
+      setNgrokHealth('offline');
+    } catch {
+      setNgrokHealth('offline');
+    }
+  };
+
+  // Poll ngrok health while running
+  useEffect(() => {
+    if (!ngrokRunning || !ngrokUrl) {
+      setNgrokHealth('offline');
+      return;
+    }
+    checkNgrokHealth();
+    const interval = setInterval(checkNgrokHealth, 5000);
+    return () => clearInterval(interval);
+  }, [ngrokRunning, ngrokUrl]);
 
   // Cleanup ngrok process on component unmount
   useEffect(() => {
@@ -468,6 +509,18 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
           border: `1px solid ${serverMcpStatus.running ? '#27ae60' : '#e74c3c'}`
         }}>
           {serverMcpStatus.running ? '✅ Server is online 🛡️' : '❌ Server is offline'}
+          {serverMcpStatus.running && ngrokRunning && (
+            <div style={{
+              marginTop: '0.5rem',
+              fontWeight: '400',
+              color: ngrokHealth === 'online' ? '#2c3e50' : '#7f8c8d'
+            }}>
+              {ngrokHealth === 'online' ? '🌐 Open Edison is listening on ngrok URL' : '🌐 Checking ngrok availability...'}
+              {ngrokUrl ? (
+                <span> — <code style={{ background: '#f8f9fa', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{ngrokUrl}/mcp/</code></span>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
