@@ -441,6 +441,9 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     };
   });
 
+  // Disable ngrok run when missing token or domain
+  const isRunNgrokDisabled = ngrokRunning || !ngrokAuthToken.trim() || !ngrokDomain.trim();
+
   return (
     <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
       {/* Server Control Section */}
@@ -702,25 +705,25 @@ brew install ngrok
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   onClick={startNgrok}
-                  disabled={ngrokRunning}
+                  disabled={isRunNgrokDisabled}
                   style={{
-                    background: ngrokRunning ? '#95a5a6' : '#27ae60',
+                    background: isRunNgrokDisabled ? '#95a5a6' : '#27ae60',
                     color: 'white',
                     border: 'none',
                     padding: '0.75rem 1.5rem',
                     borderRadius: '6px',
-                    cursor: ngrokRunning ? 'not-allowed' : 'pointer',
+                    cursor: isRunNgrokDisabled ? 'not-allowed' : 'pointer',
                     fontSize: '0.875rem',
                     fontWeight: '500',
                     transition: 'all 0.3s ease'
                   }}
                   onMouseEnter={(e) => {
-                    if (!ngrokRunning) {
+                    if (!isRunNgrokDisabled) {
                       e.currentTarget.style.background = '#229954';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!ngrokRunning) {
+                    if (!isRunNgrokDisabled) {
                       e.currentTarget.style.background = '#27ae60';
                     }
                   }}
