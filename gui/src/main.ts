@@ -13,7 +13,7 @@ let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
-const DASHBOARD_HEADER_OFFSET_DIP = 120
+const DASHBOARD_HEADER_OFFSET_DIP = 54
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 

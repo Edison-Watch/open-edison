@@ -108,17 +108,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        background: '#2c3e50',
-        color: 'white',
-        padding: '1rem',
-        textAlign: 'center',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: '600' }}>Open Edison Desktop</h1>
-      </div>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
 
       {/* Tabs */}
       <div style={{ display: 'flex', background: '#34495e', borderBottom: '1px solid #2c3e50' }}>
@@ -154,7 +144,7 @@ const App: React.FC = () => {
         >
           Dashboard
         </button>
-        {activeTab === 'dashboard' && window.electronAPI?.guiMode === 'development' && (
+        {activeTab === 'dashboard' && ((window.electronAPI as any)?.guiMode === 'development') && (
           <button
             onClick={() => { try { window.electronAPI?.openDashboardDevTools?.() } catch { } }}
             style={{
@@ -177,7 +167,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div style={{ height: 'calc(100vh - 120px)', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {activeTab === 'overview' && (
           <div
             style={{ width: '100%', height: '100%' }}
@@ -194,9 +184,13 @@ const App: React.FC = () => {
             ref={(el) => {
               if (!el) return
               const rect = el.getBoundingClientRect()
-              // Place the dashboard view below the tabs/header area only
-              const headerOffset = 0
-              window.electronAPI?.showDashboard?.({ x: 0, y: 0 + headerOffset, width: Math.round(rect.width), height: Math.round(rect.height) })
+              // Position the dashboard view to match the container below the tabs
+              window.electronAPI?.showDashboard?.({
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+              })
             }}
           />
         )}
