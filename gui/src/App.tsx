@@ -116,7 +116,7 @@ const App: React.FC = () => {
           onClick={() => switchTab('overview')}
           style={{
             flex: 1,
-            padding: '1rem',
+            padding: '0.5rem',
             background: activeTab === 'overview' ? '#2c3e50' : '#34495e',
             color: activeTab === 'overview' ? 'white' : '#bdc3c7',
             border: 'none',
@@ -132,7 +132,7 @@ const App: React.FC = () => {
           onClick={() => switchTab('dashboard')}
           style={{
             flex: 1,
-            padding: '1rem',
+            padding: '0.5rem',
             background: activeTab === 'dashboard' ? '#2c3e50' : '#34495e',
             color: activeTab === 'dashboard' ? 'white' : '#bdc3c7',
             border: 'none',
