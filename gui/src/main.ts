@@ -13,7 +13,7 @@ let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
-const DASHBOARD_HEADER_OFFSET_DIP = 54
+const DASHBOARD_HEADER_OFFSET_DIP = 38
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
@@ -648,7 +648,7 @@ app.whenReady().then(() => {
         "media-src * data: blob: app: http: https:; " +
         "frame-src * app: http: https:; " +
         "frame-ancestors *; child-src * data: blob: app: http: https:; worker-src * data: blob: app: http: https:;"
-      headers['Content-Security-Policy'] = [cspValue]
+      headers['Content-Security-Policy'] = cspValue
       callback({ responseHeaders: headers })
     })
   }
