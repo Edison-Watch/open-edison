@@ -2,7 +2,7 @@ import contextlib
 
 from PyInstaller.utils.hooks import copy_metadata
 
-datas = []
+datas: list[tuple[str, str]] = []
 
 for pkg in [
     "fastmcp",
