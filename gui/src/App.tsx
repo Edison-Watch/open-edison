@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './theme.css'
 import Overview from './Overview';
 import McpImportWizard from './components/McpImportWizard';
 
@@ -14,6 +15,15 @@ const App: React.FC = () => {
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [isWizardMode, setIsWizardMode] = useState(false);
   const [serverConfig, setServerConfig] = useState<{ host: string; port: number; api_key?: string } | null>(null);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    let stored: 'dark' | 'light' | null = null
+    try {
+      const raw = window.localStorage?.getItem('app-theme')
+      if (raw === 'dark' || raw === 'light') stored = raw
+    } catch { /* localStorage may be unavailable under restrictive CSP */ }
+    if (stored) return stored
+    return 'light'
+  })
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
@@ -33,6 +43,12 @@ const App: React.FC = () => {
       window.removeEventListener('popstate', checkWizardMode);
     };
   }, []);
+
+  // Apply theme to <html> attribute and persist
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try { window.localStorage?.setItem('app-theme', theme) } catch { }
+  }, [theme])
 
   // Fetch server configuration
   useEffect(() => {
@@ -108,22 +124,22 @@ const App: React.FC = () => {
   }
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--text-primary)' }}>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', background: '#34495e', borderBottom: '1px solid #2c3e50' }}>
+      <div style={{ display: 'flex', background: 'var(--tab-bg)', borderBottom: '1px solid var(--tab-border)' }}>
         <button
           onClick={() => switchTab('overview')}
           style={{
             flex: 1,
             padding: '0.5rem',
-            background: activeTab === 'overview' ? '#2c3e50' : '#34495e',
-            color: activeTab === 'overview' ? 'white' : '#bdc3c7',
+            background: activeTab === 'overview' ? 'var(--tab-active)' : 'var(--tab-bg)',
+            color: activeTab === 'overview' ? 'var(--tab-active-text)' : 'var(--tab-inactive-text)',
             border: 'none',
             cursor: 'pointer',
             fontSize: '1rem',
             transition: 'all 0.3s ease',
-            borderBottom: activeTab === 'overview' ? '3px solid #3498db' : '3px solid transparent'
+            borderBottom: activeTab === 'overview' ? '3px solid var(--accent)' : '3px solid transparent'
           }}
         >
           Overview
@@ -133,16 +149,34 @@ const App: React.FC = () => {
           style={{
             flex: 1,
             padding: '0.5rem',
-            background: activeTab === 'dashboard' ? '#2c3e50' : '#34495e',
-            color: activeTab === 'dashboard' ? 'white' : '#bdc3c7',
+            background: activeTab === 'dashboard' ? 'var(--tab-active)' : 'var(--tab-bg)',
+            color: activeTab === 'dashboard' ? 'var(--tab-active-text)' : 'var(--tab-inactive-text)',
             border: 'none',
             cursor: 'pointer',
             fontSize: '1rem',
             transition: 'all 0.3s ease',
-            borderBottom: activeTab === 'dashboard' ? '3px solid #3498db' : '3px solid transparent'
+            borderBottom: activeTab === 'dashboard' ? '3px solid var(--accent)' : '3px solid transparent'
           }}
         >
           Dashboard
+        </button>
+        <button
+          onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }}
+          title="Toggle theme"
+          style={{
+            marginLeft: 'auto',
+            padding: '0.25rem 0.5rem',
+            background: 'var(--button-bg)',
+            color: 'var(--button-text)',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '0.875rem'
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--button-bg-hover)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--button-bg)' }}
+        >
+          {theme === 'dark' ? 'Light' : 'Dark'} mode
         </button>
         {activeTab === 'dashboard' && ((window.electronAPI as any)?.guiMode === 'development') && (
           <button

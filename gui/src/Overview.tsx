@@ -509,16 +509,16 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const isRunNgrokDisabled = ngrokRunning || !ngrokAuthToken.trim() || !ngrokDomain.trim();
 
   return (
-    <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '2rem', background: 'var(--panel-bg)', height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
       {/* Server Control Section */}
       <div style={{
-        background: 'white',
+        background: 'var(--panel-bg)',
         borderRadius: '8px',
         padding: '2rem',
         marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        border: '1px solid var(--panel-border)'
       }}>
-        <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
+        <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem', fontSize: '1.25rem' }}>
           Server Status
         </h2>
 
