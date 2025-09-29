@@ -487,6 +487,13 @@ electron_dist: sync_gui_version ## Build Electron distribution (requires pyinsta
 	@cd gui && npm run dist
 	@echo "$(GREEN)✅ Electron app built to gui/release/$(RESET)"
 
+.PHONY: electron_dist_env notarize_dmg
+
+# Load environment variables from .env and run electron_dist (enables notarization)
+electron_dist_env: sync_gui_version ## Load .env then build Electron distribution (sign/notarize if configured)
+	@echo "$(YELLOW)📦 Loading environment from .env and building Electron app...$(RESET)"
+	@set -a; [ -f ".env" ] && . ./.env; set +a; $(MAKE) electron_dist
+
 electron_dist_clean: pyinstall_clean ## Clean Electron distribution outputs
 	@echo "$(YELLOW)🧹 Cleaning Electron distribution artifacts...$(RESET)"
 	@rm -rf gui/extraResources/backend
