@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('wizard-closed', () => callback())
   },
   reinitializeMcp: () => ipcRenderer.invoke('reinitialize-mcp'),
+  validateMcp: (payload: { name?: string; command: string; args?: string[]; env?: Record<string, string>; timeout_s?: number }) =>
+    ipcRenderer.invoke('validate-mcp', payload),
+  addMcpServer: (payload: { name: string; command: string; args?: string[]; env?: Record<string, string> }) =>
+    ipcRenderer.invoke('add-mcp-server', payload),
 
   // Setup Wizard API log listener
   onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -133,6 +137,8 @@ declare global {
       wizardCompleted: () => Promise<{ success: boolean }>
       onWizardClosed: (callback: () => void) => void
       reinitializeMcp: () => Promise<{ ok: boolean; status?: number; error?: string }>
+      validateMcp: (payload: { name?: string; command: string; args?: string[]; env?: Record<string, string>; timeout_s?: number }) => Promise<{ ok: boolean; status?: number; data?: any; error?: string }>
+      addMcpServer: (payload: { name: string; command: string; args?: string[]; env?: Record<string, string> }) => Promise<{ ok: boolean; error?: string }>
       spawnProcess: (command: string, args: string[], env: any) => Promise<any>
       terminateProcess: (processId: any) => Promise<void>
       composeHelpEmail: (subject: string, body: string, attachLogs?: boolean, logsText?: string) => Promise<{ success: boolean; attachmentPath?: string; error?: string }>

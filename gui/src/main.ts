@@ -1333,6 +1333,76 @@ ipcMain.handle('reinitialize-mcp', async () => {
   }
 })
 
+// IPC: Validate an MCP server definition via backend HTTP (avoids CORS)
+ipcMain.handle('validate-mcp', async (_event, payload: { name?: string; command: string; args?: string[]; env?: Record<string, string>; timeout_s?: number }) => {
+  try {
+    // Ensure the Wizard API is running (it serves /verify)
+    const { host } = await readServerConfig()
+    await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+    const url = `http://${host || 'localhost'}:${SETUP_WIZARD_API_PORT}/verify`
+    const headers: Record<string, string> = { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+    const body = JSON.stringify({
+      servers: [
+        {
+          name: payload.name || 'validation',
+          command: payload.command,
+          args: payload.args || [],
+          env: payload.env || {},
+          enabled: true
+        }
+      ]
+    })
+    const res = await fetch(url, { method: 'POST', headers, body })
+    const data = await res.json().catch(() => ({}))
+    // Map Wizard response to validate shape { data.valid, data.error }
+    const firstName = payload.name || 'validation'
+    const valid = Boolean(data && data.results && data.results[firstName])
+    return { ok: res.ok, status: res.status, data: { valid, raw: data } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
+// IPC: Add MCP server to config.json and request reinitialize
+ipcMain.handle('add-mcp-server', async (_event, payload: { name: string; command: string; args?: string[]; env?: Record<string, string> }) => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try { raw = await readFile(configPath, 'utf8') } catch {}
+    let config: any
+    try { config = JSON.parse(raw || '{}') } catch { config = {} }
+    if (!config || typeof config !== 'object') config = {}
+    if (!Array.isArray(config.mcp_servers)) config.mcp_servers = []
+
+    const existingIdx = config.mcp_servers.findIndex((s: any) => s && s.name === payload.name)
+    const entry = {
+      name: payload.name,
+      command: payload.command,
+      args: Array.isArray(payload.args) ? payload.args : [],
+      env: payload.env || {},
+      enabled: true
+    }
+    if (existingIdx >= 0) config.mcp_servers[existingIdx] = entry
+    else config.mcp_servers.push(entry)
+
+    await writeFile(configPath, JSON.stringify(config, null, 2), 'utf8')
+
+    // trigger reinitialize
+    try {
+      const { host, port, api_key } = await readServerConfig()
+      const apiPort = (typeof port === 'number' ? port + 1 : 3001)
+      const url = `http://${host || 'localhost'}:${apiPort}/mcp/reinitialize`
+      const headers: Record<string, string> = { 'Accept': 'application/json' }
+      if (api_key) headers['Authorization'] = `Bearer ${api_key}`
+      await fetch(url, { method: 'POST', headers }).catch(() => {})
+    } catch {}
+
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
 // IPC handlers for persisting ngrok settings
 ipcMain.handle('get-ngrok-settings', async () => {
   try {
