@@ -40,7 +40,7 @@ export default defineConfig(({ command }) => {
             preload: resolve(__dirname, 'src/preload.ts'),
             index: resolve(__dirname, 'src/index.html')
           },
-          external: ['electron', 'child_process', 'fs', 'fs/promises', 'path', 'url'],
+          external: ['electron', 'child_process', 'fs', 'fs/promises', 'path', 'url', 'electron-updater'],
           output: {
             format: 'cjs', // Output CommonJS for Electron
             entryFileNames: (chunkInfo) => {
