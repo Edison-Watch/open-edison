@@ -596,9 +596,12 @@ export function App(): React.JSX.Element {
                         <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
-                    <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
-                        {theme === 'light' ? 'Dark' : 'Light'} mode
-                    </button>
+                    {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
+                    {!(window as any).__ELECTRON_EMBED__ && (new URLSearchParams(location.search).get('embed') !== 'electron') && (
+                        <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
+                            {theme === 'light' ? 'Dark' : 'Light'} mode
+                        </button>
+                    )}
                     <button className="button" onClick={() => location.reload()}>Refresh</button>
                 </div>
             </div>

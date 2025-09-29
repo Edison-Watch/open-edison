@@ -1296,7 +1296,7 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const urlInfo = await readServerConfig()
     const host = urlInfo.host || 'localhost'
     // Force dashboard to backend HTTP port 3001 regardless of config
-    const dashUrl = `http://${host}:3001/dashboard/`
+    const dashUrl = `http://${host}:3001/dashboard/?embed=electron`
 
     if (!dashboardView) {
       dashboardView = new WebContentsView({
@@ -1308,6 +1308,8 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
         }
       })
       dashboardView.webContents.loadURL(dashUrl)
+      // Mark environment so dashboard can hide its own theme switch
+      try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => {}) } catch {}
       // When the dashboard finishes loading, apply the current theme
       try {
         dashboardView.webContents.on('did-finish-load', () => {
