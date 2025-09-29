@@ -1201,7 +1201,7 @@ wheels = [
 
 [[package]]
 name = "open-edison"
-version = "0.1.115"
+version = "0.1.116"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

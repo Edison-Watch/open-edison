@@ -1,4 +1,5 @@
-import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu, dialog, Tray, nativeImage } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -14,6 +15,7 @@ let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
 const DASHBOARD_HEADER_OFFSET_DIP = 38
+let tray: Tray | null = null
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
@@ -37,11 +39,11 @@ async function readServerConfig(): Promise<{ host: string; port: number; api_key
     // Normalize structure if needed
     let dirty = false
     if (!config.server || typeof config.server !== 'object') {
-      config.server = { host: 'localhost', port: 3001 }
+      config.server = { host: 'localhost', port: 3000 }
       dirty = true
     }
     if (typeof config.server.port !== 'number') {
-      config.server.port = 3001
+      config.server.port = 3000
       dirty = true
     }
     if (!config.server.api_key || typeof config.server.api_key !== 'string') {
@@ -61,14 +63,14 @@ async function readServerConfig(): Promise<{ host: string; port: number; api_key
     }
     return {
       host: config.server?.host || 'localhost',
-      port: config.server?.port || 3001,
+      port: config.server?.port+1 || 3001,
       api_key: config.server?.api_key
     }
   } catch (error) {
     console.error('Failed to read config.json:', error)
     return {
       host: 'localhost',
-      port: 3001,
+      port: 3000,
       api_key: 'dev-api-key-change-me'
     }
   }
@@ -525,10 +527,56 @@ async function createWindow(): Promise<void> {
     console.error('Failed to load:', errorDescription, 'for URL:', validatedURL)
   })
 
-  // Application menu with a Dashboard DevTools item
+  // Application menu with a Dashboard DevTools item and Check for Updates
   try {
+    const isMac = process.platform === 'darwin'
+      const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
+      label: 'Check for Updates…',
+      click: async () => {
+        try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+        try {
+          if (app.isPackaged) {
+            const updaterMod = require('electron-updater') as typeof import('electron-updater')
+            const autoUpdater = updaterMod.autoUpdater
+            const res = await autoUpdater.checkForUpdatesAndNotify()
+            // If updater reports null (no update) without firing update-not-available, show dialog
+            if (!res) {
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
+            }
+          }
+        } catch (err) {
+          console.warn('Manual update check failed:', err)
+        }
+      }
+    }
+
+    const appMenu: Electron.MenuItemConstructorOptions | undefined = isMac ? {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        checkForUpdatesItem,
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    } : undefined
+
+    const helpMenu: Electron.MenuItemConstructorOptions = {
+      role: 'help',
+      submenu: [
+        ...(!isMac ? [checkForUpdatesItem] : [])
+      ]
+    }
+
     const template: Electron.MenuItemConstructorOptions[] = [
-      ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+      ...(appMenu ? [appMenu] : []),
       { role: 'fileMenu' },
       { role: 'editMenu' },
       {
@@ -540,29 +588,14 @@ async function createWindow(): Promise<void> {
           {
             label: 'Theme',
             submenu: [
-              {
-                label: 'Light',
-                type: 'radio',
-                checked: false,
-                click: () => setThemeMode('light')
-              },
-              {
-                label: 'Dark',
-                type: 'radio',
-                checked: false,
-                click: () => setThemeMode('dark')
-              },
-              {
-                label: 'System',
-                type: 'radio',
-                checked: true,
-                click: () => setThemeMode('system')
-              }
+              { label: 'Light', type: 'radio', checked: false, click: () => setThemeMode('light') },
+              { label: 'Dark', type: 'radio', checked: false, click: () => setThemeMode('dark') },
+              { label: 'System', type: 'radio', checked: true, click: () => setThemeMode('system') }
             ]
           },
           {
             label: 'Open Dashboard DevTools',
-            accelerator: process.platform === 'darwin' ? 'Cmd+Alt+D' : 'Ctrl+Shift+D',
+            accelerator: isMac ? 'Cmd+Alt+D' : 'Ctrl+Shift+D',
             click: () => { try { dashboardView?.webContents?.openDevTools({ mode: 'detach' }) } catch { } }
           },
           { type: 'separator' },
@@ -570,12 +603,84 @@ async function createWindow(): Promise<void> {
         ]
       },
       { role: 'windowMenu' },
-      { role: 'help', submenu: [] }
+      helpMenu
     ]
     const menu = Menu.buildFromTemplate(template)
     Menu.setApplicationMenu(menu)
   } catch (e) {
     console.warn('Failed to set application menu:', e)
+  }
+
+  // Create macOS menu bar (tray) icon
+  try {
+    if (process.platform === 'darwin' && !tray) {
+      const fs = require('fs') as typeof import('fs')
+      const path = require('path') as typeof import('path')
+      const icon = path.join(app.getAppPath(), '..', 'media', 'Edison.iconset', 'icon_16x16.png')
+      let img = null as ReturnType<typeof nativeImage.createFromPath> | null
+      if (fs.existsSync(icon)) {
+        img = nativeImage.createFromPath(icon)
+      }
+      if (!img) {
+        img = nativeImage.createEmpty()
+      }
+      tray = new Tray(img)
+      tray.setToolTip('Open Edison')
+      }
+
+      const isMac = process.platform === 'darwin'
+      const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
+        label: 'Check for Updates…',
+        click: async () => {
+          try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+          try {
+            if (app.isPackaged) {
+              const updaterMod = require('electron-updater') as typeof import('electron-updater')
+              const autoUpdater = updaterMod.autoUpdater
+              const res = await autoUpdater.checkForUpdatesAndNotify()
+              if (!res) {
+                const win = BrowserWindow.getFocusedWindow() || mainWindow
+                if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
+              }
+            }
+          } catch (err) {
+            console.warn('Tray manual update check failed:', err)
+          }
+        }
+      }
+
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: 'Show Open Edison',
+          click: () => {
+            try {
+              if (mainWindow) {
+                if (!mainWindow.isVisible()) mainWindow.show()
+                mainWindow.focus()
+              }
+            } catch { }
+          }
+        },
+        { type: 'separator' },
+        checkForUpdatesItem,
+        { type: 'separator' },
+        { role: 'quit', label: isMac ? 'Quit Open Edison' : 'Quit' }
+      ])
+      tray?.setContextMenu(contextMenu)
+      tray?.on('click', () => {
+        try {
+          if (!mainWindow) return
+          if (mainWindow.isVisible()) {
+            mainWindow.hide()
+          } else {
+            mainWindow.show()
+            mainWindow.focus()
+          }
+        } catch { }
+      })
+    }
+  catch (e) {
+    console.warn('Failed to create tray:', e)
   }
 }
 
@@ -677,6 +782,7 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
   // Handle window closed
   wizardWindow.on('closed', () => {
     wizardWindow = null
+    try { mainWindow?.webContents.send('wizard-closed') } catch {}
   })
 
   // Handle navigation errors
@@ -735,12 +841,6 @@ async function startMainApplication() {
   // Start backend server
   await startBackend(host, port)
 
-  // Start Setup Wizard API server
-  // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
-
-  // Always start frontend server (needed for proper asset loading)
-  // await startFrontend(host, port+1)
-
   // Create the main window
   await createWindow()
 }
@@ -748,6 +848,30 @@ async function startMainApplication() {
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
   console.log('Electron app ready, checking installation...')
+
+  // Set dock icon in development (non-DMG run)
+  try {
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      const { nativeImage } = require('electron') as typeof import('electron')
+      const fs = require('fs') as typeof import('fs')
+      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset','icon_256x256.png')
+      const exists = fs.existsSync(icon)
+      let set = false
+
+      if (exists) {
+        const img = nativeImage.createFromPath(icon)
+        if (!img.isEmpty()) {
+          try { app.dock.setIcon(img) } catch { }
+          console.log('Set macOS dock icon for development run:', icon)
+          set = true
+        }
+      }
+      if (!set) {
+        console.warn('Dock icon not found or could not be loaded. Tried:', icon)
+      }
+    }
+  } catch { }
+  
 
   // Check if Open Edison is installed
   isFirstInstall = await installOpenEdison()
@@ -768,6 +892,49 @@ app.whenReady().then(async () => {
   } else {
     console.log('Open Edison already installed, starting main application...')
     await startMainApplication()
+  }
+
+  // Auto-update setup (packaged only)
+  try {
+    if (app.isPackaged) {
+      autoUpdater.autoDownload = true
+      autoUpdater.autoInstallOnAppQuit = true
+
+      autoUpdater.on('checking-for-update', () => { try { mainWindow?.webContents.send('update-status', 'checking') } catch {} })
+      autoUpdater.on('update-available', (info) => { try { mainWindow?.webContents.send('update-status', 'available', info) } catch {} })
+      autoUpdater.on('update-not-available', () => {
+        try { mainWindow?.webContents.send('update-status', 'none') } catch {}
+        // If user triggered manual check (menu item), show dialog. We infer manual checks by recent 'checking' send.
+        try {
+          const win = BrowserWindow.getFocusedWindow() || mainWindow
+          if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
+        } catch {}
+      })
+      autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch {} })
+      autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch {} })
+
+      ipcMain.handle('updates-check', async () => {
+        try {
+          const result = await autoUpdater.checkForUpdates()
+          return { ok: true, result }
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) }
+        }
+      })
+
+      ipcMain.handle('updates-install', async () => {
+        try {
+          setImmediate(() => autoUpdater.quitAndInstall())
+          return { ok: true }
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) }
+        }
+      })
+
+      setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch {} }, 2000)
+    }
+  } catch (e) {
+    console.warn('Auto-update init failed:', e)
   }
 })
 
@@ -811,6 +978,7 @@ app.on('before-quit', () => {
     console.log('Terminating Setup Wizard API process...')
     setupWizardApiProcess.kill()
   }
+  try { tray?.destroy(); tray = null } catch { }
 })
 
 // IPC handlers for communication with renderer process
@@ -1108,6 +1276,21 @@ ipcMain.handle('wizard-completed', async () => {
 // IPC handler to get server configuration
 ipcMain.handle('get-server-config', async () => {
   return await readServerConfig()
+})
+
+// IPC: Reinitialize MCP servers via backend HTTP (avoids renderer CORS)
+ipcMain.handle('reinitialize-mcp', async () => {
+  try {
+    const { host, port, api_key } = await readServerConfig()
+    const url = `http://${host || 'localhost'}:${port+1 || 3001}/mcp/reinitialize`
+    const headers: Record<string, string> = { 'Accept': 'application/json' }
+    if (api_key) headers['Authorization'] = `Bearer ${api_key}`
+    const res = await fetch(url, { method: 'POST', headers })
+    return { ok: res.ok, status: res.status }
+  } catch (e) {
+    console.warn('reinitialize-mcp IPC failed:', e)
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 })
 
 // IPC handlers for persisting ngrok settings

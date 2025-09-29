@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openWizardWindow: () => ipcRenderer.invoke('open-wizard-window'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   wizardCompleted: () => ipcRenderer.invoke('wizard-completed'),
+  onWizardClosed: (callback: () => void) => {
+    ipcRenderer.on('wizard-closed', () => callback())
+  },
+  reinitializeMcp: () => ipcRenderer.invoke('reinitialize-mcp'),
 
   // Setup Wizard API log listener
   onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -96,6 +100,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
   },
   getTheme: () => ipcRenderer.invoke('theme-get')
+  ,
+  // Updates
+  checkForUpdates: () => ipcRenderer.invoke('updates-check'),
+  installUpdates: () => ipcRenderer.invoke('updates-install'),
+  onUpdateStatus: (callback: (status: string, info?: any) => void) => {
+    ipcRenderer.on('update-status', (_e, status, info) => callback(status, info))
+  },
+  onUpdateProgress: (callback: (progress: any) => void) => {
+    ipcRenderer.on('update-progress', (_e, progress) => callback(progress))
+  }
 })
 
 // Type definitions for the exposed API
@@ -117,6 +131,8 @@ declare global {
       openWizardWindow: () => Promise<{ success: boolean; error?: string }>
       closeWindow: () => Promise<{ success: boolean }>
       wizardCompleted: () => Promise<{ success: boolean }>
+      onWizardClosed: (callback: () => void) => void
+      reinitializeMcp: () => Promise<{ ok: boolean; status?: number; error?: string }>
       spawnProcess: (command: string, args: string[], env: any) => Promise<any>
       terminateProcess: (processId: any) => Promise<void>
       composeHelpEmail: (subject: string, body: string, attachLogs?: boolean, logsText?: string) => Promise<{ success: boolean; attachmentPath?: string; error?: string }>
@@ -137,6 +153,10 @@ declare global {
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
       onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
       getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
+      checkForUpdates: () => Promise<{ ok: boolean; result?: any; error?: string }>
+      installUpdates: () => Promise<{ ok: boolean; error?: string }>
+      onUpdateStatus: (callback: (status: string, info?: any) => void) => void
+      onUpdateProgress: (callback: (progress: any) => void) => void
     }
   }
 }

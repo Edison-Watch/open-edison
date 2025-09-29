@@ -130,6 +130,42 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   };
 
   // Wizard functions
+  // Request backend to reinitialize MCP servers
+  const reinitializeMcp = async () => {
+    try {
+      let host = 'localhost';
+      let port = 3001;
+      let apiKey: string | undefined = undefined;
+      try {
+        if (window.electronAPI.getServerConfig) {
+          const cfg = await window.electronAPI.getServerConfig();
+          host = cfg?.host || host;
+          port = cfg?.port+1 || port;
+          apiKey = cfg?.api_key;
+        }
+      } catch {}
+
+      const url = `http://${host}:${port}/mcp/reinitialize`;
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const resp = await fetch(url, { method: 'POST', headers });
+      if (resp.ok) {
+        addLog('MCP servers reinitialize requested successfully.');
+      } else {
+        addLog(`Failed to request MCP reinitialize: HTTP ${resp.status}`);
+      }
+    } catch (err) {
+      addLog('Failed to request MCP reinitialize.');
+      console.error('POST /mcp/reinitialize error:', err);
+    }
+  };
+
   const openWizard = async () => {
     try {
       if (window.electronAPI && window.electronAPI.openWizardWindow) {
@@ -146,6 +182,31 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       addLog(`Error opening wizard: ${error}`);
     }
   };
+
+  // Reinitialize when wizard window closes
+  useEffect(() => {
+    try {
+      if (window.electronAPI && window.electronAPI.onWizardClosed) {
+        window.electronAPI.onWizardClosed(() => {
+          addLog('Wizard closed. Reinitializing MCP servers...');
+          if (window.electronAPI && window.electronAPI.reinitializeMcp) {
+            window.electronAPI.reinitializeMcp().then((res) => {
+              if (res?.ok) {
+                addLog('MCP servers reinitialize requested successfully.');
+              } else {
+                addLog(`Failed to request MCP reinitialize: ${res?.status || res?.error || 'unknown error'}`);
+              }
+            }).catch((err) => {
+              addLog('Failed to request MCP reinitialize.');
+              console.error('reinitializeMcp IPC error:', err);
+            });
+          } else {
+            reinitializeMcp();
+          }
+        });
+      }
+    } catch {}
+  }, []);
 
   const submitHelpRequest = async () => {
     if (!helpMessage.trim()) {
@@ -308,6 +369,25 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     checkServerStatus();
     const interval = setInterval(checkServerStatus, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Listen and log updater events; trigger a check once on mount in packaged builds
+  useEffect(() => {
+    try {
+      if (window.electronAPI && window.electronAPI.onUpdateStatus && window.electronAPI.onUpdateProgress) {
+        window.electronAPI.onUpdateStatus((status, info) => {
+          addLog(`[updates] status: ${status}${info?.version ? ` (v${info.version})` : ''}`);
+        });
+        window.electronAPI.onUpdateProgress((p) => {
+          const pct = typeof p?.percent === 'number' ? p.percent.toFixed(1) : 'n/a';
+          addLog(`[updates] download: ${pct}%`);
+        });
+      }
+      // Kick off a check when app is packaged; harmless in dev (main will ignore)
+      if (window.electronAPI && window.electronAPI.checkForUpdates) {
+        window.electronAPI.checkForUpdates().catch(() => {});
+      }
+    } catch {}
   }, []);
 
   // Load persisted ngrok settings on mount
