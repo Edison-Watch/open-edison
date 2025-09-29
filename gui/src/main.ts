@@ -735,12 +735,6 @@ async function startMainApplication() {
   // Start backend server
   await startBackend(host, port)
 
-  // Start Setup Wizard API server
-  // await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
-
-  // Always start frontend server (needed for proper asset loading)
-  // await startFrontend(host, port+1)
-
   // Create the main window
   await createWindow()
 }
@@ -748,6 +742,30 @@ async function startMainApplication() {
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
   console.log('Electron app ready, checking installation...')
+
+  // Set dock icon in development (non-DMG run)
+  try {
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      const { nativeImage } = require('electron') as typeof import('electron')
+      const fs = require('fs') as typeof import('fs')
+      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset','icon_256x256.png')
+      const exists = fs.existsSync(icon)
+      let set = false
+
+      if (exists) {
+        const img = nativeImage.createFromPath(icon)
+        if (!img.isEmpty()) {
+          try { app.dock.setIcon(img) } catch { }
+          console.log('Set macOS dock icon for development run:', icon)
+          set = true
+        }
+      }
+      if (!set) {
+        console.warn('Dock icon not found or could not be loaded. Tried:', icon)
+      }
+    }
+  } catch { }
+  
 
   // Check if Open Edison is installed
   isFirstInstall = await installOpenEdison()

@@ -57,7 +57,8 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "../media/Edison.icns"
     },
     "win": {
       "target": "nsis"

@@ -12,6 +12,7 @@ mac:
     - dmg
     - zip
   category: public.app-category.developer-tools
+  icon: ../media/Black_Edison_Logomark512.icns
   hardenedRuntime: true
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
