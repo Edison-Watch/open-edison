@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FiEye, FiEyeOff } from 'react-icons/fi'
 
 interface ServerStatus {
   running: boolean;
@@ -826,7 +827,7 @@ brew install ngrok
                         lineHeight: 1
                       }}
                     >
-                      {showNgrokAuth ? '🙈' : '👁️'}
+                      {showNgrokAuth ? <FiEyeOff /> : <FiEye />}
                     </button>
                   </div>
                 </div>
