@@ -50,6 +50,16 @@ const App: React.FC = () => {
     try { window.localStorage?.setItem('app-theme', theme) } catch { }
   }, [theme])
 
+  // React to menu-driven theme changes from main process
+  useEffect(() => {
+    const apply = (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => {
+      setTheme(payload.effective)
+    }
+    try { window.electronAPI?.onThemeChanged?.(apply) } catch { }
+    // Query current theme on mount
+    try { window.electronAPI?.getTheme?.().then(t => setTheme(t.effective)) } catch { }
+  }, [])
+
   // Fetch server configuration
   useEffect(() => {
     const fetchServerConfig = async () => {
@@ -160,24 +170,7 @@ const App: React.FC = () => {
         >
           Dashboard
         </button>
-        <button
-          onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }}
-          title="Toggle theme"
-          style={{
-            marginLeft: 'auto',
-            padding: '0.25rem 0.5rem',
-            background: 'var(--button-bg)',
-            color: 'var(--button-text)',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '0.875rem'
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--button-bg-hover)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--button-bg)' }}
-        >
-          {theme === 'dark' ? 'Light' : 'Dark'} mode
-        </button>
+        {/* Theme toggle moved to menu */}
         {activeTab === 'dashboard' && ((window.electronAPI as any)?.guiMode === 'development') && (
           <button
             onClick={() => { try { window.electronAPI?.openDashboardDevTools?.() } catch { } }}

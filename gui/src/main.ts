@@ -538,6 +538,29 @@ async function createWindow(): Promise<void> {
           { role: 'togglefullscreen' },
           { type: 'separator' },
           {
+            label: 'Theme',
+            submenu: [
+              {
+                label: 'Light',
+                type: 'radio',
+                checked: false,
+                click: () => setThemeMode('light')
+              },
+              {
+                label: 'Dark',
+                type: 'radio',
+                checked: false,
+                click: () => setThemeMode('dark')
+              },
+              {
+                label: 'System',
+                type: 'radio',
+                checked: true,
+                click: () => setThemeMode('system')
+              }
+            ]
+          },
+          {
             label: 'Open Dashboard DevTools',
             accelerator: process.platform === 'darwin' ? 'Cmd+Alt+D' : 'Ctrl+Shift+D',
             click: () => { try { dashboardView?.webContents?.openDevTools({ mode: 'detach' }) } catch { } }
@@ -555,6 +578,30 @@ async function createWindow(): Promise<void> {
     console.warn('Failed to set application menu:', e)
   }
 }
+
+// Theme management
+type ThemeMode = 'light' | 'dark' | 'system'
+let themeMode: ThemeMode = 'system'
+
+function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' {
+  if (mode === 'system') {
+    try {
+      const { nativeTheme } = require('electron') as typeof import('electron')
+      return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    } catch { return 'light' }
+  }
+  return mode
+}
+
+function setThemeMode(mode: ThemeMode) {
+  themeMode = mode
+  const effective = getEffectiveTheme(mode)
+  try { mainWindow?.webContents.send('theme-changed', { mode, effective }) } catch { }
+}
+
+ipcMain.handle('theme-get', async () => {
+  return { mode: themeMode, effective: getEffectiveTheme(themeMode) }
+})
 
 // Create the wizard window
 async function createWizardWindow(isFirstInstall: boolean = false): Promise<void> {

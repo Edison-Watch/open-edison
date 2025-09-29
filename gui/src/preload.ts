@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideDashboard: () => ipcRenderer.invoke('dashboard-hide')
   ,
   openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
+  ,
+  // Theme events
+  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => {
+    ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
+  },
+  getTheme: () => ipcRenderer.invoke('theme-get')
 })
 
 // Type definitions for the exposed API
@@ -121,6 +127,8 @@ declare global {
       setDashboardBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ success: boolean }>
       hideDashboard: () => Promise<{ success: boolean }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
+      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
+      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
     }
   }
 }
