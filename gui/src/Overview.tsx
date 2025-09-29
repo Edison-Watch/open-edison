@@ -35,6 +35,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [showWebclientInstructions, setShowWebclientInstructions] = useState(false);
   const [ngrokAuthToken, setNgrokAuthToken] = useState('');
   const [ngrokDomain, setNgrokDomain] = useState('');
+  const [showNgrokAuth, setShowNgrokAuth] = useState(false);
   const [ngrokProcess, setNgrokProcess] = useState<any>(null);
   const [ngrokRunning, setNgrokRunning] = useState(false);
   const [ngrokUrl, setNgrokUrl] = useState('');
@@ -792,20 +793,42 @@ brew install ngrok
                   <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
                     ngrok Authtoken:
                   </label>
-                  <input
-                    type="text"
-                    value={ngrokAuthToken}
-                    onChange={(e) => setNgrokAuthToken(e.target.value)}
-                    placeholder="Enter your ngrok authtoken"
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      border: '1px solid #bdc3c7',
-                      borderRadius: '6px',
-                      fontSize: '0.875rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNgrokAuth ? 'text' : 'password'}
+                      value={ngrokAuthToken}
+                      onChange={(e) => setNgrokAuthToken(e.target.value)}
+                      placeholder="Enter your ngrok authtoken"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem 2.25rem 0.75rem 0.75rem',
+                        border: '1px solid #bdc3c7',
+                        borderRadius: '6px',
+                        fontSize: '0.875rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNgrokAuth(!showNgrokAuth)}
+                      aria-label={showNgrokAuth ? 'Hide authtoken' : 'Show authtoken'}
+                      title={showNgrokAuth ? 'Hide authtoken' : 'Show authtoken'}
+                      style={{
+                        position: 'absolute',
+                        right: '0.5rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#7f8c8d',
+                        padding: 0,
+                        lineHeight: 1
+                      }}
+                    >
+                      {showNgrokAuth ? '🙈' : '👁️'}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
