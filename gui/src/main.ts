@@ -597,11 +597,25 @@ function setThemeMode(mode: ThemeMode) {
   themeMode = mode
   const effective = getEffectiveTheme(mode)
   try { mainWindow?.webContents.send('theme-changed', { mode, effective }) } catch { }
+  try { applyThemeToDashboard(effective, mode) } catch { }
 }
 
 ipcMain.handle('theme-get', async () => {
   return { mode: themeMode, effective: getEffectiveTheme(themeMode) }
 })
+
+function applyThemeToDashboard(effective: 'light' | 'dark', mode: ThemeMode) {
+  if (!dashboardView) return
+  const script = `
+    try {
+      localStorage.setItem('app-theme', '${effective}');
+      document.documentElement.setAttribute('data-theme', '${effective}');
+      if (window.__setTheme) { window.__setTheme('${effective}') }
+      try { window.dispatchEvent(new CustomEvent('theme-changed', { detail: { effective: '${effective}', mode: '${mode}' } })) } catch {}
+    } catch {}
+  `
+  try { dashboardView.webContents.executeJavaScript(script).catch(() => {}) } catch {}
+}
 
 // Create the wizard window
 async function createWizardWindow(isFirstInstall: boolean = false): Promise<void> {
@@ -1294,6 +1308,12 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
         }
       })
       dashboardView.webContents.loadURL(dashUrl)
+      // When the dashboard finishes loading, apply the current theme
+      try {
+        dashboardView.webContents.on('did-finish-load', () => {
+          try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
+        })
+      } catch { }
     }
 
     // Attach if not already attached
@@ -1315,6 +1335,8 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     // Keep in sync on window resize
     const resizeHandler = () => updateBounds()
     try { mainWindow.on('resize', resizeHandler) } catch { }
+    // Ensure theme is applied even if already loaded
+    try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
     return { success: true }
   } catch (e) {
     console.error('dashboard-create-or-show error:', e)

@@ -218,6 +218,15 @@ const App: React.FC = () => {
                 width: Math.round(rect.width),
                 height: Math.round(rect.height)
               })
+              // Push current theme to the dashboard content as well
+              try {
+                const effective = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+                window.electronAPI?.setDashboardBounds?.({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+                // Also update theme in dashboard
+                setTimeout(() => {
+                  window.electronAPI?.openDashboardDevTools // noop to satisfy type checker access
+                }, 0)
+              } catch {}
             }}
           />
         )}
