@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Server configuration methods
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
 
+  // Ngrok settings persistence
+  getNgrokSettings: () => ipcRenderer.invoke('get-ngrok-settings'),
+  saveNgrokSettings: (settings: { authToken?: string; domain?: string; url?: string }) =>
+    ipcRenderer.invoke('save-ngrok-settings', settings),
+
   // Process management methods
   spawnProcess: (command: string, args: string[], env: any) => ipcRenderer.invoke('spawn-process', command, args, env),
   terminateProcess: (processId: any) => ipcRenderer.invoke('terminate-process', processId),
@@ -85,6 +90,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideDashboard: () => ipcRenderer.invoke('dashboard-hide'),
   refreshDashboard: () => ipcRenderer.invoke('dashboard-refresh'),
   openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
+  ,
+  // Theme events
+  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => {
+    ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
+  },
+  getTheme: () => ipcRenderer.invoke('theme-get')
 })
 
 // Type definitions for the exposed API
@@ -110,6 +121,8 @@ declare global {
       terminateProcess: (processId: any) => Promise<void>
       composeHelpEmail: (subject: string, body: string, attachLogs?: boolean, logsText?: string) => Promise<{ success: boolean; attachmentPath?: string; error?: string }>
       onNgrokUrl: (callback: (url: string) => void) => void
+      getNgrokSettings: () => Promise<{ authToken: string; domain: string; url: string }>
+      saveNgrokSettings: (settings: { authToken?: string; domain?: string; url?: string }) => Promise<{ success: boolean; error?: string }>
       onProcessError: (callback: (data: { processId: any; error: string }) => void) => void
       onProcessExitError: (callback: (data: { processId: any; code: number }) => void) => void
       removeProcessErrorListener: () => void
@@ -122,6 +135,8 @@ declare global {
       hideDashboard: () => Promise<{ success: boolean }>
       refreshDashboard: () => Promise<{ success: boolean; error?: string }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
+      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
+      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
     }
   }
 }

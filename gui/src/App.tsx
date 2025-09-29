@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './theme.css'
 import Overview from './Overview';
 import McpImportWizard from './components/McpImportWizard';
 
@@ -14,6 +15,15 @@ const App: React.FC = () => {
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [isWizardMode, setIsWizardMode] = useState(false);
   const [serverConfig, setServerConfig] = useState<{ host: string; port: number; api_key?: string } | null>(null);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    let stored: 'dark' | 'light' | null = null
+    try {
+      const raw = window.localStorage?.getItem('app-theme')
+      if (raw === 'dark' || raw === 'light') stored = raw
+    } catch { /* localStorage may be unavailable under restrictive CSP */ }
+    if (stored) return stored
+    return 'light'
+  })
 
   const switchTab = (tab: 'overview' | 'dashboard') => {
     setActiveTab(tab);
@@ -33,6 +43,22 @@ const App: React.FC = () => {
       window.removeEventListener('popstate', checkWizardMode);
     };
   }, []);
+
+  // Apply theme to <html> attribute and persist
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try { window.localStorage?.setItem('app-theme', theme) } catch { }
+  }, [theme])
+
+  // React to menu-driven theme changes from main process
+  useEffect(() => {
+    const apply = (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => {
+      setTheme(payload.effective)
+    }
+    try { window.electronAPI?.onThemeChanged?.(apply) } catch { }
+    // Query current theme on mount
+    try { window.electronAPI?.getTheme?.().then(t => setTheme(t.effective)) } catch { }
+  }, [])
 
   // Fetch server configuration
   useEffect(() => {
@@ -108,32 +134,22 @@ const App: React.FC = () => {
   }
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        background: '#2c3e50',
-        color: 'white',
-        padding: '1rem',
-        textAlign: 'center',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: '600' }}>Open Edison Desktop</h1>
-      </div>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--text-primary)' }}>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', background: '#34495e', borderBottom: '1px solid #2c3e50' }}>
+      <div style={{ display: 'flex', background: 'var(--tab-bg)', borderBottom: '1px solid var(--tab-border)' }}>
         <button
           onClick={() => switchTab('overview')}
           style={{
             flex: 1,
-            padding: '1rem',
-            background: activeTab === 'overview' ? '#2c3e50' : '#34495e',
-            color: activeTab === 'overview' ? 'white' : '#bdc3c7',
+            padding: '0.5rem',
+            background: activeTab === 'overview' ? 'var(--tab-active)' : 'var(--tab-bg)',
+            color: activeTab === 'overview' ? 'var(--tab-active-text)' : 'var(--tab-inactive-text)',
             border: 'none',
             cursor: 'pointer',
             fontSize: '1rem',
             transition: 'all 0.3s ease',
-            borderBottom: activeTab === 'overview' ? '3px solid #3498db' : '3px solid transparent'
+            borderBottom: activeTab === 'overview' ? '3px solid var(--accent)' : '3px solid transparent'
           }}
         >
           Overview
@@ -142,19 +158,20 @@ const App: React.FC = () => {
           onClick={() => switchTab('dashboard')}
           style={{
             flex: 1,
-            padding: '1rem',
-            background: activeTab === 'dashboard' ? '#2c3e50' : '#34495e',
-            color: activeTab === 'dashboard' ? 'white' : '#bdc3c7',
+            padding: '0.5rem',
+            background: activeTab === 'dashboard' ? 'var(--tab-active)' : 'var(--tab-bg)',
+            color: activeTab === 'dashboard' ? 'var(--tab-active-text)' : 'var(--tab-inactive-text)',
             border: 'none',
             cursor: 'pointer',
             fontSize: '1rem',
             transition: 'all 0.3s ease',
-            borderBottom: activeTab === 'dashboard' ? '3px solid #3498db' : '3px solid transparent'
+            borderBottom: activeTab === 'dashboard' ? '3px solid var(--accent)' : '3px solid transparent'
           }}
         >
           Dashboard
         </button>
-        {activeTab === 'dashboard' && window.electronAPI?.guiMode === 'development' && (
+        {/* Theme toggle moved to menu */}
+        {activeTab === 'dashboard' && ((window.electronAPI as any)?.guiMode === 'development') && (
           <button
             onClick={() => { try { window.electronAPI?.openDashboardDevTools?.() } catch { } }}
             style={{
@@ -177,7 +194,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div style={{ height: 'calc(100vh - 120px)', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {activeTab === 'overview' && (
           <div
             style={{ width: '100%', height: '100%' }}
@@ -194,9 +211,22 @@ const App: React.FC = () => {
             ref={(el) => {
               if (!el) return
               const rect = el.getBoundingClientRect()
-              // Place the dashboard view below the tabs/header area only
-              const headerOffset = 0
-              window.electronAPI?.showDashboard?.({ x: 0, y: 0 + headerOffset, width: Math.round(rect.width), height: Math.round(rect.height) })
+              // Position the dashboard view to match the container below the tabs
+              window.electronAPI?.showDashboard?.({
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+              })
+              // Push current theme to the dashboard content as well
+              try {
+                const effective = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+                window.electronAPI?.setDashboardBounds?.({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+                // Also update theme in dashboard
+                setTimeout(() => {
+                  window.electronAPI?.openDashboardDevTools // noop to satisfy type checker access
+                }, 0)
+              } catch {}
             }}
           />
         )}

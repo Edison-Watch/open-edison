@@ -13,7 +13,7 @@ let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
-const DASHBOARD_HEADER_OFFSET_DIP = 120
+const DASHBOARD_HEADER_OFFSET_DIP = 38
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
@@ -538,6 +538,29 @@ async function createWindow(): Promise<void> {
           { role: 'togglefullscreen' },
           { type: 'separator' },
           {
+            label: 'Theme',
+            submenu: [
+              {
+                label: 'Light',
+                type: 'radio',
+                checked: false,
+                click: () => setThemeMode('light')
+              },
+              {
+                label: 'Dark',
+                type: 'radio',
+                checked: false,
+                click: () => setThemeMode('dark')
+              },
+              {
+                label: 'System',
+                type: 'radio',
+                checked: true,
+                click: () => setThemeMode('system')
+              }
+            ]
+          },
+          {
             label: 'Open Dashboard DevTools',
             accelerator: process.platform === 'darwin' ? 'Cmd+Alt+D' : 'Ctrl+Shift+D',
             click: () => { try { dashboardView?.webContents?.openDevTools({ mode: 'detach' }) } catch { } }
@@ -554,6 +577,44 @@ async function createWindow(): Promise<void> {
   } catch (e) {
     console.warn('Failed to set application menu:', e)
   }
+}
+
+// Theme management
+type ThemeMode = 'light' | 'dark' | 'system'
+let themeMode: ThemeMode = 'system'
+
+function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' {
+  if (mode === 'system') {
+    try {
+      const { nativeTheme } = require('electron') as typeof import('electron')
+      return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    } catch { return 'light' }
+  }
+  return mode
+}
+
+function setThemeMode(mode: ThemeMode) {
+  themeMode = mode
+  const effective = getEffectiveTheme(mode)
+  try { mainWindow?.webContents.send('theme-changed', { mode, effective }) } catch { }
+  try { applyThemeToDashboard(effective, mode) } catch { }
+}
+
+ipcMain.handle('theme-get', async () => {
+  return { mode: themeMode, effective: getEffectiveTheme(themeMode) }
+})
+
+function applyThemeToDashboard(effective: 'light' | 'dark', mode: ThemeMode) {
+  if (!dashboardView) return
+  const script = `
+    try {
+      localStorage.setItem('app-theme', '${effective}');
+      document.documentElement.setAttribute('data-theme', '${effective}');
+      if (window.__setTheme) { window.__setTheme('${effective}') }
+      try { window.dispatchEvent(new CustomEvent('theme-changed', { detail: { effective: '${effective}', mode: '${mode}' } })) } catch {}
+    } catch {}
+  `
+  try { dashboardView.webContents.executeJavaScript(script).catch(() => { }) } catch { }
 }
 
 // Create the wizard window
@@ -1049,6 +1110,67 @@ ipcMain.handle('get-server-config', async () => {
   return await readServerConfig()
 })
 
+// IPC handlers for persisting ngrok settings
+ipcMain.handle('get-ngrok-settings', async () => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try {
+      raw = await readFile(configPath, 'utf8')
+    } catch { }
+    let config: any
+    try {
+      config = JSON.parse(raw || '{}')
+    } catch {
+      config = {}
+    }
+    const ngrok = (config && typeof config === 'object' && config.ngrok) || {}
+    return {
+      authToken: typeof ngrok.auth_token === 'string' ? ngrok.auth_token : '',
+      domain: typeof ngrok.domain === 'string' ? ngrok.domain : '',
+      url: typeof ngrok.url === 'string' ? ngrok.url : ''
+    }
+  } catch (e) {
+    console.warn('get-ngrok-settings failed:', e)
+    return { authToken: '', domain: '', url: '' }
+  }
+})
+
+ipcMain.handle('save-ngrok-settings', async (_event, payload: { authToken?: string; domain?: string; url?: string }) => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try {
+      raw = await readFile(configPath, 'utf8')
+    } catch { }
+    let config: any
+    try {
+      config = JSON.parse(raw || '{}')
+    } catch {
+      config = {}
+    }
+
+    if (!config || typeof config !== 'object') config = {}
+    if (!config.ngrok || typeof config.ngrok !== 'object') config.ngrok = {}
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'authToken')) {
+      config.ngrok.auth_token = payload.authToken || ''
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'domain')) {
+      config.ngrok.domain = payload.domain || ''
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'url')) {
+      config.ngrok.url = payload.url || ''
+    }
+
+    await writeFile(configPath, JSON.stringify(config, null, 2), 'utf8')
+    return { success: true }
+  } catch (e) {
+    console.error('save-ngrok-settings failed:', e)
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
 // Store processes for management
 const processes = new Map<any, ChildProcess>()
 
@@ -1236,7 +1358,7 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const host = urlInfo.host || 'localhost'
     const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
     // Force dashboard to backend HTTP port 3001 regardless of config
-    const dashUrl = `http://${host}:3001/dashboard/?api_key=${encodeURIComponent(apiKey)}`
+    const dashUrl = `http://${host}:3001/dashboard/?embed=electron`
 
     if (!dashboardView) {
       dashboardView = new WebContentsView({
@@ -1248,6 +1370,14 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
         }
       })
       dashboardView.webContents.loadURL(dashUrl)
+      // Mark environment so dashboard can hide its own theme switch
+      try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
+      // When the dashboard finishes loading, apply the current theme
+      try {
+        dashboardView.webContents.on('did-finish-load', () => {
+          try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
+        })
+      } catch { }
     }
 
     // Attach if not already attached
@@ -1266,11 +1396,11 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
       } catch { }
     }
     updateBounds()
-    // Keep in sync on window resize (only add listener once)
-    if (!mainWindow.listenerCount('resize')) {
-      const resizeHandler = () => updateBounds()
-      try { mainWindow.on('resize', resizeHandler) } catch { }
-    }
+    // Keep in sync on window resize
+    const resizeHandler = () => updateBounds()
+    try { mainWindow.on('resize', resizeHandler) } catch { }
+    // Ensure theme is applied even if already loaded
+    try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
     return { success: true }
   } catch (e) {
     console.error('dashboard-create-or-show error:', e)

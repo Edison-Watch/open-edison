@@ -54,6 +54,7 @@ dev = [
     "vulture>=2.11",
     "twine>=5.1.1",
     "ty>=0.0.1a19",
+    "pyinstaller>=6.11.0",
 ]
 
  

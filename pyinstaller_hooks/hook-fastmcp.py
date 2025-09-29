@@ -1,5 +1,5 @@
 from PyInstaller.utils.hooks import copy_metadata
 
-datas = []
+datas: list[tuple[str, str]] = []
 
 datas += copy_metadata("fastmcp")

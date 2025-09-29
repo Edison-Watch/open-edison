@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FiEye, FiEyeOff } from 'react-icons/fi'
 
 interface ServerStatus {
   running: boolean;
@@ -35,6 +36,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [showWebclientInstructions, setShowWebclientInstructions] = useState(false);
   const [ngrokAuthToken, setNgrokAuthToken] = useState('');
   const [ngrokDomain, setNgrokDomain] = useState('');
+  const [showNgrokAuth, setShowNgrokAuth] = useState(false);
   const [ngrokProcess, setNgrokProcess] = useState<any>(null);
   const [ngrokRunning, setNgrokRunning] = useState(false);
   const [ngrokUrl, setNgrokUrl] = useState('');
@@ -308,6 +310,57 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return () => clearInterval(interval);
   }, []);
 
+  // Load persisted ngrok settings on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.getNgrokSettings) {
+          const settings = await window.electronAPI.getNgrokSettings();
+          if (settings) {
+            if (typeof settings.authToken === 'string') setNgrokAuthToken(settings.authToken);
+            if (typeof settings.domain === 'string') setNgrokDomain(settings.domain);
+            if (typeof settings.url === 'string') setNgrokUrl(settings.url);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load ngrok settings:', e);
+      }
+    };
+    load();
+  }, []);
+
+  // Persist ngrok credentials when they change
+  useEffect(() => {
+    const save = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.saveNgrokSettings) {
+          await window.electronAPI.saveNgrokSettings({ authToken: ngrokAuthToken, domain: ngrokDomain });
+        }
+      } catch (e) {
+        // Non-fatal
+      }
+    };
+    if (ngrokAuthToken || ngrokDomain) {
+      save();
+    }
+  }, [ngrokAuthToken, ngrokDomain]);
+
+  // Persist discovered/selected ngrok URL
+  useEffect(() => {
+    const save = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.saveNgrokSettings) {
+          await window.electronAPI.saveNgrokSettings({ url: ngrokUrl });
+        }
+      } catch (e) {
+        // Non-fatal
+      }
+    };
+    if (ngrokUrl) {
+      save();
+    }
+  }, [ngrokUrl]);
+
   // Check ngrok health
   const checkNgrokHealth = async () => {
     try {
@@ -509,16 +562,16 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const isRunNgrokDisabled = ngrokRunning || !ngrokAuthToken.trim() || !ngrokDomain.trim();
 
   return (
-    <div style={{ padding: '2rem', background: 'white', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '2rem', background: 'var(--panel-bg)', height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
       {/* Server Control Section */}
       <div style={{
-        background: 'white',
+        background: 'var(--panel-bg)',
         borderRadius: '8px',
         padding: '2rem',
         marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        border: '1px solid var(--panel-border)'
       }}>
-        <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.25rem' }}>
+        <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem', fontSize: '1.25rem' }}>
           Server Status
         </h2>
 
@@ -741,20 +794,42 @@ brew install ngrok
                   <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
                     ngrok Authtoken:
                   </label>
-                  <input
-                    type="text"
-                    value={ngrokAuthToken}
-                    onChange={(e) => setNgrokAuthToken(e.target.value)}
-                    placeholder="Enter your ngrok authtoken"
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      border: '1px solid #bdc3c7',
-                      borderRadius: '6px',
-                      fontSize: '0.875rem',
-                      fontFamily: 'monospace'
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNgrokAuth ? 'text' : 'password'}
+                      value={ngrokAuthToken}
+                      onChange={(e) => setNgrokAuthToken(e.target.value)}
+                      placeholder="Enter your ngrok authtoken"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem 2.25rem 0.75rem 0.75rem',
+                        border: '1px solid #bdc3c7',
+                        borderRadius: '6px',
+                        fontSize: '0.875rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNgrokAuth(!showNgrokAuth)}
+                      aria-label={showNgrokAuth ? 'Hide authtoken' : 'Show authtoken'}
+                      title={showNgrokAuth ? 'Hide authtoken' : 'Show authtoken'}
+                      style={{
+                        position: 'absolute',
+                        right: '0.5rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#7f8c8d',
+                        padding: 0,
+                        lineHeight: 1
+                      }}
+                    >
+                      {showNgrokAuth ? <FiEyeOff /> : <FiEye />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
