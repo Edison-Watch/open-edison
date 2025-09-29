@@ -1,6 +1,6 @@
 {
   "name": "open-edison-desktop",
-  "version": "0.1.0",
+  "version": "0.1.116",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
   "scripts": {
@@ -65,6 +65,13 @@
     },
     "linux": {
       "target": "AppImage"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Edison-Watch",
+        "repo": "open-edison"
+      }
+    ]
   }
 }

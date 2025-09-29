@@ -100,6 +100,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
   },
   getTheme: () => ipcRenderer.invoke('theme-get')
+  ,
+  // Updates
+  checkForUpdates: () => ipcRenderer.invoke('updates-check'),
+  installUpdates: () => ipcRenderer.invoke('updates-install'),
+  onUpdateStatus: (callback: (status: string, info?: any) => void) => {
+    ipcRenderer.on('update-status', (_e, status, info) => callback(status, info))
+  },
+  onUpdateProgress: (callback: (progress: any) => void) => {
+    ipcRenderer.on('update-progress', (_e, progress) => callback(progress))
+  }
 })
 
 // Type definitions for the exposed API
@@ -142,6 +152,10 @@ declare global {
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
       onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
       getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
+      checkForUpdates: () => Promise<{ ok: boolean; result?: any; error?: string }>
+      installUpdates: () => Promise<{ ok: boolean; error?: string }>
+      onUpdateStatus: (callback: (status: string, info?: any) => void) => void
+      onUpdateProgress: (callback: (progress: any) => void) => void
     }
   }
 }

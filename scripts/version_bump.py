@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -46,9 +47,10 @@ def bump_version(pyproject: Path, part: str) -> str:
     return f"{maj}.{min_}.{pat}"
 
 
-def git_commit(pyproject: Path, new_version: str, amend: bool) -> None:
-    # Stage and commit the version bump
+def git_commit(pyproject: Path, extra_paths: list[Path], new_version: str, amend: bool) -> None:
     subprocess.run(["git", "add", str(pyproject)], check=True)
+    for p in extra_paths:
+        subprocess.run(["git", "add", str(p)], check=True)
     # Check if there is at least one commit to allow amend
     has_head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], capture_output=True)
     if amend and has_head.returncode == 0:
@@ -84,9 +86,21 @@ def main() -> int:
         return 1
 
     new_version = bump_version(path, args.part)
+
+    extra_paths: list[Path] = []
+    try:
+        gui_pkg = Path("gui/package.json")
+        if gui_pkg.exists():
+            pkg = json.loads(gui_pkg.read_text(encoding="utf-8"))
+            if isinstance(pkg, dict):
+                pkg["version"] = new_version
+                gui_pkg.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
+                extra_paths.append(gui_pkg)
+    except Exception as e:
+        print(f"Warning: failed to sync gui/package.json version: {e}", file=sys.stderr)
     if args.commit:
         try:
-            git_commit(path, new_version, amend=args.amend)
+            git_commit(path, extra_paths, new_version, amend=args.amend)
             print(f"Bumped version to: {new_version} (committed)")
         except subprocess.CalledProcessError as e:
             print(f"Bumped version to: {new_version}, but failed to commit: {e}", file=sys.stderr)

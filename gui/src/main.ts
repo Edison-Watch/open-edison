@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -787,6 +788,42 @@ app.whenReady().then(async () => {
   } else {
     console.log('Open Edison already installed, starting main application...')
     await startMainApplication()
+  }
+
+  // Auto-update setup (packaged only)
+  try {
+    if (app.isPackaged) {
+      autoUpdater.autoDownload = true
+      autoUpdater.autoInstallOnAppQuit = true
+
+      autoUpdater.on('checking-for-update', () => { try { mainWindow?.webContents.send('update-status', 'checking') } catch {} })
+      autoUpdater.on('update-available', (info) => { try { mainWindow?.webContents.send('update-status', 'available', info) } catch {} })
+      autoUpdater.on('update-not-available', () => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} })
+      autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch {} })
+      autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch {} })
+
+      ipcMain.handle('updates-check', async () => {
+        try {
+          const result = await autoUpdater.checkForUpdates()
+          return { ok: true, result }
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) }
+        }
+      })
+
+      ipcMain.handle('updates-install', async () => {
+        try {
+          setImmediate(() => autoUpdater.quitAndInstall())
+          return { ok: true }
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) }
+        }
+      })
+
+      setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch {} }, 2000)
+    }
+  } catch (e) {
+    console.warn('Auto-update init failed:', e)
   }
 })
 

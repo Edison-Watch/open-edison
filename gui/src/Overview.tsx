@@ -371,6 +371,25 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return () => clearInterval(interval);
   }, []);
 
+  // Listen and log updater events; trigger a check once on mount in packaged builds
+  useEffect(() => {
+    try {
+      if (window.electronAPI && window.electronAPI.onUpdateStatus && window.electronAPI.onUpdateProgress) {
+        window.electronAPI.onUpdateStatus((status, info) => {
+          addLog(`[updates] status: ${status}${info?.version ? ` (v${info.version})` : ''}`);
+        });
+        window.electronAPI.onUpdateProgress((p) => {
+          const pct = typeof p?.percent === 'number' ? p.percent.toFixed(1) : 'n/a';
+          addLog(`[updates] download: ${pct}%`);
+        });
+      }
+      // Kick off a check when app is packaged; harmless in dev (main will ignore)
+      if (window.electronAPI && window.electronAPI.checkForUpdates) {
+        window.electronAPI.checkForUpdates().catch(() => {});
+      }
+    } catch {}
+  }, []);
+
   // Load persisted ngrok settings on mount
   useEffect(() => {
     const load = async () => {
