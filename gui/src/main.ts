@@ -15,6 +15,8 @@ let isSetupWizardApiRunning = false
 let dashboardView: any = null
 const DASHBOARD_HEADER_OFFSET_DIP = 38
 let tray: Tray | null = null
+let ngrokProcessCount = 0
+let isNgrokRunning = false
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
@@ -657,7 +659,15 @@ async function createWindow(): Promise<void> {
         }
       }
 
-      const contextMenu = Menu.buildFromTemplate([
+      const statusLabel = () => {
+        if (isBackendRunning && isNgrokRunning) return 'Running with global access'
+        if (isBackendRunning) return 'Running with local access'
+        return 'Not Running'
+      }
+
+      const buildContextMenu = () => Menu.buildFromTemplate([
+        { label: statusLabel(), enabled: false },
+        { type: 'separator' },
         {
           label: 'Show Open Edison',
           click: () => {
@@ -674,7 +684,10 @@ async function createWindow(): Promise<void> {
         { type: 'separator' },
         { role: 'quit', label: isMac ? 'Quit Open Edison' : 'Quit' }
       ])
-      tray?.setContextMenu(contextMenu)
+      tray?.setContextMenu(buildContextMenu())
+      const refreshTrayMenu = () => { try { tray?.setContextMenu(buildContextMenu()) } catch { } }
+      // Periodically refresh to reflect backend/ngrok state
+      setInterval(refreshTrayMenu, 2000)
       tray?.on('click', () => {
         try {
           if (!mainWindow) return
@@ -1383,6 +1396,7 @@ ipcMain.handle('save-ngrok-settings', async (_event, payload: { authToken?: stri
 
 // Store processes for management
 const processes = new Map<any, ChildProcess>()
+const processCommands = new Map<any, string>()
 
 // Process management handlers
 ipcMain.handle('spawn-process', async (event, command: string, args: string[], env: any) => {
@@ -1425,6 +1439,8 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     // Store process reference for cleanup
     const processId = Date.now() // Simple ID for tracking
     processes.set(processId, childProcess)
+    processCommands.set(processId, command)
+    if (command === 'ngrok') { isNgrokRunning = true; ngrokProcessCount++ }
 
     console.log(`Process spawned with ID: ${processId}`)
 
@@ -1459,6 +1475,8 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     childProcess.on('exit', (code: number) => {
       console.log(`Process ${command} exited with code:`, code)
       processes.delete(processId)
+      processCommands.delete(processId)
+      if (command === 'ngrok') { ngrokProcessCount = Math.max(0, ngrokProcessCount - 1); isNgrokRunning = ngrokProcessCount > 0 }
 
       // If process exited with error code, notify renderer
       if (code !== 0 && mainWindow) {
@@ -1483,6 +1501,9 @@ ipcMain.handle('terminate-process', async (event, processId: any) => {
       console.log('Found process, terminating...')
       childProcess.kill()
       processes.delete(processId)
+      const cmd = processCommands.get(processId)
+      processCommands.delete(processId)
+      if (cmd === 'ngrok') { ngrokProcessCount = Math.max(0, ngrokProcessCount - 1); isNgrokRunning = ngrokProcessCount > 0 }
       console.log('Process terminated successfully')
     } else {
       console.log('Process not found in registry')
