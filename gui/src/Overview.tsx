@@ -308,6 +308,57 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     return () => clearInterval(interval);
   }, []);
 
+  // Load persisted ngrok settings on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.getNgrokSettings) {
+          const settings = await window.electronAPI.getNgrokSettings();
+          if (settings) {
+            if (typeof settings.authToken === 'string') setNgrokAuthToken(settings.authToken);
+            if (typeof settings.domain === 'string') setNgrokDomain(settings.domain);
+            if (typeof settings.url === 'string') setNgrokUrl(settings.url);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load ngrok settings:', e);
+      }
+    };
+    load();
+  }, []);
+
+  // Persist ngrok credentials when they change
+  useEffect(() => {
+    const save = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.saveNgrokSettings) {
+          await window.electronAPI.saveNgrokSettings({ authToken: ngrokAuthToken, domain: ngrokDomain });
+        }
+      } catch (e) {
+        // Non-fatal
+      }
+    };
+    if (ngrokAuthToken || ngrokDomain) {
+      save();
+    }
+  }, [ngrokAuthToken, ngrokDomain]);
+
+  // Persist discovered/selected ngrok URL
+  useEffect(() => {
+    const save = async () => {
+      try {
+        if (window.electronAPI && window.electronAPI.saveNgrokSettings) {
+          await window.electronAPI.saveNgrokSettings({ url: ngrokUrl });
+        }
+      } catch (e) {
+        // Non-fatal
+      }
+    };
+    if (ngrokUrl) {
+      save();
+    }
+  }, [ngrokUrl]);
+
   // Check ngrok health
   const checkNgrokHealth = async () => {
     try {

@@ -1110,6 +1110,67 @@ ipcMain.handle('get-server-config', async () => {
   return await readServerConfig()
 })
 
+// IPC handlers for persisting ngrok settings
+ipcMain.handle('get-ngrok-settings', async () => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try {
+      raw = await readFile(configPath, 'utf8')
+    } catch { }
+    let config: any
+    try {
+      config = JSON.parse(raw || '{}')
+    } catch {
+      config = {}
+    }
+    const ngrok = (config && typeof config === 'object' && config.ngrok) || {}
+    return {
+      authToken: typeof ngrok.auth_token === 'string' ? ngrok.auth_token : '',
+      domain: typeof ngrok.domain === 'string' ? ngrok.domain : '',
+      url: typeof ngrok.url === 'string' ? ngrok.url : ''
+    }
+  } catch (e) {
+    console.warn('get-ngrok-settings failed:', e)
+    return { authToken: '', domain: '', url: '' }
+  }
+})
+
+ipcMain.handle('save-ngrok-settings', async (_event, payload: { authToken?: string; domain?: string; url?: string }) => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try {
+      raw = await readFile(configPath, 'utf8')
+    } catch { }
+    let config: any
+    try {
+      config = JSON.parse(raw || '{}')
+    } catch {
+      config = {}
+    }
+
+    if (!config || typeof config !== 'object') config = {}
+    if (!config.ngrok || typeof config.ngrok !== 'object') config.ngrok = {}
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'authToken')) {
+      config.ngrok.auth_token = payload.authToken || ''
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'domain')) {
+      config.ngrok.domain = payload.domain || ''
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'url')) {
+      config.ngrok.url = payload.url || ''
+    }
+
+    await writeFile(configPath, JSON.stringify(config, null, 2), 'utf8')
+    return { success: true }
+  } catch (e) {
+    console.error('save-ngrok-settings failed:', e)
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
 // Store processes for management
 const processes = new Map<any, ChildProcess>()
 
