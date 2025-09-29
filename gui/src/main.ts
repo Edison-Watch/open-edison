@@ -677,6 +677,7 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
   // Handle window closed
   wizardWindow.on('closed', () => {
     wizardWindow = null
+    try { mainWindow?.webContents.send('wizard-closed') } catch {}
   })
 
   // Handle navigation errors
@@ -1126,6 +1127,21 @@ ipcMain.handle('wizard-completed', async () => {
 // IPC handler to get server configuration
 ipcMain.handle('get-server-config', async () => {
   return await readServerConfig()
+})
+
+// IPC: Reinitialize MCP servers via backend HTTP (avoids renderer CORS)
+ipcMain.handle('reinitialize-mcp', async () => {
+  try {
+    const { host, port, api_key } = await readServerConfig()
+    const url = `http://${host || 'localhost'}:${port+1 || 3001}/mcp/reinitialize`
+    const headers: Record<string, string> = { 'Accept': 'application/json' }
+    if (api_key) headers['Authorization'] = `Bearer ${api_key}`
+    const res = await fetch(url, { method: 'POST', headers })
+    return { ok: res.ok, status: res.status }
+  } catch (e) {
+    console.warn('reinitialize-mcp IPC failed:', e)
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 })
 
 // IPC handlers for persisting ngrok settings

@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openWizardWindow: () => ipcRenderer.invoke('open-wizard-window'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   wizardCompleted: () => ipcRenderer.invoke('wizard-completed'),
+  onWizardClosed: (callback: () => void) => {
+    ipcRenderer.on('wizard-closed', () => callback())
+  },
+  reinitializeMcp: () => ipcRenderer.invoke('reinitialize-mcp'),
 
   // Setup Wizard API log listener
   onSetupWizardApiLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -117,6 +121,8 @@ declare global {
       openWizardWindow: () => Promise<{ success: boolean; error?: string }>
       closeWindow: () => Promise<{ success: boolean }>
       wizardCompleted: () => Promise<{ success: boolean }>
+      onWizardClosed: (callback: () => void) => void
+      reinitializeMcp: () => Promise<{ ok: boolean; status?: number; error?: string }>
       spawnProcess: (command: string, args: string[], env: any) => Promise<any>
       terminateProcess: (processId: any) => Promise<void>
       composeHelpEmail: (subject: string, body: string, attachLogs?: boolean, logsText?: string) => Promise<{ success: boolean; attachmentPath?: string; error?: string }>
