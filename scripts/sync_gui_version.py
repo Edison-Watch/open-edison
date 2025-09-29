@@ -16,7 +16,7 @@ def sync_version():
         print("❌ pyproject.toml not found")
         sys.exit(1)
 
-    with open(pyproject_path, "r") as f:
+    with open(pyproject_path) as f:
         content = f.read()
 
     version_match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
@@ -32,7 +32,7 @@ def sync_version():
         print("❌ gui/package.json not found")
         sys.exit(1)
 
-    with open(package_json_path, "r") as f:
+    with open(package_json_path) as f:
         pkg = json.load(f)
 
     old_version = pkg.get("version", "unknown")
