@@ -82,8 +82,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dashboard View controls
   showDashboard: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('dashboard-create-or-show', bounds),
   setDashboardBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('dashboard-set-bounds', bounds),
-  hideDashboard: () => ipcRenderer.invoke('dashboard-hide')
-  ,
+  hideDashboard: () => ipcRenderer.invoke('dashboard-hide'),
+  refreshDashboard: () => ipcRenderer.invoke('dashboard-refresh'),
   openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
 })
 
@@ -120,6 +120,7 @@ declare global {
       showDashboard: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ success: boolean; error?: string }>
       setDashboardBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ success: boolean }>
       hideDashboard: () => Promise<{ success: boolean }>
+      refreshDashboard: () => Promise<{ success: boolean; error?: string }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
     }
   }

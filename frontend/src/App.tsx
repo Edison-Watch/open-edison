@@ -23,23 +23,30 @@ const getApiKey = (): string => {
     const urlApiKey = urlParams.get('api_key') || ''
     const globalApiKey = (window as any).OPEN_EDISON_API_KEY || ''
 
-    // When embedded (including Electron app iframe), avoid localStorage entirely.
-    if (isEmbedded || isLikelyElectron) {
-        if (urlApiKey) return urlApiKey
-        if (globalApiKey) return globalApiKey
-        return ''
-    }
-
-    // Standalone dashboard: prefer persisted localStorage, then URL, then global
+    // Always try localStorage first (it should contain the API key from URL parameter)
     try {
         if (typeof window !== 'undefined' && window.localStorage) {
             const storedKey = localStorage.getItem('api_key')
-            if (storedKey) return storedKey
+            if (storedKey) {
+                console.log('✅ Using stored API key from localStorage:', storedKey)
+                return storedKey
+            }
         }
     } catch { /* ignore */ }
 
-    if (urlApiKey) return urlApiKey
-    if (globalApiKey) return globalApiKey
+    // Fallback to global variable
+    if (globalApiKey) {
+        console.log('✅ Using global API key:', globalApiKey)
+        return globalApiKey
+    }
+
+    // Fallback to URL parameter
+    if (urlApiKey) {
+        console.log('✅ Using URL API key:', urlApiKey)
+        return urlApiKey
+    }
+
+    console.log('❌ No API key found in localStorage, global, or URL')
     return ''
 }
 
@@ -162,22 +169,25 @@ async function fetchToolSchemasExternal(projectRoot: string): Promise<Record<str
 export function App(): React.JSX.Element {
     // Always read from sessions.db (canonical name)
     const dbRelativeToProjectRoot = '/sessions.db'
-    
+
     // Get API key from URL query parameter (set by Electron app) and store in localStorage
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const apiKey = urlParams.get('api_key');
-        console.log('URL search params:', window.location.search);
-        console.log('API key from URL:', apiKey);
+        console.log('🔑 URL search params:', window.location.search);
+        console.log('🔑 API key from URL:', apiKey);
         if (apiKey) {
             try {
                 safeLocalStorage.setItem('api_key', apiKey);
-                console.log('API key set from URL parameter:', apiKey);
+                console.log('✅ API key stored in localStorage from URL parameter:', apiKey);
+                // Also set it globally for immediate use
+                (window as any).OPEN_EDISON_API_KEY = apiKey;
+                console.log('✅ API key also set globally for immediate use');
             } catch (error) {
-                console.error('Failed to set API key in localStorage:', error);
+                console.error('❌ Failed to set API key in localStorage:', error);
             }
         } else {
-            console.log('No API key found in URL parameters');
+            console.log('⚠️ No API key found in URL parameters');
         }
     }, []);
     // Vite injects __PROJECT_ROOT__ from vite.config.ts define

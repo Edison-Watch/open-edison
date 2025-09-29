@@ -648,7 +648,7 @@ app.whenReady().then(() => {
         "media-src * data: blob: app: http: https:; " +
         "frame-src * app: http: https:; " +
         "frame-ancestors *; child-src * data: blob: app: http: https:; worker-src * data: blob: app: http: https:;"
-      headers['Content-Security-Policy'] = [cspValue]
+      headers['Content-Security-Policy'] = cspValue
       callback({ responseHeaders: headers })
     })
   }
@@ -1234,8 +1234,9 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const { WebContentsView } = require('electron')
     const urlInfo = await readServerConfig()
     const host = urlInfo.host || 'localhost'
+    const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
     // Force dashboard to backend HTTP port 3001 regardless of config
-    const dashUrl = `http://${host}:3001/dashboard/`
+    const dashUrl = `http://${host}:3001/dashboard/?api_key=${encodeURIComponent(apiKey)}`
 
     if (!dashboardView) {
       dashboardView = new WebContentsView({
@@ -1265,9 +1266,11 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
       } catch { }
     }
     updateBounds()
-    // Keep in sync on window resize
-    const resizeHandler = () => updateBounds()
-    try { mainWindow.on('resize', resizeHandler) } catch { }
+    // Keep in sync on window resize (only add listener once)
+    if (!mainWindow.listenerCount('resize')) {
+      const resizeHandler = () => updateBounds()
+      try { mainWindow.on('resize', resizeHandler) } catch { }
+    }
     return { success: true }
   } catch (e) {
     console.error('dashboard-create-or-show error:', e)
@@ -1314,6 +1317,22 @@ ipcMain.handle('dashboard-open-devtools', async () => {
     }
     return { success: true }
   } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
+// Refresh dashboard with current API key
+ipcMain.handle('dashboard-refresh', async () => {
+  try {
+    if (!dashboardView) return { success: false, error: 'No dashboard view' }
+    const urlInfo = await readServerConfig()
+    const host = urlInfo.host || 'localhost'
+    const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
+    const dashUrl = `http://${host}:3001/dashboard/?api_key=${encodeURIComponent(apiKey)}`
+    dashboardView.webContents.loadURL(dashUrl)
+    return { success: true }
+  } catch (e) {
+    console.error('dashboard-refresh error:', e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 })

@@ -422,12 +422,16 @@ gui_run_wizard: install-check gui_pack ## Run the desktop app in development mod
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop with wizard...$(RESET)"
 	@cd gui && npm run first-install
 
-gui_pack: install-check ## Build the desktop app for distribution
+gui_pack: install-check sync_gui_version ## Build the desktop app for distribution
 	@echo "$(YELLOW)🏗️  Building desktop app (Electron) for distribution...$(RESET)"
 	@cd gui && npm install && npm run build
 	@echo "$(YELLOW)📦 Building Electron distribution packages...$(RESET)"
 	@cd gui && npm run dist
 	@echo "$(GREEN)✅ Desktop app packaged to gui/release/.$(RESET)"
+
+sync_gui_version: ## Sync version from pyproject.toml to gui/package.json
+	@echo "$(YELLOW)🔄 Syncing version from pyproject.toml to gui/package.json...$(RESET)"
+	@$(PYTHON) scripts/sync_gui_version.py
 
 
 ########################################################
@@ -466,7 +470,7 @@ pyinstall_clean: ## Clean PyInstaller outputs (binary, build dir, spec, copied b
 	@rm -f dist/open-edison-wizard
 	@echo "$(GREEN)✅ PyInstaller artifacts cleaned.$(RESET)"
 
-electron_dist: ## Build Electron distribution (requires pyinstall run to copy backend)
+electron_dist: sync_gui_version ## Build Electron distribution (requires pyinstall run to copy backend)
 	@echo "$(YELLOW)📦 Preparing Electron app with bundled backend...$(RESET)"
 	@if [ ! -f "dist/open-edison-backend" ]; then \
 		echo "$(RED)❌ dist/open-edison-backend not found. Run 'make pyinstall' first.$(RESET)"; \
@@ -492,7 +496,7 @@ electron_dist_clean: pyinstall_clean ## Clean Electron distribution outputs
 
 
 app_dist: pyinstall electron_dist ## Build full macOS app bundle (backend + frontend + GUI)
-	@:
+	@echo "$(GREEN)✅ Full macOS app bundle built with version from pyproject.toml$(RESET)"
 
 
 ########################################################
