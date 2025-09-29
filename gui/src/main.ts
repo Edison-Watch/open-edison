@@ -1,5 +1,4 @@
 import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu, dialog, Tray, nativeImage } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -544,6 +543,10 @@ async function createWindow(): Promise<void> {
               const win = BrowserWindow.getFocusedWindow() || mainWindow
               if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
             }
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
           }
         } catch (err) {
           console.warn('Manual update check failed:', err)
@@ -616,7 +619,8 @@ async function createWindow(): Promise<void> {
     if (process.platform === 'darwin' && !tray) {
       const fs = require('fs') as typeof import('fs')
       const path = require('path') as typeof import('path')
-      const icon = path.join(app.getAppPath(), '..', 'media', 'Edison.iconset', 'icon_16x16.png')
+      const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
+      const icon = path.join(base, 'media', 'Edison.iconset', 'icon_16x16.png')
       let img = null as ReturnType<typeof nativeImage.createFromPath> | null
       if (fs.existsSync(icon)) {
         img = nativeImage.createFromPath(icon)
@@ -642,6 +646,10 @@ async function createWindow(): Promise<void> {
                 const win = BrowserWindow.getFocusedWindow() || mainWindow
                 if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
               }
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
             }
           } catch (err) {
             console.warn('Tray manual update check failed:', err)
@@ -897,6 +905,9 @@ app.whenReady().then(async () => {
   // Auto-update setup (packaged only)
   try {
     if (app.isPackaged) {
+      // Load updater at runtime so it's not bundled
+      const updaterMod = require('electron-updater') as typeof import('electron-updater')
+      const autoUpdater = updaterMod.autoUpdater
       autoUpdater.autoDownload = true
       autoUpdater.autoInstallOnAppQuit = true
 
@@ -912,6 +923,14 @@ app.whenReady().then(async () => {
       })
       autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch {} })
       autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch {} })
+      // To debug update errors... 
+      // autoUpdater.on('error', (e) => {
+      //   try { mainWindow?.webContents.send('update-status', 'error', { message: e?.message || String(e) }) } catch {}
+      //   try {
+      //     const win = BrowserWindow.getFocusedWindow() || mainWindow
+      //     if (win) dialog.showMessageBox(win, { type: 'error', message: 'Update check failed', detail: (e?.message || String(e)), buttons: ['OK'] })
+      //   } catch {}
+      // })
 
       ipcMain.handle('updates-check', async () => {
         try {
@@ -932,6 +951,14 @@ app.whenReady().then(async () => {
       })
 
       setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch {} }, 2000)
+    } else {
+      // Dev: provide IPC stubs so manual check logs appear
+      ipcMain.handle('updates-check', async () => {
+        try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+        setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+        return { ok: true, result: null }
+      })
+      ipcMain.handle('updates-install', async () => ({ ok: false, error: 'Not available in development' }))
     }
   } catch (e) {
     console.warn('Auto-update init failed:', e)
