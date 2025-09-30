@@ -29,6 +29,39 @@ const App: React.FC = () => {
     setActiveTab(tab);
   };
 
+  // Pre-load dashboard in background on app startup (for SSE connection)
+  useEffect(() => {
+    if (window.electronAPI && serverConfig) {
+      // Show dashboard offscreen initially to establish SSE connection
+      window.electronAPI.showDashboard({
+        x: -10000, // Offscreen
+        y: -10000,
+        width: 1,
+        height: 1
+      }).then(() => {
+        console.log('Dashboard pre-loaded in background for notifications');
+        // Immediately hide it if we're not on dashboard tab
+        if (activeTab !== 'dashboard') {
+          window.electronAPI?.hideDashboard?.();
+        }
+      }).catch((err) => {
+        console.warn('Failed to pre-load dashboard:', err);
+      });
+    }
+  }, [serverConfig]);
+
+  // Manage dashboard visibility based on active tab
+  useEffect(() => {
+    if (window.electronAPI) {
+      if (activeTab === 'dashboard') {
+        // Dashboard tab is active, it will be shown by the ref callback
+      } else {
+        // Hide dashboard when not on dashboard tab
+        window.electronAPI.hideDashboard?.();
+      }
+    }
+  }, [activeTab]);
+
   // Listen for switch-to-dashboard messages from main process (from notification clicks)
   useEffect(() => {
     if (window.electronAPI) {
@@ -205,12 +238,7 @@ const App: React.FC = () => {
       {/* Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {activeTab === 'overview' && (
-          <div
-            style={{ width: '100%', height: '100%' }}
-            ref={(_el) => {
-              try { window.electronAPI?.hideDashboard?.() } catch { }
-            }}
-          >
+          <div style={{ width: '100%', height: '100%' }}>
             <Overview logs={logs} setLogs={setLogs} logsExpanded={logsExpanded} setLogsExpanded={setLogsExpanded} />
           </div>
         )}
@@ -227,15 +255,6 @@ const App: React.FC = () => {
                 width: Math.round(rect.width),
                 height: Math.round(rect.height)
               })
-              // Push current theme to the dashboard content as well
-              try {
-                const effective = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-                window.electronAPI?.setDashboardBounds?.({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
-                // Also update theme in dashboard
-                setTimeout(() => {
-                  window.electronAPI?.openDashboardDevTools // noop to satisfy type checker access
-                }, 0)
-              } catch { }
             }}
           />
         )}

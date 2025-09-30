@@ -1855,6 +1855,7 @@ ipcMain.handle('show-system-notification', async (event, payload: NotificationDa
     // Handle approve/deny action
     notification.on('action', async (event, index) => {
       const action = index === 0 ? 'approve' : 'deny'
+      console.log(`🔔 Notification button clicked: ${action} for ${payload.kind} ${payload.name}`)
 
       try {
         const urlInfo = await readServerConfig()
@@ -1897,8 +1898,9 @@ ipcMain.handle('show-system-notification', async (event, payload: NotificationDa
       activeNotifications.delete(notificationId)
     })
 
-    // Handle click (show main window and focus dashboard)
+    // Handle click on notification body (not action buttons)
     notification.on('click', () => {
+      console.log(`🔔 Notification body clicked for ${payload.kind} ${payload.name}`)
       if (mainWindow) {
         if (!mainWindow.isVisible()) mainWindow.show()
         mainWindow.focus()
