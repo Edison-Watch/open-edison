@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
+  stopBackend: () => ipcRenderer.invoke('stop-backend'),
 
   // Backend log listener
   onBackendLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -100,7 +101,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
   ,
   // Theme events
-  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => {
+  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }) => void) => {
     ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
   },
   getTheme: () => ipcRenderer.invoke('theme-get')
@@ -122,6 +123,7 @@ declare global {
     electronAPI: {
       getBackendStatus: () => Promise<{ running: boolean; port: number }>
       restartBackend: () => Promise<boolean>
+      stopBackend: () => Promise<boolean>
       onBackendLog: (callback: (log: { type: string; message: string }) => void) => void
       removeBackendLogListener: () => void
       getApplicationSupportPath: () => Promise<string>
@@ -157,8 +159,8 @@ declare global {
       hideDashboard: () => Promise<{ success: boolean }>
       refreshDashboard: () => Promise<{ success: boolean; error?: string }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
-      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
-      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
+      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }) => void) => void
+      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }>
       checkForUpdates: () => Promise<{ ok: boolean; result?: any; error?: string }>
       installUpdates: () => Promise<{ ok: boolean; error?: string }>
       onUpdateStatus: (callback: (status: string, info?: any) => void) => void

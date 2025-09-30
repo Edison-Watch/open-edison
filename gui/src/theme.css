@@ -1,7 +1,12 @@
 :root[data-theme='light'] {
   --bg: #f8fafc;
+  --bg-1: #f8fafc;
+  --bg-2: #e2e8f0;
+  --bg-3: #f8fafc;
   --text-primary: #111827;
   --text-muted: #6b7280;
+  --text-secondary: #7f8c8d;
+  --text-heading: #2c3e50;
   --panel-bg: #ffffff;
   --panel-border: #e5e7eb;
   --tab-bg: #e5e7eb;
@@ -13,14 +18,115 @@
   --button-bg: #e5e7eb;
   --button-bg-hover: #d1d5db;
   --button-text: #111827;
+  
+  /* Card design variables */
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --card-hover-bg: #f8fafc;
+  --status-online: #10b981;
+  --status-connecting: #f59e0b;
+  --status-badge-bg: #f1f5f9;
+  --wizard-button-bg: #8b5cf6;
+  --wizard-button-hover: #7c3aed;
+  
+  /* Server control buttons */
+  --start-button-bg: #10b981;
+  --start-button-hover: #059669;
+  --start-button-text: #0f172a;
+  --stop-button-bg: #f87171;
+  --stop-button-hover: #ef4444;
+  --stop-button-text: #0f172a;
+  
+  /* Sidebar/navbar colors */
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #e5e7eb;
+  --sidebar-text: #64748b;
+  --sidebar-text-active: #8b5cf6;
+  
+  /* Code and info box variables */
+  --code-bg: #f8f9fa;
+  --code-border: #e9ecef;
+  --code-text: #2c3e50;
+  --info-bg: #e8f4fd;
+  --info-border: #bee5eb;
+  --info-text: #0c5460;
+  --input-bg: #ffffff;
+  --input-border: #bdc3c7;
+  --input-text: #111827;
+  --input-disabled-bg: #f8f9fa;
+  --input-disabled-text: #7f8c8d;
 }
 
 :root[data-theme='dark'] {
-  --bg: #0b0f14;
-  --text-primary: #e5e7eb;
-  --text-muted: #9ca3af;
+  --bg: #0a0e14;
+  --bg-1: #0a0e14;
+  --bg-2: #060809;
+  --bg-3: #0a0e14;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-secondary: #94a3b8;
+  --text-heading: #f1f5f9;
+  --panel-bg: #060809;
+  --panel-border: #1a1f26;
+  --tab-bg: #1a1f26;
+  --tab-active: #0f1419;
+  --tab-active-text: #ffffff;
+  --tab-inactive-text: #bdc3c7;
+  --tab-border: #0f1419;
+  --accent: #3498db;
+  --button-bg: #1a1f26;
+  --button-bg-hover: #252a33;
+  --button-text: #ffffff;
+  
+  /* Card design variables */
+  --card-bg: #0f1419;
+  --card-border: #1a1f26;
+  --card-hover-bg: #151a21;
+  --status-online: #10b981;
+  --status-connecting: #f59e0b;
+  --status-badge-bg: #0f1419;
+  --wizard-button-bg: #8b5cf6;
+  --wizard-button-hover: #7c3aed;
+  
+  /* Server control buttons */
+  --start-button-bg: #10b981;
+  --start-button-hover: #059669;
+  --start-button-text: #f8fafc;
+  --stop-button-bg: #dc2626;
+  --stop-button-hover: #b91c1c;
+  --stop-button-text: #f8fafc;
+  
+  /* Sidebar/navbar colors */
+  --sidebar-bg: #060809;
+  --sidebar-border: #0f1419;
+  --sidebar-text: #64748b;
+  --sidebar-text-active: #8b5cf6;
+  
+  /* Code and info box variables */
+  --code-bg: #1a1f26;
+  --code-border: #252a33;
+  --code-text: #e2e8f0;
+  --info-bg: #1a2332;
+  --info-border: #2d3e50;
+  --info-text: #93c5fd;
+  --input-bg: #0f1419;
+  --input-border: #252a33;
+  --input-text: #f1f5f9;
+  --input-disabled-bg: #1a1f26;
+  --input-disabled-text: #64748b;
+}
+
+:root[data-theme='blue'] {
+  --bg: #1e293b;
+  --bg-1: #1e293b;
+  --bg-2: #0f172a;
+  --bg-3: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-secondary: #94a3b8;
+  --text-heading: #f1f5f9;
   --panel-bg: #111827;
-  --panel-border: #1f2937;
+  --panel-border: #334155;
   --tab-bg: #34495e;
   --tab-active: #2c3e50;
   --tab-active-text: #ffffff;
@@ -30,5 +136,42 @@
   --button-bg: #555a;
   --button-bg-hover: #666;
   --button-text: #ffffff;
+  
+  /* Card design variables */
+  --card-bg: #2d3b4e;
+  --card-border: #3d4f66;
+  --card-hover-bg: #334155;
+  --status-online: #10b981;
+  --status-connecting: #f59e0b;
+  --status-badge-bg: #1e293b;
+  --wizard-button-bg: #8b5cf6;
+  --wizard-button-hover: #7c3aed;
+  
+  /* Server control buttons */
+  --start-button-bg: #10b981;
+  --start-button-hover: #059669;
+  --start-button-text: #f8fafc;
+  --stop-button-bg: #dc2626;
+  --stop-button-hover: #b91c1c;
+  --stop-button-text: #f8fafc;
+  
+  /* Sidebar/navbar colors */
+  --sidebar-bg: #0f172a;
+  --sidebar-border: #1e293b;
+  --sidebar-text: #64748b;
+  --sidebar-text-active: #8b5cf6;
+  
+  /* Code and info box variables */
+  --code-bg: #1a1f26;
+  --code-border: #252a33;
+  --code-text: #e2e8f0;
+  --info-bg: #1a2332;
+  --info-border: #2d3e50;
+  --info-text: #93c5fd;
+  --input-bg: #0f1419;
+  --input-border: #252a33;
+  --input-text: #f1f5f9;
+  --input-disabled-bg: #1a1f26;
+  --input-disabled-text: #64748b;
 }
 

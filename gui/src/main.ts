@@ -13,7 +13,8 @@ let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
-const DASHBOARD_HEADER_OFFSET_DIP = 38
+const SIDEBAR_WIDTH_DIP = 80
+const PAGE_HEADER_HEIGHT_DIP = 66
 let tray: Tray | null = null
 let ngrokProcessCount = 0
 let isNgrokRunning = false
@@ -436,7 +437,9 @@ async function createWindow(): Promise<void> {
       webviewTag: true
     },
     show: false, // Don't show until ready
-    title: 'Open Edison Desktop'
+    title: 'Open Edison Desktop',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 15, y: 15 }
   })
 
   // Load the React desktop interface
@@ -595,7 +598,8 @@ async function createWindow(): Promise<void> {
             submenu: [
               { label: 'Light', type: 'radio', checked: false, click: () => setThemeMode('light') },
               { label: 'Dark', type: 'radio', checked: false, click: () => setThemeMode('dark') },
-              { label: 'System', type: 'radio', checked: true, click: () => setThemeMode('system') }
+              { label: 'Blue', type: 'radio', checked: true, click: () => setThemeMode('blue') },
+              { label: 'System', type: 'radio', checked: false, click: () => setThemeMode('system') }
             ]
           },
           {
@@ -706,10 +710,10 @@ async function createWindow(): Promise<void> {
 }
 
 // Theme management
-type ThemeMode = 'light' | 'dark' | 'system'
-let themeMode: ThemeMode = 'system'
+type ThemeMode = 'light' | 'dark' | 'blue' | 'system'
+let themeMode: ThemeMode = 'blue'
 
-function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' {
+function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' | 'blue' {
   if (mode === 'system') {
     try {
       const { nativeTheme } = require('electron') as typeof import('electron')
@@ -730,7 +734,7 @@ ipcMain.handle('theme-get', async () => {
   return { mode: themeMode, effective: getEffectiveTheme(themeMode) }
 })
 
-function applyThemeToDashboard(effective: 'light' | 'dark', mode: ThemeMode) {
+function applyThemeToDashboard(effective: 'light' | 'dark' | 'blue', mode: ThemeMode) {
   if (!dashboardView) return
   const script = `
     try {
@@ -1051,6 +1055,16 @@ ipcMain.handle('restart-backend', async () => {
   }
   await startBackend()
   return isBackendRunning
+})
+
+ipcMain.handle('stop-backend', async () => {
+  if (backendProcess) {
+    backendProcess.kill()
+    isBackendRunning = false
+    backendProcess = null
+    return true
+  }
+  return false
 })
 
 // Get application support path
@@ -1702,14 +1716,14 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     // Attach if not already attached
     const cv = (mainWindow as any).contentView
     try { cv.addChildView(dashboardView) } catch { }
-    // Compute bounds below the header in DIP
+    // Compute bounds below the header and to the right of sidebar in DIP
     const updateBounds = () => {
       try {
         const winBounds = mainWindow!.getContentBounds()
-        const x = 0
-        const y = DASHBOARD_HEADER_OFFSET_DIP
-        const width = Math.max(0, winBounds.width)
-        const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+        const x = SIDEBAR_WIDTH_DIP
+        const y = PAGE_HEADER_HEIGHT_DIP
+        const width = Math.max(0, winBounds.width - SIDEBAR_WIDTH_DIP)
+        const height = Math.max(0, winBounds.height - PAGE_HEADER_HEIGHT_DIP)
         dashboardView.setBounds({ x, y, width, height })
         dashboardView.setVisible(true)
       } catch { }
@@ -1733,10 +1747,10 @@ ipcMain.handle('dashboard-set-bounds', async (event, bounds: { x: number; y: num
     if (!mainWindow || !dashboardView) return { success: false }
     try {
       const winBounds = mainWindow.getContentBounds()
-      const x = 0
-      const y = DASHBOARD_HEADER_OFFSET_DIP
-      const width = Math.max(0, winBounds.width)
-      const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+      const x = SIDEBAR_WIDTH_DIP
+      const y = PAGE_HEADER_HEIGHT_DIP
+      const width = Math.max(0, winBounds.width - SIDEBAR_WIDTH_DIP)
+      const height = Math.max(0, winBounds.height - PAGE_HEADER_HEIGHT_DIP)
       dashboardView.setBounds({ x, y, width, height })
       dashboardView.setVisible(true)
     } catch { }

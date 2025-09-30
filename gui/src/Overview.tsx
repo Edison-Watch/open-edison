@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiEye, FiEyeOff } from 'react-icons/fi'
+import { Eye, EyeOff, Server, Globe, Zap, ChevronRight, Activity, Play, Square } from 'lucide-react'
 
 interface ServerStatus {
   running: boolean;
@@ -15,20 +15,14 @@ interface LogEntry {
 interface OverviewProps {
   logs: LogEntry[];
   setLogs: React.Dispatch<React.SetStateAction<LogEntry[]>>;
-  logsExpanded: boolean;
-  setLogsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLogsExpanded }) => {
+const Overview: React.FC<OverviewProps> = ({ logs, setLogs }) => {
   const [serverApiStatus, setServerApiStatus] = useState<ServerStatus>({ running: false, port: 3001 });
   const [serverMcpStatus, setServerMcpStatus] = useState<ServerStatus>({ running: false, port: 3000 });
-  const [showStdout, setShowStdout] = useState(true);
-  const [showStderr, setShowStderr] = useState(true);
-  const [verboseLogs, setVerboseLogs] = useState(false);
-  const [logLevel, setLogLevel] = useState('warning');
-  const [showDate, setShowDate] = useState(false);
-  const [showStream, setShowStream] = useState(false);
-  const [showLogsSection, setShowLogsSection] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
+  const [backendProcessRunning, setBackendProcessRunning] = useState(false);
+  
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpMessage, setHelpMessage] = useState('');
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
@@ -42,7 +36,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [ngrokErrorMessage, setNgrokErrorMessage] = useState<string | null>(null);
   const [ngrokHealth, setNgrokHealth] = useState<'unknown' | 'online' | 'offline'>('unknown');
-  const [autoScroll, setAutoScroll] = useState(true);
   // Quick Add MCP Server state
   const [qaOpen, setQaOpen] = useState(false);
   const [qaName, setQaName] = useState('');
@@ -53,6 +46,18 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [qaVerified, setQaVerified] = useState<null | boolean>(null);
   const [qaError, setQaError] = useState<string | null>(null);
   const [qaRemote, setQaRemote] = useState(false);
+
+  // Check backend process status
+  const checkBackendProcessStatus = async () => {
+    try {
+      if (window.electronAPI && window.electronAPI.getBackendStatus) {
+        const status = await window.electronAPI.getBackendStatus();
+        setBackendProcessRunning(status.running);
+      }
+    } catch (error) {
+      console.error('Error checking backend process status:', error);
+    }
+  };
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -69,6 +74,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       if (apiResponse.ok) {
         console.log('✅ API server is running on port 3001');
         setServerApiStatus({ running: true, port: 3001 });
+        setIsConnecting(false);
       }
 
       // If API server not responding, try the MCP server (port 3000)
@@ -81,16 +87,19 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       if (mcpResponse.ok) {
         console.log('✅ MCP server is running on port 3000');
         setServerMcpStatus({ running: true, port: 3000 });
+        setIsConnecting(false);
         return;
       }
 
       console.log('❌ No servers responding');
       setServerMcpStatus({ running: false, port: 3000 });
       setServerApiStatus({ running: false, port: 3001 });
+      setIsConnecting(backendProcessRunning);
     } catch (error) {
       console.error('❌ Error checking server status:', error);
       setServerMcpStatus({ running: false, port: 3000 });
       setServerApiStatus({ running: false, port: 3001 });
+      setIsConnecting(backendProcessRunning);
     }
   };
 
@@ -104,12 +113,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const startServer = async () => {
     try {
       if (window.electronAPI) {
+        setIsConnecting(true);
         const response = await window.electronAPI.restartBackend();
         if (response) {
-          setServerMcpStatus({ running: true, port: 3000 });
-          setServerApiStatus({ running: true, port: 3001 });
+          setBackendProcessRunning(true);
           addLog('Server started successfully');
+          // Server status will be updated by the periodic check
         } else {
+          setIsConnecting(false);
           addLog('Failed to start server');
         }
       } else {
@@ -120,8 +131,25 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     }
   };
 
-  const stopServer = () => {
-    addLog('Stop server functionality not yet implemented');
+  const stopServer = async () => {
+    try {
+      if (window.electronAPI && window.electronAPI.stopBackend) {
+        const stopped = await window.electronAPI.stopBackend();
+        if (stopped) {
+          setBackendProcessRunning(false);
+          setServerMcpStatus({ running: false, port: 3000 });
+          setServerApiStatus({ running: false, port: 3001 });
+          setIsConnecting(false);
+          addLog('Server stopped successfully');
+        } else {
+          addLog('Failed to stop server');
+        }
+      } else {
+        addLog('Electron API not available');
+      }
+    } catch (error) {
+      addLog(`Error stopping server: ${error}`);
+    }
   };
 
   const restartServer = async () => {
@@ -138,6 +166,17 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     setHelpMessage('');
     setIncludeDebugLogs(false);
   };
+
+  // Listen for help modal events from App.tsx
+  useEffect(() => {
+    const handleOpenHelp = () => {
+      openHelpModal();
+    };
+    window.addEventListener('open-help-modal', handleOpenHelp);
+    return () => {
+      window.removeEventListener('open-help-modal', handleOpenHelp);
+    };
+  }, []);
 
   // Wizard functions
   // Request backend to reinitialize MCP servers
@@ -316,7 +355,7 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       let emailBody = `Help Request Details:\n\n`;
       emailBody += `Message: ${helpMessage}\n\n`;
       emailBody += `Timestamp: ${new Date().toISOString()}\n`;
-      emailBody += `Server Status: ${serverMcpStatus.running ? 'Online' : 'Offline'}\n`;
+      emailBody += `Server Status: ${serverMcpStatus.running ? 'Online' : isConnecting ? 'Connecting' : 'Offline'}\n`;
       emailBody += `API Status: ${serverApiStatus.running ? 'Online' : 'Offline'}\n\n`;
 
       // Build logs text for attachment if requested
@@ -461,7 +500,11 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   // Start server status monitoring
   useEffect(() => {
     checkServerStatus();
-    const interval = setInterval(checkServerStatus, 5000);
+    checkBackendProcessStatus();
+    const interval = setInterval(() => {
+      checkServerStatus();
+      checkBackendProcessStatus();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -595,8 +638,6 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   }, []);
 
   // Ref to the logs container for autoscroll
-  const logsContainerRef = useRef<HTMLDivElement | null>(null);
-
   // Store the current ngrok process ID in a ref to avoid stale closures
   const ngrokProcessRef = useRef<any>(null);
   const ngrokRunningRef = useRef<boolean>(false);
@@ -671,205 +712,179 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
   // Note: All logs are now captured at App level for complete debugging
 
-  // Helper function to extract log level from message
-  const getLogLevel = (message: string): string => {
-    const levelMatch = message.match(/(DEBUG|INFO|WARNING|ERROR|CRITICAL)/i);
-    if (levelMatch) {
-      return levelMatch[1].toLowerCase();
-    }
-    // Default to info if no level found
-    return 'info';
-  };
-
-  // Helper function to check if log level should be shown
-  const shouldShowLogLevel = (message: string): boolean => {
-    const messageLevel = getLogLevel(message);
-    const levelHierarchy = { debug: 0, info: 1, warning: 2, error: 3, critical: 4 };
-    const selectedLevel = levelHierarchy[logLevel as keyof typeof levelHierarchy] || 1;
-    const messageLevelNum = levelHierarchy[messageLevel as keyof typeof levelHierarchy] || 1;
-    return messageLevelNum >= selectedLevel;
-  };
-
   // Filter and format logs based on current settings
-  const filteredLogs = logs.filter(log => {
-    // Show stdout and stderr logs based on checkboxes
-    const streamMatch = (log.type === 'stdout' && showStdout) || (log.type === 'stderr' && showStderr);
-    // Filter by log level
-    const levelMatch = shouldShowLogLevel(log.message);
-    return streamMatch && levelMatch;
-  }).map(log => {
-    let message = log.message;
-
-    // Apply verbose logs setting
-    if (verboseLogs && log.message.includes(' - ')) {
-      // Keep the full message with timestamp and level info
-      message = log.message;
-    } else if (log.message.includes(' - ')) {
-      // Extract just the message part (after the last "-")
-      const lastDashIndex = log.message.lastIndexOf(' - ');
-      if (lastDashIndex !== -1) {
-        message = log.message.substring(lastDashIndex + 3);
-      }
-    }
-
-    // Add stream prefix if enabled
-    if (showStream) {
-      const streamType = log.type === 'stderr' ? 'Err' : 'Out';
-      message = `[${streamType}] ${message}`;
-    }
-
-    return {
-      timestamp: showDate ? log.timestamp : '',
-      message
-    };
-  });
-
-  // Auto-scroll logs to bottom when enabled
-  useEffect(() => {
-    if (!autoScroll) return;
-    const container = logsContainerRef.current;
-    if (!container) return;
-    container.scrollTop = container.scrollHeight;
-  }, [logs, logsExpanded, showLogsSection, autoScroll]);
-
   // Disable ngrok run when missing token or domain
   const isRunNgrokDisabled = ngrokRunning || !ngrokAuthToken.trim() || !ngrokDomain.trim();
 
   return (
-    <div style={{ padding: '2rem', background: 'var(--panel-bg)', height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
-      {/* Server Control Section */}
+    <div style={{ padding: '2rem 2.5rem', height: '100%', overflow: 'auto', color: 'var(--text-primary)' }}>
+      {/* Header Section with Server Status and Start/Stop Button */}
       <div style={{
-        background: 'var(--panel-bg)',
-        borderRadius: '8px',
-        padding: '2rem',
-        marginBottom: '2rem',
-        border: '1px solid var(--panel-border)'
+        background: 'var(--card-bg)',
+        border: '1px solid var(--card-border)',
+        borderRadius: '12px',
+        padding: '1.5rem',
+        marginBottom: '2.5rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
-        <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem', fontSize: '1.25rem' }}>
-          Server Status
-        </h2>
-
+        {/* Server Status */}
         <div style={{
-          padding: '1rem',
-          borderRadius: '6px',
-          margin: '1rem 0',
-          fontWeight: '500',
-          background: serverMcpStatus.running ? '#d5f4e6' : '#fadbd8',
-          color: serverMcpStatus.running ? '#27ae60' : '#e74c3c',
-          border: `1px solid ${serverMcpStatus.running ? '#27ae60' : '#e74c3c'}`
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem'
         }}>
-          {serverMcpStatus.running ? '✅ Server is online 🛡️' : '❌ Server is offline'}
-          {serverMcpStatus.running && ngrokRunning && (
-            <div style={{
-              marginTop: '0.5rem',
-              fontWeight: '400',
-              color: ngrokHealth === 'online' ? '#2c3e50' : '#7f8c8d'
-            }}>
-              {ngrokHealth === 'online' ? '🌐 Open Edison is listening on ngrok URL' : '🌐 Checking ngrok availability...'}
-              {ngrokUrl ? (
-                <span> — <code style={{ background: '#f8f9fa', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{ngrokUrl}/mcp/</code></span>
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-          <button
-            onClick={openWizard}
-            style={{
-              background: '#9b59b6',
-              color: 'white',
-              border: 'none',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              transition: 'all 0.3s ease',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#8e44ad';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#9b59b6';
-            }}
-          >
-            ✨
-            Run Wizard
-          </button>
-          <button
-            onClick={openHelpModal}
-            style={{
-              background: '#3498db',
-              color: 'white',
-              border: 'none',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              transition: 'all 0.3s ease',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#2980b9';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#3498db';
-            }}
-          >
-            💬 Get Help
-          </button>
-        </div>
-
-      </div>
-
-      {/* Ngrok error banner (moved near the Run ngrok button below) */}
-
-      {/* Installation Instructions Section */}
-      <div style={{
-        background: 'white',
-        borderRadius: '8px',
-        padding: '2rem',
-        marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <div
-          style={{
+          <div style={{
+            background: serverMcpStatus.running
+              ? 'rgba(16, 185, 129, 0.15)'
+              : isConnecting
+                ? 'rgba(245, 158, 11, 0.15)'
+                : 'rgba(239, 68, 68, 0.15)',
+            borderRadius: '10px',
+            width: '48px',
+            height: '48px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Activity
+              size={24}
+              strokeWidth={2.25}
+              color={serverMcpStatus.running
+                ? 'var(--status-online)'
+                : isConnecting
+                  ? 'var(--status-connecting)'
+                  : '#ef4444'}
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.125rem' }}>
+              Server Status
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: serverMcpStatus.running
+                  ? 'var(--status-online)'
+                  : isConnecting
+                    ? 'var(--status-connecting)'
+                    : '#ef4444'
+              }} />
+              <span style={{ fontWeight: '600', fontSize: '1rem' }}>
+                {serverMcpStatus.running ? 'Online' : isConnecting ? 'Connecting…' : 'Offline'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Start/Stop Server Button */}
+        <button
+          onClick={backendProcessRunning ? stopServer : startServer}
+          style={{
+            background: backendProcessRunning ? 'var(--stop-button-bg)' : 'var(--start-button-bg)',
+            color: backendProcessRunning ? 'var(--stop-button-text)' : 'var(--start-button-text)',
+            border: 'none',
+            padding: '0.875rem 1.75rem',
+            borderRadius: '10px',
             cursor: 'pointer',
-            marginBottom: showLocalInstructions ? '1rem' : '0'
+            fontSize: '0.95rem',
+            fontWeight: '600',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            boxShadow: backendProcessRunning ? '0 2px 8px rgba(220, 38, 38, 0.25)' : '0 2px 8px rgba(16, 185, 129, 0.3)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = backendProcessRunning ? 'var(--stop-button-hover)' : 'var(--start-button-hover)';
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = backendProcessRunning ? '0 4px 12px rgba(220, 38, 38, 0.3)' : '0 4px 12px rgba(16, 185, 129, 0.4)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = backendProcessRunning ? 'var(--stop-button-bg)' : 'var(--start-button-bg)';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = backendProcessRunning ? '0 2px 8px rgba(220, 38, 38, 0.25)' : '0 2px 8px rgba(16, 185, 129, 0.3)';
+          }}
+        >
+          {backendProcessRunning ? (
+            <>
+              <Square size={18} color='var(--stop-button-text)' fill='var(--stop-button-text)' />
+              Stop Server
+            </>
+          ) : (
+            <>
+              <Play size={18} color='var(--start-button-text)' />
+              Start Server
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Main Action Cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2.5rem' }}>
+        {/* Local Agent Card */}
+        <div
+          style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--card-border)',
+            borderRadius: '12px',
+            padding: '1.5rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1.25rem'
           }}
           onClick={() => setShowLocalInstructions(!showLocalInstructions)}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--card-hover-bg)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--card-bg)';
+          }}
         >
-          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>
-            📋 Using Open Edison with your local agent
-          </h2>
-          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>
-            {showLocalInstructions ? '▼' : '▶'}
-          </span>
+          <div style={{
+            background: 'rgba(100, 116, 139, 0.15)',
+            borderRadius: '10px',
+            padding: '0.875rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Server size={24} color="#64748b" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+              Using Open Edison with your local agent
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              Connect to a locally running MCP server
+            </p>
+          </div>
+          <ChevronRight size={20} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         </div>
 
         {showLocalInstructions && (
           <div style={{ marginTop: '1rem' }}>
-            <p style={{ color: '#7f8c8d', marginBottom: '1rem', lineHeight: '1.6' }}>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: '1.6' }}>
               To connect to Open Edison to your local agent that supports MCP, use the following configuration. The wizard can do this for you for the following tools: VSCode, Cursor, Claude Desdktop and Claude Code.
             </p>
 
             <div style={{
-              background: '#f8f9fa',
-              border: '1px solid #e9ecef',
+              background: 'var(--code-bg)',
+              border: '1px solid var(--code-border)',
               borderRadius: '6px',
               padding: '1rem',
               fontFamily: 'monospace',
               fontSize: '0.875rem',
               overflow: 'auto',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'pre-wrap',
+              color: 'var(--code-text)'
             }}>
               {`{
   "mcpServers": {
@@ -881,51 +896,67 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 }`}
             </div>
 
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
-              <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
+            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--info-bg)', borderRadius: '6px', border: '1px solid var(--info-border)' }}>
+              <p style={{ margin: 0, color: 'var(--info-text)', fontSize: '0.875rem' }}>
                 <strong>Note:</strong> Replace <code>your-api-key</code> with your actual API key from the configuration.
                 The default key is <code>dev-api-key-change-me</code>.
               </p>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Webclient Instructions Section */}
-      <div style={{
-        background: 'white',
-        borderRadius: '8px',
-        padding: '2rem',
-        marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
+        {/* Webclient Card */}
         <div
           style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--card-border)',
+            borderRadius: '12px',
+            padding: '1.5rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            marginBottom: showWebclientInstructions ? '1rem' : '0'
+            gap: '1.25rem'
           }}
           onClick={() => setShowWebclientInstructions(!showWebclientInstructions)}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--card-hover-bg)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--card-bg)';
+          }}
         >
-          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>
-            🌐 Using Open Edison with webclients (e.g. chatgpt.com or claude.ai)
-          </h2>
-          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>
-            {showWebclientInstructions ? '▼' : '▶'}
-          </span>
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.15)',
+            borderRadius: '10px',
+            padding: '0.875rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Globe size={24} color="#3b82f6" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+              Using Open Edison with webclients
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              e.g. chatgpt.com or claude.ai
+            </p>
+          </div>
+          <ChevronRight size={20} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         </div>
 
         {showWebclientInstructions && (
           <div style={{ marginTop: '1rem' }}>
-            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
               To use Open Edison with web-based AI clients like ChatGPT or Claude.ai, you'll need to set up an ngrok tunnel to expose your local Open Edison instance to the internet.
             </p>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 1: Install ngrok</h3>
-              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              <h3 style={{ color: 'var(--text-heading)', fontSize: '1rem', marginBottom: '1rem' }}>Step 1: Install ngrok</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 First, you need to install ngrok on your system:
               </p>
               <div style={{
@@ -949,8 +980,8 @@ brew install ngrok
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 2: Create ngrok Account</h3>
-              <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
+              <h3 style={{ color: 'var(--text-heading)', fontSize: '1rem', marginBottom: '1rem' }}>Step 2: Create ngrok Account</h3>
+              <ol style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
                 <li style={{ marginBottom: '0.5rem' }}>Visit <a href="https://dashboard.ngrok.com" target="_blank" rel="noopener noreferrer" style={{ color: '#3498db' }}>https://dashboard.ngrok.com</a> to sign up for a free account</li>
                 <li style={{ marginBottom: '0.5rem' }}>Get your authtoken from the "Your Authtoken" page</li>
                 <li style={{ marginBottom: '0.5rem' }}>Create a domain name in the "Domains" page</li>
@@ -958,14 +989,14 @@ brew install ngrok
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 3: Configure ngrok</h3>
-              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              <h3 style={{ color: 'var(--text-heading)', fontSize: '1rem', marginBottom: '1rem' }}>Step 3: Configure ngrok</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 Add your ngrok credentials to the configuration:
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>
                     ngrok Authtoken:
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -977,10 +1008,12 @@ brew install ngrok
                       style={{
                         width: '100%',
                         padding: '0.75rem 2.25rem 0.75rem 0.75rem',
-                        border: '1px solid #bdc3c7',
+                        border: '1px solid var(--input-border)',
                         borderRadius: '6px',
                         fontSize: '0.875rem',
-                        fontFamily: 'monospace'
+                        fontFamily: 'monospace',
+                        background: 'var(--input-bg)',
+                        color: 'var(--input-text)'
                       }}
                     />
                     <button
@@ -996,18 +1029,18 @@ brew install ngrok
                         background: 'transparent',
                         border: 'none',
                         cursor: 'pointer',
-                        color: '#7f8c8d',
+                        color: 'var(--text-muted)',
                         padding: 0,
                         lineHeight: 1
                       }}
                     >
-                      {showNgrokAuth ? <FiEyeOff /> : <FiEye />}
+                      {showNgrokAuth ? <EyeOff /> : <Eye />}
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>
                     ngrok Domain:
                   </label>
                   <input
@@ -1018,10 +1051,12 @@ brew install ngrok
                     style={{
                       width: '100%',
                       padding: '0.75rem',
-                      border: '1px solid #bdc3c7',
+                      border: '1px solid var(--input-border)',
                       borderRadius: '6px',
                       fontSize: '0.875rem',
-                      fontFamily: 'monospace'
+                      fontFamily: 'monospace',
+                      background: 'var(--input-bg)',
+                      color: 'var(--input-text)'
                     }}
                   />
                 </div>
@@ -1124,8 +1159,8 @@ brew install ngrok
                     <span style={{ color: '#27ae60', fontWeight: '500' }}>✅ Ngrok is running</span>
                   </div>
                   {ngrokUrl && (
-                    <div style={{ fontSize: '0.875rem', color: '#2c3e50' }}>
-                      <strong>Tunnel URL:</strong> <code style={{ background: '#f8f9fa', padding: '0.25rem 0.5rem', borderRadius: '3px' }}>{ngrokUrl}/mcp/</code>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--text-heading)' }}>
+                      <strong>Tunnel URL:</strong> <code style={{ background: 'var(--code-bg)', padding: '0.25rem 0.5rem', borderRadius: '3px', color: 'var(--code-text)' }}>{ngrokUrl}/mcp/</code>
                     </div>
                   )}
                 </div>
@@ -1133,21 +1168,22 @@ brew install ngrok
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Alternative: Manual ngrok Setup</h3>
-              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              <h3 style={{ color: 'var(--text-heading)', fontSize: '1rem', marginBottom: '1rem' }}>Alternative: Manual ngrok Setup</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 If you prefer to run ngrok manually, create a <code>ngrok.yml</code> file with this configuration:
               </p>
 
               <div style={{
-                background: '#f8f9fa',
-                border: '1px solid #e9ecef',
+                background: 'var(--code-bg)',
+                border: '1px solid var(--code-border)',
                 borderRadius: '6px',
                 padding: '1rem',
                 fontFamily: 'monospace',
                 fontSize: '0.875rem',
                 overflow: 'auto',
                 whiteSpace: 'pre-wrap',
-                marginBottom: '1rem'
+                marginBottom: '1rem',
+                color: 'var(--code-text)'
               }}>
                 {`version: 3
 
@@ -1162,7 +1198,7 @@ endpoints:
       protocol: http1`}
               </div>
 
-              <p style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
                 Then run this command in your terminal:
               </p>
 
@@ -1182,8 +1218,8 @@ endpoints:
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#2c3e50', fontSize: '1rem', marginBottom: '1rem' }}>Step 4: Enable Developer Mode in ChatGPT</h3>
-              <ol style={{ color: '#7f8c8d', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
+              <h3 style={{ color: 'var(--text-heading)', fontSize: '1rem', marginBottom: '1rem' }}>Step 4: Enable Developer Mode in ChatGPT</h3>
+              <ol style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem', paddingLeft: '1.5rem' }}>
                 <li style={{ marginBottom: '0.5rem' }}>Click on your profile icon in ChatGPT</li>
                 <li style={{ marginBottom: '0.5rem' }}>Select <strong>Settings</strong></li>
                 <li style={{ marginBottom: '0.5rem' }}>Go to <strong>"Connectors"</strong> in the settings menu</li>
@@ -1192,104 +1228,133 @@ endpoints:
               </ol>
             </div>
 
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#e8f4fd', borderRadius: '6px', border: '1px solid #bee5eb' }}>
-              <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
+            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--info-bg)', borderRadius: '6px', border: '1px solid var(--info-border)' }}>
+              <p style={{ margin: 0, color: 'var(--info-text)', fontSize: '0.875rem' }}>
                 <strong>Next:</strong> Once configured, you can add Open Edison to ChatGPT using your ngrok URL as the MCP Server URL (e.g., <code>https://your-domain.ngrok-free.app/mcp/</code>).
               </p>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Quick Add MCP Server */}
-      <div style={{
-        background: 'white',
-        borderRadius: '8px',
-        padding: '2rem',
-        marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setQaOpen(!qaOpen)}>
-          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>⚡ Add MCP server manually</h2>
-          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>{qaOpen ? '▼' : '▶'}</span>
+        {/* Add MCP Server Manually Card */}
+        <div
+          style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--card-border)',
+            borderRadius: '12px',
+            padding: '1.5rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1.25rem'
+          }}
+          onClick={() => setQaOpen(!qaOpen)}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--card-hover-bg)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--card-bg)';
+          }}
+        >
+          <div style={{
+            background: 'rgba(234, 179, 8, 0.15)',
+            borderRadius: '10px',
+            padding: '0.875rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Zap size={24} color="#eab308" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+              Add MCP server manually
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              Advanced configuration options
+            </p>
+          </div>
+          <ChevronRight size={20} color="var(--text-muted)" style={{ flexShrink: 0 }} />
         </div>
         {qaOpen && (
           <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>
                 <span>Name</span>
                 <span title="Required" style={{ color: '#f1c40f' }}>*</span>
               </label>
-              <input type="text" value={qaName} onChange={(e) => setQaName(e.target.value)} placeholder="" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
+              <input type="text" value={qaName} onChange={(e) => setQaName(e.target.value)} placeholder="" style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--input-border)', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--input-text)' }} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Command</label>
-              <input type="text" value={qaCommand} readOnly placeholder="npx" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', background: '#f8f9fa', color: '#7f8c8d' }} />
+              <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>Command</label>
+              <input type="text" value={qaCommand} readOnly placeholder="npx" style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--input-border)', borderRadius: '6px', background: 'var(--input-disabled-bg)', color: 'var(--input-disabled-text)' }} />
             </div>
 
             <div style={{ gridColumn: '1 / span 2', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: '#2c3e50' }}>Remote server</label>
+              <label style={{ fontSize: '0.875rem', color: 'var(--text-heading)' }}>Remote server</label>
               <input type="checkbox" checked={qaRemote} onChange={(e) => { setQaRemote(e.target.checked); }} />
-              <span style={{ fontSize: '0.8rem', color: '#7f8c8d' }}>(Select if the MCP server starts with http/https, e.g.: "https://mcp.atlassian.com/v1/sse")</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>(Select if the MCP server starts with http/https, e.g.: "https://mcp.atlassian.com/v1/sse")</span>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>
                 <span>Arguments</span>
                 <span title="At least one user line required" style={{ color: '#f1c40f' }}>*</span>
               </label>
-              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                <div style={{ color: '#7f8c8d' }}>[</div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#7f8c8d', paddingLeft: '1rem' }}>
+              <div style={{ background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                <div style={{ color: 'var(--text-secondary)' }}>[</div>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--text-secondary)', paddingLeft: '1rem' }}>
                   <span>"-y",</span>
                 </div>
                 {qaRemote && (
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#7f8c8d', paddingLeft: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--text-secondary)', paddingLeft: '1rem' }}>
                     <span>"mcp-remote",</span>
                   </div>
                 )}
                 {qaArgsList.map((val, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingLeft: '1rem' }}>
                     <span>"</span>
-                    <input value={val} onChange={(e) => setQaArgsList(prev => prev.map((v, i) => i === idx ? e.target.value : v))} style={{ flex: 1, border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <input value={val} onChange={(e) => setQaArgsList(prev => prev.map((v, i) => i === idx ? e.target.value : v))} style={{ flex: 1, border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace', background: 'var(--input-bg)', color: 'var(--input-text)' }} />
                     <span>",</span>
-                    <button onClick={() => setQaArgsList(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove argument line" style={{ background: 'white', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
+                    <button onClick={() => setQaArgsList(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove argument line" style={{ background: 'var(--button-bg)', border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
                   </div>
                 ))}
                 <div style={{ paddingLeft: '1rem', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <button onClick={() => setQaArgsList(prev => [...prev, ''])} style={{ background: 'white', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem 0.5rem', color: '#2c3e50', cursor: 'pointer' }}>+ add line</button>
+                  <button onClick={() => setQaArgsList(prev => [...prev, ''])} style={{ background: 'var(--button-bg)', border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.25rem 0.5rem', color: 'var(--text-heading)', cursor: 'pointer' }}>+ add line</button>
                   {getNextArgExample() ? (
-                    <span style={{ color: '#7f8c8d', fontSize: '0.8rem' }}>e.g., {getNextArgExample()}</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>e.g., {getNextArgExample()}</span>
                   ) : null}
                 </div>
-                <div style={{ color: '#7f8c8d' }}>]</div>
+                <div style={{ color: 'var(--text-secondary)' }}>]</div>
               </div>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Environment Variables</label>
-              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                <div style={{ color: '#7f8c8d' }}>{'{'}</div>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-heading)', marginBottom: '0.5rem', fontWeight: '500' }}>Environment Variables</label>
+              <div style={{ background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                <div style={{ color: 'var(--text-secondary)' }}>{'{'}</div>
                 {qaEnvRows.map((row, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingLeft: '1rem', marginBottom: '0.25rem' }}>
                     <span>"</span>
-                    <input value={row.key} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, key: e.target.value } : r))} placeholder="KEY" style={{ width: '180px', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <input value={row.key} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, key: e.target.value } : r))} placeholder="KEY" style={{ width: '180px', border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace', background: 'var(--input-bg)', color: 'var(--input-text)' }} />
                     <span>": "</span>
-                    <input value={row.value} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))} placeholder="value" style={{ flex: 1, border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <input value={row.value} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))} placeholder="value" style={{ flex: 1, border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace', background: 'var(--input-bg)', color: 'var(--input-text)' }} />
                     <span>",</span>
-                    <button onClick={() => setQaEnvRows(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove env line" style={{ background: 'white', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
+                    <button onClick={() => setQaEnvRows(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove env line" style={{ background: 'var(--button-bg)', border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
                   </div>
                 ))}
                 <div style={{ paddingLeft: '1rem', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <button onClick={() => setQaEnvRows(prev => [...prev, { key: '', value: '' }])} style={{ background: 'white', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem 0.5rem', color: '#2c3e50', cursor: 'pointer' }}>+ add line</button>
-                  <span style={{ color: '#7f8c8d', fontSize: '0.8rem' }}>e.g., SUPABASE_ACCESS_TOKEN: your-supabase-access-token</span>
+                  <button onClick={() => setQaEnvRows(prev => [...prev, { key: '', value: '' }])} style={{ background: 'var(--button-bg)', border: '1px solid var(--input-border)', borderRadius: '4px', padding: '0.25rem 0.5rem', color: 'var(--text-heading)', cursor: 'pointer' }}>+ add line</button>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>e.g., SUPABASE_ACCESS_TOKEN: your-supabase-access-token</span>
                 </div>
-                <div style={{ color: '#7f8c8d' }}>{'}'}</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{'}'}</div>
               </div>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
-              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: '#7f8c8d' }}>
+              <div style={{ background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--code-text)' }}>
                 {JSON.stringify({
                   name: qaName || '',
                   command: qaCommand,
@@ -1316,195 +1381,6 @@ endpoints:
         )}
       </div>
 
-      {/* Server Logs Section */}
-      <div style={{
-        background: 'white',
-        borderRadius: '8px',
-        marginBottom: '2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        overflow: 'hidden'
-      }}>
-        {/* Logs Header - Always Visible */}
-        <div style={{
-          padding: '1.5rem 2rem',
-          borderBottom: showLogsSection ? '1px solid #ecf0f1' : 'none',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-          background: showLogsSection ? '#f8f9fa' : 'white',
-          transition: 'all 0.3s ease'
-        }}
-          onClick={() => setShowLogsSection(!showLogsSection)}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <h2 style={{ color: '#2c3e50', fontSize: '1.25rem', margin: 0 }}>
-              Server Logs
-            </h2>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: '0.875rem',
-              color: '#7f8c8d'
-            }}>
-              <span>{filteredLogs.length} entries</span>
-              <div style={{
-                transform: showLogsSection ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.3s ease',
-                fontSize: '1.2rem'
-              }}>
-                ▼
-              </div>
-            </div>
-          </div>
-          {showLogsSection && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setLogsExpanded(!logsExpanded);
-              }}
-              style={{
-                background: logsExpanded ? '#e74c3c' : '#3498db',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {logsExpanded ? 'Collapse' : 'Expand'}
-            </button>
-          )}
-        </div>
-
-        {/* Logs Content - Collapsible */}
-        <div style={{
-          maxHeight: showLogsSection ? (logsExpanded ? 'calc(100vh - 200px)' : '300px') : '0px',
-          overflow: 'hidden',
-          transition: 'max-height 0.3s ease'
-        }}>
-          <div style={{ padding: '2rem' }}>
-            {/* Log Filters */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '1rem',
-              marginBottom: '1rem',
-              flexWrap: 'wrap'
-            }}>
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                <input
-                  type="checkbox"
-                  checked={showStdout}
-                  onChange={(e) => setShowStdout(e.target.checked)}
-                  style={{ marginRight: '0.5rem' }}
-                />
-                Show stdout
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                <input
-                  type="checkbox"
-                  checked={showStderr}
-                  onChange={(e) => setShowStderr(e.target.checked)}
-                  style={{ marginRight: '0.5rem' }}
-                />
-                Show stderr
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                <input
-                  type="checkbox"
-                  checked={verboseLogs}
-                  onChange={(e) => setVerboseLogs(e.target.checked)}
-                  style={{ marginRight: '0.5rem' }}
-                />
-                Verbose logs
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                <input
-                  type="checkbox"
-                  checked={showDate}
-                  onChange={(e) => setShowDate(e.target.checked)}
-                  style={{ marginRight: '0.5rem' }}
-                />
-                Show date
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                <input
-                  type="checkbox"
-                  checked={showStream}
-                  onChange={(e) => setShowStream(e.target.checked)}
-                  style={{ marginRight: '0.5rem' }}
-                />
-                Show stream
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Level:</label>
-                <select
-                  value={logLevel}
-                  onChange={(e) => setLogLevel(e.target.value)}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #bdc3c7',
-                    fontSize: '0.875rem',
-                    background: 'white'
-                  }}
-                >
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warning">Warning</option>
-                  <option value="error">Error</option>
-                </select>
-              </div>
-
-              {/* Autoscroll toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>Autoscroll:</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                  <input
-                    type="radio"
-                    name="autoscroll"
-                    checked={autoScroll}
-                    onChange={() => setAutoScroll(true)}
-                  />
-                  On
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', color: '#7f8c8d' }}>
-                  <input
-                    type="radio"
-                    name="autoscroll"
-                    checked={!autoScroll}
-                    onChange={() => setAutoScroll(false)}
-                  />
-                  Off
-                </label>
-              </div>
-            </div>
-
-            {/* Logs Display */}
-            <div ref={logsContainerRef} style={{
-              background: '#2c3e50',
-              color: '#ecf0f1',
-              padding: '1rem',
-              borderRadius: '6px',
-              fontFamily: "'Monaco', 'Menlo', monospace",
-              fontSize: '0.875rem',
-              maxHeight: logsExpanded ? 'calc(100vh - 300px)' : '200px',
-              overflowY: 'auto',
-              whiteSpace: 'pre-wrap',
-              transition: 'all 0.3s ease'
-            }}>
-              {filteredLogs.length === 0 ? 'Server logs will appear here...' :
-                filteredLogs.map((log, index) => log.timestamp ? `[${log.timestamp}] ${log.message}` : log.message).join('\n')
-              }
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Help Modal */}
       {showHelpModal && (
         <div style={{
@@ -1520,7 +1396,7 @@ endpoints:
           zIndex: 1000
         }}>
           <div style={{
-            background: 'white',
+            background: 'var(--panel-bg)',
             borderRadius: '12px',
             padding: '2rem',
             maxWidth: '500px',
@@ -1539,29 +1415,38 @@ endpoints:
                 border: 'none',
                 fontSize: '1.5rem',
                 cursor: 'pointer',
-                color: '#7f8c8d',
+                color: 'var(--text-muted)',
                 padding: '0.25rem',
                 borderRadius: '4px',
                 transition: 'all 0.2s ease'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#f8f9fa';
-                e.currentTarget.style.color = '#2c3e50';
+                e.currentTarget.style.background = 'var(--card-hover-bg)';
+                e.currentTarget.style.color = 'var(--text-heading)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'none';
-                e.currentTarget.style.color = '#7f8c8d';
+                e.currentTarget.style.color = 'var(--text-muted)';
               }}
             >
               ×
             </button>
 
-            <h2 style={{ color: '#2c3e50', marginBottom: '1rem', fontSize: '1.5rem' }}>
-              💬 Get Help
+            <h2 style={{ color: 'var(--text-heading)', marginBottom: '1rem', fontSize: '1.5rem' }}>
+              💬 Contact Support
             </h2>
 
-            <p style={{ color: '#7f8c8d', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              Having issues with Open Edison? Let us know what's going wrong and we'll help you out!
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              Having issues with Open Edison? Let us know what's going wrong and we'll help you out! You can also contact us on our{' '}
+              <a
+                href="https://discord.gg/8UTc5Tmh"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--link-color)', textDecoration: 'underline' }}
+              >
+                Discord channel
+              </a>
+              .
             </p>
 
             <div style={{ marginBottom: '1.5rem' }}>
@@ -1569,7 +1454,7 @@ endpoints:
                 display: 'block',
                 marginBottom: '0.5rem',
                 fontWeight: '500',
-                color: '#2c3e50'
+                color: 'var(--text-heading)'
               }}>
                 Describe your issue:
               </label>
@@ -1581,19 +1466,21 @@ endpoints:
                   width: '100%',
                   minHeight: '120px',
                   padding: '0.75rem',
-                  border: '1px solid #bdc3c7',
+                  border: '1px solid var(--input-border)',
                   borderRadius: '6px',
                   fontSize: '0.875rem',
                   fontFamily: 'inherit',
                   resize: 'vertical',
                   outline: 'none',
-                  transition: 'border-color 0.3s ease'
+                  transition: 'border-color 0.3s ease',
+                  background: 'var(--input-bg)',
+                  color: 'var(--input-text)'
                 }}
                 onFocus={(e) => {
                   e.target.style.borderColor = '#3498db';
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = '#bdc3c7';
+                  e.target.style.borderColor = 'var(--input-border)';
                 }}
               />
             </div>
@@ -1617,7 +1504,7 @@ endpoints:
               </label>
               <p style={{
                 fontSize: '0.75rem',
-                color: '#7f8c8d',
+                color: 'var(--text-secondary)',
                 margin: '0.25rem 0 0 1.5rem',
                 lineHeight: '1.4'
               }}>
@@ -1677,6 +1564,7 @@ endpoints:
           </div>
         </div>
       )}
+
 
     </div>
   );

@@ -255,10 +255,10 @@ export function App(): React.JSX.Element {
         if (!showUnknown) return base
         return base + unknownSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)
     }, [filtered, unknownSessions, showUnknown])
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const [theme, setTheme] = useState<'light' | 'dark' | 'blue'>(() => {
         try {
-            const saved = safeLocalStorage.getItem('app_theme')
-            if (saved === 'light' || saved === 'dark') {
+            const saved = safeLocalStorage.getItem('app-theme')
+            if (saved === 'light' || saved === 'dark' || saved === 'blue') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -273,9 +273,34 @@ export function App(): React.JSX.Element {
     // Save theme state to localStorage whenever it changes
     useEffect(() => {
         try {
-            safeLocalStorage.setItem('app_theme', theme)
+            safeLocalStorage.setItem('app-theme', theme)
         } catch { /* ignore */ }
     }, [theme])
+
+    // Listen for theme changes from Electron
+    useEffect(() => {
+        // Create global theme setter for Electron to call
+        (window as any).__setTheme = (newTheme: 'light' | 'dark' | 'blue') => {
+            if (newTheme === 'light' || newTheme === 'dark' || newTheme === 'blue') {
+                setTheme(newTheme)
+            }
+        }
+
+        // Also listen to theme-changed event
+        const handleThemeChange = (event: CustomEvent) => {
+            const newTheme = event.detail?.effective
+            if (newTheme === 'light' || newTheme === 'dark' || newTheme === 'blue') {
+                setTheme(newTheme)
+            }
+        }
+        
+        window.addEventListener('theme-changed', handleThemeChange as EventListener)
+        
+        return () => {
+            window.removeEventListener('theme-changed', handleThemeChange as EventListener)
+            delete (window as any).__setTheme
+        }
+    }, [])
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
@@ -766,7 +791,7 @@ export function App(): React.JSX.Element {
     )
 }
 
-function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' }) {
+function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' | 'blue' }) {
     const files = useMemo(() => (
         [
             {
@@ -1172,7 +1197,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                             height="520px"
                             defaultLanguage="json"
                             language="json"
-                            theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
+                            theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
                             options={{ minimap: { enabled: false }, fontSize: 12, wordWrap: 'on', scrollBeyondLastLine: false }}
                             value={val}
                             onChange={(value) => setContent(prev => ({ ...prev, [active]: value ?? '' }))}
