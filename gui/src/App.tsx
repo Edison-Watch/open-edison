@@ -29,6 +29,15 @@ const App: React.FC = () => {
     setActiveTab(tab);
   };
 
+  // Listen for switch-to-dashboard messages from main process (from notification clicks)
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.onSwitchToDashboard(() => {
+        setActiveTab('dashboard');
+      });
+    }
+  }, []);
+
   // Check if we're in wizard mode based on URL query parameter
   useEffect(() => {
     const checkWizardMode = () => {
@@ -226,7 +235,7 @@ const App: React.FC = () => {
                 setTimeout(() => {
                   window.electronAPI?.openDashboardDevTools // noop to satisfy type checker access
                 }, 0)
-              } catch {}
+              } catch { }
             }}
           />
         )}

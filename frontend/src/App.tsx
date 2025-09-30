@@ -521,7 +521,8 @@ export function App(): React.JSX.Element {
         navigator.serviceWorker?.addEventListener?.('message', onMessage)
 
         const es = new EventSource(`/events`)
-        es.onmessage = (ev) => {
+
+        es.onmessage = async (ev) => {
             try {
                 const data = JSON.parse(ev.data || '{}') as any
                 if (data?.type === 'sessions_db_changed') {
@@ -534,6 +535,28 @@ export function App(): React.JSX.Element {
                     const title = 'Edison blocked a risky action'
                     const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
                     const sessionId = data.session_id || ''
+
+                    // Check if we're running in Electron
+                    const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
+
+                    if (isElectron && sessionId && data.kind && data.name) {
+                        // Use Electron system notifications
+                        try {
+                            if (typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.showSystemNotification === 'function') {
+                                await (window as any).electronAPI.showSystemNotification({
+                                    sessionId,
+                                    kind: data.kind,
+                                    name: data.name,
+                                    reason: data.reason,
+                                    title,
+                                    body
+                                })
+                            }
+                        } catch (e) {
+                            console.warn('Failed to show Electron notification:', e)
+                        }
+                    }
+
                     // Always surface an in-page approval banner as a reliable fallback
                     if (sessionId && data.kind && data.name) {
                         const newItem: PendingApproval = {
@@ -550,34 +573,40 @@ export function App(): React.JSX.Element {
                         })
                         setLastBannerAt(Date.now())
                     }
-                    const trySW = async () => {
-                        try {
-                            if ('serviceWorker' in navigator && Notification) {
-                                const ensurePerm = async () => {
-                                    if (Notification.permission === 'granted') return true
-                                    if (Notification.permission === 'denied') return false
-                                    const p = await Notification.requestPermission();
-                                    return p === 'granted'
+
+                    // For browser mode (non-Electron), use service worker
+                    if (!isElectron) {
+                        const trySW = async () => {
+                            try {
+                                if ('serviceWorker' in navigator && Notification) {
+                                    const ensurePerm = async () => {
+                                        if (Notification.permission === 'granted') return true
+                                        if (Notification.permission === 'denied') return false
+                                        const p = await Notification.requestPermission();
+                                        return p === 'granted'
+                                    }
+                                    const ok = await ensurePerm()
+                                    if (!ok) return false
+                                    const reg = await navigator.serviceWorker.ready
+                                    reg.active?.postMessage({
+                                        type: 'SHOW_MCP_BLOCK_NOTIFICATION',
+                                        title,
+                                        body,
+                                        data: { sessionId, kind: data.kind, name: data.name }
+                                    })
                                 }
-                                const ok = await ensurePerm()
-                                if (!ok) return false
-                                const reg = await navigator.serviceWorker.ready
-                                reg.active?.postMessage({
-                                    type: 'SHOW_MCP_BLOCK_NOTIFICATION',
-                                    title,
-                                    body,
-                                    data: { sessionId, kind: data.kind, name: data.name }
-                                })
-                            }
-                        } catch { /* ignore */ }
+                            } catch { /* ignore */ }
+                        }
+                        void trySW()
                     }
-                    void trySW()
                 }
                 // For any other events, still tick now to advance live ranges
                 setNowMs(Date.now())
             } catch { /* ignore */ }
         }
-        es.onerror = () => {
+        es.onerror = (error) => {
+            console.error('❌ SSE connection error:', error)
+            console.error('SSE readyState:', es.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSED)')
             try { es.close() } catch { /* ignore */ }
         }
 

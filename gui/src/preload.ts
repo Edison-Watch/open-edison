@@ -97,7 +97,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDashboardBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('dashboard-set-bounds', bounds),
   hideDashboard: () => ipcRenderer.invoke('dashboard-hide'),
   refreshDashboard: () => ipcRenderer.invoke('dashboard-refresh'),
-  openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
+  openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools'),
+
+  // System notifications for approve/deny actions
+  showSystemNotification: (payload: { sessionId: string; kind: 'tool' | 'resource' | 'prompt'; name: string; reason?: string; title: string; body: string }) =>
+    ipcRenderer.invoke('show-system-notification', payload),
+  onNotificationActionCompleted: (callback: (data: { sessionId: string; kind: string; name: string; action: string }) => void) => {
+    ipcRenderer.on('notification-action-completed', (_event, data) => callback(data))
+  },
+  onSwitchToDashboard: (callback: () => void) => {
+    ipcRenderer.on('switch-to-dashboard', () => callback())
+  }
   ,
   // Theme events
   onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => {
@@ -157,6 +167,9 @@ declare global {
       hideDashboard: () => Promise<{ success: boolean }>
       refreshDashboard: () => Promise<{ success: boolean; error?: string }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
+      showSystemNotification: (payload: { sessionId: string; kind: 'tool' | 'resource' | 'prompt'; name: string; reason?: string; title: string; body: string }) => Promise<{ success: boolean; notificationId?: string; error?: string }>
+      onNotificationActionCompleted: (callback: (data: { sessionId: string; kind: string; name: string; action: string }) => void) => void
+      onSwitchToDashboard: (callback: () => void) => void
       onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
       getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
       checkForUpdates: () => Promise<{ ok: boolean; result?: any; error?: string }>

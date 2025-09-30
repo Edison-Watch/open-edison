@@ -431,7 +431,7 @@ install-check: ## Ensure GUI dependencies are installed
 		echo "$(GREEN)✅ GUI dependencies present.$(RESET)"; \
 	fi
 
-gui_dev: install-check gui_pack ## Run the desktop app in development mode
+gui_dev: install-check frontend_pack gui_pack ## Run the desktop app in development mode
 	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
 	@cd gui && OPEN_EDISON_GUI_MODE=development npm run dev
 
