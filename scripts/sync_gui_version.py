@@ -24,7 +24,7 @@ def sync_version():
         print("❌ Could not find version in pyproject.toml")
         sys.exit(1)
 
-    version = version_match.group(1)
+    version = version_match.group(1)  # type: ignore
 
     # Update gui/package.json
     package_json_path = Path("gui/package.json")

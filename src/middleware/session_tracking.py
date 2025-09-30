@@ -8,7 +8,7 @@ providing session-level statistics accessible via contextvar.
 import time
 import uuid
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -134,7 +134,7 @@ def create_db_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def get_session_from_db(session_id: str) -> MCPSession:
+def get_session_from_db(session_id: str) -> MCPSession:  # noqa: C901
     """Get session from db"""
     with create_db_session() as db_session:
         session = db_session.execute(
@@ -165,11 +165,12 @@ def get_session_from_db(session_id: str) -> MCPSession:
         if session.tool_calls is not None:  # type: ignore
             tool_calls_data = session.tool_calls  # type: ignore
             for tc_dict in tool_calls_data:  # type: ignore
-                # Convert timestamp string back to datetime if it exists
-                tc_dict_copy = dict(tc_dict)  # type: ignore
-                if "timestamp" in tc_dict_copy:  # type: ignore
-                    tc_dict_copy["timestamp"] = datetime.fromisoformat(tc_dict_copy["timestamp"])  # type: ignore
-                tool_calls.append(ToolCall(**tc_dict_copy))  # type: ignore
+                raw: dict[str, Any] = dict(tc_dict)  # type: ignore
+                ts_val = raw.get("timestamp")
+                if isinstance(ts_val, str):
+                    with suppress(Exception):
+                        raw["timestamp"] = datetime.fromisoformat(ts_val)
+                tool_calls.append(ToolCall(**raw))  # type: ignore[arg-type]
 
         # Restore data access tracker from database if available
         data_access_tracker = DataAccessTracker()
