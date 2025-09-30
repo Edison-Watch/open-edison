@@ -20,9 +20,9 @@ def sync_version():
         content = f.read()
 
     version_match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
-    if not version_match:
+    if version_match is None:
         print("❌ Could not find version in pyproject.toml")
-        sys.exit(1)
+        raise SystemExit(1)
 
     version = version_match.group(1)  # type: ignore
 

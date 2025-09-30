@@ -1,5 +1,4 @@
 import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu, dialog, Tray, nativeImage } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -16,6 +15,8 @@ let isSetupWizardApiRunning = false
 let dashboardView: any = null
 const DASHBOARD_HEADER_OFFSET_DIP = 38
 let tray: Tray | null = null
+let ngrokProcessCount = 0
+let isNgrokRunning = false
 
 // Removed GUI mode injection; DevTools are accessible via menu/shortcut
 
@@ -544,6 +545,10 @@ async function createWindow(): Promise<void> {
               const win = BrowserWindow.getFocusedWindow() || mainWindow
               if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
             }
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
           }
         } catch (err) {
           console.warn('Manual update check failed:', err)
@@ -616,7 +621,8 @@ async function createWindow(): Promise<void> {
     if (process.platform === 'darwin' && !tray) {
       const fs = require('fs') as typeof import('fs')
       const path = require('path') as typeof import('path')
-      const icon = path.join(app.getAppPath(), '..', 'media', 'Edison.iconset', 'icon_16x16.png')
+      const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
+      const icon = path.join(base, 'media', 'Edison.iconset', 'icon_16x16.png')
       let img = null as ReturnType<typeof nativeImage.createFromPath> | null
       if (fs.existsSync(icon)) {
         img = nativeImage.createFromPath(icon)
@@ -642,6 +648,10 @@ async function createWindow(): Promise<void> {
                 const win = BrowserWindow.getFocusedWindow() || mainWindow
                 if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
               }
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
             }
           } catch (err) {
             console.warn('Tray manual update check failed:', err)
@@ -649,7 +659,15 @@ async function createWindow(): Promise<void> {
         }
       }
 
-      const contextMenu = Menu.buildFromTemplate([
+      const statusLabel = () => {
+        if (isBackendRunning && isNgrokRunning) return 'Running with global access'
+        if (isBackendRunning) return 'Running with local access'
+        return 'Not Running'
+      }
+
+      const buildContextMenu = () => Menu.buildFromTemplate([
+        { label: statusLabel(), enabled: false },
+        { type: 'separator' },
         {
           label: 'Show Open Edison',
           click: () => {
@@ -666,7 +684,10 @@ async function createWindow(): Promise<void> {
         { type: 'separator' },
         { role: 'quit', label: isMac ? 'Quit Open Edison' : 'Quit' }
       ])
-      tray?.setContextMenu(contextMenu)
+      tray?.setContextMenu(buildContextMenu())
+      const refreshTrayMenu = () => { try { tray?.setContextMenu(buildContextMenu()) } catch { } }
+      // Periodically refresh to reflect backend/ngrok state
+      setInterval(refreshTrayMenu, 2000)
       tray?.on('click', () => {
         try {
           if (!mainWindow) return
@@ -897,6 +918,9 @@ app.whenReady().then(async () => {
   // Auto-update setup (packaged only)
   try {
     if (app.isPackaged) {
+      // Load updater at runtime so it's not bundled
+      const updaterMod = require('electron-updater') as typeof import('electron-updater')
+      const autoUpdater = updaterMod.autoUpdater
       autoUpdater.autoDownload = true
       autoUpdater.autoInstallOnAppQuit = true
 
@@ -912,6 +936,14 @@ app.whenReady().then(async () => {
       })
       autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch {} })
       autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch {} })
+      // To debug update errors... 
+      // autoUpdater.on('error', (e) => {
+      //   try { mainWindow?.webContents.send('update-status', 'error', { message: e?.message || String(e) }) } catch {}
+      //   try {
+      //     const win = BrowserWindow.getFocusedWindow() || mainWindow
+      //     if (win) dialog.showMessageBox(win, { type: 'error', message: 'Update check failed', detail: (e?.message || String(e)), buttons: ['OK'] })
+      //   } catch {}
+      // })
 
       ipcMain.handle('updates-check', async () => {
         try {
@@ -932,6 +964,14 @@ app.whenReady().then(async () => {
       })
 
       setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch {} }, 2000)
+    } else {
+      // Dev: provide IPC stubs so manual check logs appear
+      ipcMain.handle('updates-check', async () => {
+        try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+        setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+        return { ok: true, result: null }
+      })
+      ipcMain.handle('updates-install', async () => ({ ok: false, error: 'Not available in development' }))
     }
   } catch (e) {
     console.warn('Auto-update init failed:', e)
@@ -1293,6 +1333,76 @@ ipcMain.handle('reinitialize-mcp', async () => {
   }
 })
 
+// IPC: Validate an MCP server definition via backend HTTP (avoids CORS)
+ipcMain.handle('validate-mcp', async (_event, payload: { name?: string; command: string; args?: string[]; env?: Record<string, string>; timeout_s?: number }) => {
+  try {
+    // Ensure the Wizard API is running (it serves /verify)
+    const { host } = await readServerConfig()
+    await startSetupWizardApi(host, SETUP_WIZARD_API_PORT)
+    const url = `http://${host || 'localhost'}:${SETUP_WIZARD_API_PORT}/verify`
+    const headers: Record<string, string> = { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+    const body = JSON.stringify({
+      servers: [
+        {
+          name: payload.name || 'validation',
+          command: payload.command,
+          args: payload.args || [],
+          env: payload.env || {},
+          enabled: true
+        }
+      ]
+    })
+    const res = await fetch(url, { method: 'POST', headers, body })
+    const data = await res.json().catch(() => ({}))
+    // Map Wizard response to validate shape { data.valid, data.error }
+    const firstName = payload.name || 'validation'
+    const valid = Boolean(data && data.results && data.results[firstName])
+    return { ok: res.ok, status: res.status, data: { valid, raw: data } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
+// IPC: Add MCP server to config.json and request reinitialize
+ipcMain.handle('add-mcp-server', async (_event, payload: { name: string; command: string; args?: string[]; env?: Record<string, string> }) => {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json')
+    let raw = '{}'
+    try { raw = await readFile(configPath, 'utf8') } catch {}
+    let config: any
+    try { config = JSON.parse(raw || '{}') } catch { config = {} }
+    if (!config || typeof config !== 'object') config = {}
+    if (!Array.isArray(config.mcp_servers)) config.mcp_servers = []
+
+    const existingIdx = config.mcp_servers.findIndex((s: any) => s && s.name === payload.name)
+    const entry = {
+      name: payload.name,
+      command: payload.command,
+      args: Array.isArray(payload.args) ? payload.args : [],
+      env: payload.env || {},
+      enabled: true
+    }
+    if (existingIdx >= 0) config.mcp_servers[existingIdx] = entry
+    else config.mcp_servers.push(entry)
+
+    await writeFile(configPath, JSON.stringify(config, null, 2), 'utf8')
+
+    // trigger reinitialize
+    try {
+      const { host, port, api_key } = await readServerConfig()
+      const apiPort = (typeof port === 'number' ? port + 1 : 3001)
+      const url = `http://${host || 'localhost'}:${apiPort}/mcp/reinitialize`
+      const headers: Record<string, string> = { 'Accept': 'application/json' }
+      if (api_key) headers['Authorization'] = `Bearer ${api_key}`
+      await fetch(url, { method: 'POST', headers }).catch(() => {})
+    } catch {}
+
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
 // IPC handlers for persisting ngrok settings
 ipcMain.handle('get-ngrok-settings', async () => {
   try {
@@ -1356,6 +1466,7 @@ ipcMain.handle('save-ngrok-settings', async (_event, payload: { authToken?: stri
 
 // Store processes for management
 const processes = new Map<any, ChildProcess>()
+const processCommands = new Map<any, string>()
 
 // Process management handlers
 ipcMain.handle('spawn-process', async (event, command: string, args: string[], env: any) => {
@@ -1398,6 +1509,8 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     // Store process reference for cleanup
     const processId = Date.now() // Simple ID for tracking
     processes.set(processId, childProcess)
+    processCommands.set(processId, command)
+    if (command === 'ngrok') { isNgrokRunning = true; ngrokProcessCount++ }
 
     console.log(`Process spawned with ID: ${processId}`)
 
@@ -1432,6 +1545,8 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     childProcess.on('exit', (code: number) => {
       console.log(`Process ${command} exited with code:`, code)
       processes.delete(processId)
+      processCommands.delete(processId)
+      if (command === 'ngrok') { ngrokProcessCount = Math.max(0, ngrokProcessCount - 1); isNgrokRunning = ngrokProcessCount > 0 }
 
       // If process exited with error code, notify renderer
       if (code !== 0 && mainWindow) {
@@ -1456,6 +1571,9 @@ ipcMain.handle('terminate-process', async (event, processId: any) => {
       console.log('Found process, terminating...')
       childProcess.kill()
       processes.delete(processId)
+      const cmd = processCommands.get(processId)
+      processCommands.delete(processId)
+      if (cmd === 'ngrok') { ngrokProcessCount = Math.max(0, ngrokProcessCount - 1); isNgrokRunning = ngrokProcessCount > 0 }
       console.log('Process terminated successfully')
     } else {
       console.log('Process not found in registry')

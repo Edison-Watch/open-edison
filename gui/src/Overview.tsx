@@ -43,6 +43,15 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   const [ngrokErrorMessage, setNgrokErrorMessage] = useState<string | null>(null);
   const [ngrokHealth, setNgrokHealth] = useState<'unknown' | 'online' | 'offline'>('unknown');
   const [autoScroll, setAutoScroll] = useState(true);
+  // Quick Add MCP Server state
+  const [qaOpen, setQaOpen] = useState(false);
+  const [qaName, setQaName] = useState('');
+  const [qaCommand, setQaCommand] = useState('');
+  const [qaArgs, setQaArgs] = useState<string>('');
+  const [qaEnv, setQaEnv] = useState<string>('');
+  const [qaVerifying, setQaVerifying] = useState(false);
+  const [qaVerified, setQaVerified] = useState<null | boolean>(null);
+  const [qaError, setQaError] = useState<string | null>(null);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -207,6 +216,66 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
       }
     } catch {}
   }, []);
+
+  const canVerify = qaName.trim().length > 0 && qaCommand.trim().length > 0 && !qaVerifying;
+
+  const parseArgs = (s: string): string[] => {
+    try {
+      const j = JSON.parse(s);
+      return Array.isArray(j) ? j.filter((x) => typeof x === 'string') : [];
+    } catch { return s.trim() ? s.split(/\s+/) : []; }
+  };
+  const parseEnv = (s: string): Record<string, string> => {
+    try { const j = JSON.parse(s); return (j && typeof j === 'object') ? j as Record<string, string> : {}; } catch { return {}; }
+  };
+
+  const verifyMcp = async () => {
+    setQaError(null);
+    setQaVerified(null);
+    setQaVerifying(true);
+    try {
+      const args = parseArgs(qaArgs);
+      const env = parseEnv(qaEnv);
+      const res = await window.electronAPI.validateMcp({ name: qaName, command: qaCommand, args, env, timeout_s: 20 });
+      if (res && res.ok && res.data && res.data.valid) {
+        setQaVerified(true);
+        addLog('✅ MCP server verification passed');
+      } else {
+        setQaVerified(false);
+        const msg = (res && res.data && res.data.error) || res?.error || `Verification failed (status ${res?.status ?? 'n/a'})`;
+        setQaError(String(msg));
+        addLog(`❌ MCP server verification failed: ${msg}`);
+      }
+    } catch (e) {
+      setQaVerified(false);
+      const msg = e instanceof Error ? e.message : String(e);
+      setQaError(msg);
+      addLog(`❌ MCP server verification error: ${msg}`);
+    } finally {
+      setQaVerifying(false);
+    }
+  };
+
+  const addMcp = async () => {
+    try {
+      const args = parseArgs(qaArgs);
+      const env = parseEnv(qaEnv);
+      const res = await window.electronAPI.addMcpServer({ name: qaName, command: qaCommand, args, env });
+      if (res && res.ok) {
+        addLog(`✅ Added MCP server '${qaName}' to configuration`);
+        setQaOpen(false);
+        setQaName(''); setQaCommand(''); setQaArgs(''); setQaEnv(''); setQaVerified(null); setQaError(null);
+      } else {
+        const msg = res?.error || 'Failed to add server';
+        setQaError(msg);
+        addLog(`❌ Failed to add MCP server: ${msg}`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setQaError(msg);
+      addLog(`❌ Failed to add MCP server: ${msg}`);
+    }
+  };
 
   const submitHelpRequest = async () => {
     if (!helpMessage.trim()) {
@@ -1102,6 +1171,67 @@ endpoints:
               <p style={{ margin: 0, color: '#0c5460', fontSize: '0.875rem' }}>
                 <strong>Next:</strong> Once configured, you can add Open Edison to ChatGPT using your ngrok URL as the MCP Server URL (e.g., <code>https://your-domain.ngrok-free.app/mcp/</code>).
               </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Add MCP Server */}
+      <div style={{
+        background: 'white',
+        borderRadius: '8px',
+        padding: '2rem',
+        marginBottom: '2rem',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setQaOpen(!qaOpen)}>
+          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>⚡ Quick add MCP server</h2>
+          <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>{qaOpen ? '▼' : '▶'}</span>
+        </div>
+        {qaOpen && (
+          <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Name</label>
+              <input type="text" value={qaName} onChange={(e) => setQaName(e.target.value)} placeholder="supabase" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Command</label>
+              <input type="text" value={qaCommand} onChange={(e) => setQaCommand(e.target.value)} placeholder="npx" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
+            </div>
+
+            <div style={{ gridColumn: '1 / span 2' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Arguments</label>
+              <input type="text" value={qaArgs} onChange={(e) => setQaArgs(e.target.value)} placeholder='["-y","@supabase/mcp-server-supabase@latest","--project-ref=<project-ref>"]' style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', fontFamily: 'monospace' }} />
+            </div>
+
+            <div style={{ gridColumn: '1 / span 2' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Environment Variables</label>
+              <textarea value={qaEnv} onChange={(e) => setQaEnv(e.target.value)} placeholder='{"SUPABASE_ACCESS_TOKEN":"your-supabase-access-token"}' style={{ width: '100%', minHeight: '80px', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', fontFamily: 'monospace' }} />
+            </div>
+
+            <div style={{ gridColumn: '1 / span 2' }}>
+              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: '#7f8c8d' }}>
+{`{
+  "name": "supabase",
+  "command": "npx",
+  "args": ["-y", "@supabase/mcp-server-supabase@latest", "--project-ref=<project-ref>"],
+  "env": { "SUPABASE_ACCESS_TOKEN": "your-supabase-access-token" }
+}`}
+              </div>
+            </div>
+
+            {qaError && (
+              <div style={{ gridColumn: '1 / span 2', background: '#fdecea', border: '1px solid #f5c6cb', color: '#a94442', borderRadius: '6px', padding: '0.5rem 0.75rem' }}>
+                {qaError}
+              </div>
+            )}
+
+            <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <button onClick={() => { setQaOpen(false); setQaName(''); setQaCommand(''); setQaArgs(''); setQaEnv(''); setQaVerified(null); setQaError(null); }} style={{ background: '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={verifyMcp} disabled={!canVerify} style={{ background: canVerify ? '#27ae60' : '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: canVerify ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {qaVerifying ? '⏳ Verifying…' : 'Verify'} {qaVerified === true ? '✅' : qaVerified === false ? '❌' : ''}
+              </button>
+              <button onClick={addMcp} disabled={!qaVerified} style={{ background: qaVerified ? '#2ecc71' : '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: qaVerified ? 'pointer' : 'not-allowed' }}>Add to Open Edison</button>
             </div>
           </div>
         )}
