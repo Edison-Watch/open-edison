@@ -743,6 +743,21 @@ function applyThemeToDashboard(effective: 'light' | 'dark', mode: ThemeMode) {
   try { dashboardView.webContents.executeJavaScript(script).catch(() => { }) } catch { }
 }
 
+function setApiKeyForDashboard(apiKey: string) {
+  if (!dashboardView) return
+  try {
+    const safe = JSON.stringify(apiKey)
+    const script = `
+      try {
+        localStorage.setItem('api_key', ${safe});
+        if (window.__setApiKey) { window.__setApiKey(${safe}) }
+        try { window.dispatchEvent(new CustomEvent('api-key-changed', { detail: { apiKey: ${safe} } })) } catch {}
+      } catch {}
+    `
+    dashboardView.webContents.executeJavaScript(script).catch(() => { })
+  } catch { }
+}
+
 // Create the wizard window
 async function createWizardWindow(isFirstInstall: boolean = false): Promise<void> {
   // Don't create if already exists
@@ -1658,8 +1673,8 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const urlInfo = await readServerConfig()
     const host = urlInfo.host || 'localhost'
     const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
-    // Force dashboard to backend HTTP port 3001 regardless of config
-    const dashUrl = `http://${host}:3001/dashboard/?embed=electron`
+    // Force dashboard to backend HTTP port 3001 regardless of config and pass api_key in URL so it is available immediately on first load
+    const dashUrl = `http://${host}:3001/dashboard/?embed=electron&api_key=${encodeURIComponent(apiKey)}`
 
     if (!dashboardView) {
       dashboardView = new WebContentsView({
@@ -1673,9 +1688,12 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
       dashboardView.webContents.loadURL(dashUrl)
       // Mark environment so dashboard can hide its own theme switch
       try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
+      // Store api_key in localStorage for dashboard
+      try { setApiKeyForDashboard(apiKey) } catch { }
       // When the dashboard finishes loading, apply the current theme
       try {
         dashboardView.webContents.on('did-finish-load', () => {
+          try { setApiKeyForDashboard(apiKey) } catch { }
           try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
         })
       } catch { }
@@ -1701,6 +1719,7 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const resizeHandler = () => updateBounds()
     try { mainWindow.on('resize', resizeHandler) } catch { }
     // Ensure theme is applied even if already loaded
+    try { setApiKeyForDashboard(apiKey) } catch { }
     try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
     return { success: true }
   } catch (e) {
