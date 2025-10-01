@@ -46,12 +46,13 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
   // Quick Add MCP Server state
   const [qaOpen, setQaOpen] = useState(false);
   const [qaName, setQaName] = useState('');
-  const [qaCommand, setQaCommand] = useState('');
-  const [qaArgs, setQaArgs] = useState<string>('');
-  const [qaEnv, setQaEnv] = useState<string>('');
+  const [qaCommand, setQaCommand] = useState('npx');
+  const [qaArgsList, setQaArgsList] = useState<string[]>([]);
+  const [qaEnvRows, setQaEnvRows] = useState<{ key: string; value: string }[]>([]);
   const [qaVerifying, setQaVerifying] = useState(false);
   const [qaVerified, setQaVerified] = useState<null | boolean>(null);
   const [qaError, setQaError] = useState<string | null>(null);
+  const [qaRemote, setQaRemote] = useState(false);
 
   // Check server status - simplified for Electron environment
   const checkServerStatus = async () => {
@@ -217,13 +218,36 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     } catch {}
   }, []);
 
-  const canVerify = qaName.trim().length > 0 && qaCommand.trim().length > 0 && !qaVerifying;
+  const canVerify = qaName.trim().length > 0 && qaArgsList.some(v => v.trim().length > 0) && !qaVerifying;
 
-  const parseArgs = (s: string): string[] => {
-    try {
-      const j = JSON.parse(s);
-      return Array.isArray(j) ? j.filter((x) => typeof x === 'string') : [];
-    } catch { return s.trim() ? s.split(/\s+/) : []; }
+  const getArgsNormalized = (): string[] => {
+    const rest = qaArgsList.map(s => s.trim()).filter(Boolean).filter(a => a !== '-y' && a !== 'mcp-remote');
+    const prefix = qaRemote ? ['-y', 'mcp-remote'] : ['-y'];
+    return [...prefix, ...rest];
+  };
+  const getNextArgExample = (): string => {
+    const idx = qaArgsList.length; // next user line index (0-based)
+    if (!qaRemote) {
+      if (idx === 0) return '@supabase/mcp-server-supabase@latest';
+      if (idx === 1) return '--project-ref=<project-ref>';
+      return '';
+    }
+    // Remote examples
+    if (idx === 0) return 'https://api.githubcopilot.com/mcp/';
+    if (idx === 1) return '--header';
+    if (idx === 2) {
+      const prev = qaArgsList[1]?.trim();
+      if (prev === '--header') return 'Authorization: Bearer ${GITHUB_TOKEN}';
+      return '';
+    }
+    return '';
+  };
+  const getEnvObject = (): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const row of qaEnvRows) {
+      if (row.key.trim()) out[row.key.trim()] = row.value;
+    }
+    return out;
   };
   const parseEnv = (s: string): Record<string, string> => {
     try { const j = JSON.parse(s); return (j && typeof j === 'object') ? j as Record<string, string> : {}; } catch { return {}; }
@@ -234,8 +258,8 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
     setQaVerified(null);
     setQaVerifying(true);
     try {
-      const args = parseArgs(qaArgs);
-      const env = parseEnv(qaEnv);
+      const args = getArgsNormalized();
+      const env = getEnvObject();
       const res = await window.electronAPI.validateMcp({ name: qaName, command: qaCommand, args, env, timeout_s: 20 });
       if (res && res.ok && res.data && res.data.valid) {
         setQaVerified(true);
@@ -258,13 +282,14 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs, logsExpanded, setLog
 
   const addMcp = async () => {
     try {
-      const args = parseArgs(qaArgs);
-      const env = parseEnv(qaEnv);
+      const args = getArgsNormalized();
+      const env = getEnvObject();
       const res = await window.electronAPI.addMcpServer({ name: qaName, command: qaCommand, args, env });
       if (res && res.ok) {
         addLog(`✅ Added MCP server '${qaName}' to configuration`);
         setQaOpen(false);
-        setQaName(''); setQaCommand(''); setQaArgs(''); setQaEnv(''); setQaVerified(null); setQaError(null);
+        setQaName(''); setQaCommand('npx'); setQaArgsList([]); setQaEnvRows([]); setQaVerified(null); setQaError(null);
+        setQaRemote(false);
       } else {
         const msg = res?.error || 'Failed to add server';
         setQaError(msg);
@@ -1185,38 +1210,92 @@ endpoints:
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setQaOpen(!qaOpen)}>
-          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>⚡ Quick add MCP server</h2>
+          <h2 style={{ color: '#2c3e50', margin: 0, fontSize: '1.25rem' }}>⚡ Add MCP server manually</h2>
           <span style={{ fontSize: '1.5rem', color: '#7f8c8d' }}>{qaOpen ? '▼' : '▶'}</span>
         </div>
         {qaOpen && (
           <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Name</label>
-              <input type="text" value={qaName} onChange={(e) => setQaName(e.target.value)} placeholder="supabase" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                <span>Name</span>
+                <span title="Required" style={{ color: '#f1c40f' }}>*</span>
+              </label>
+              <input type="text" value={qaName} onChange={(e) => setQaName(e.target.value)} placeholder="" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Command</label>
-              <input type="text" value={qaCommand} onChange={(e) => setQaCommand(e.target.value)} placeholder="npx" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px' }} />
+              <input type="text" value={qaCommand} readOnly placeholder="npx" style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', background: '#f8f9fa', color: '#7f8c8d' }} />
+            </div>
+
+            <div style={{ gridColumn: '1 / span 2', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.875rem', color: '#2c3e50' }}>Remote server</label>
+              <input type="checkbox" checked={qaRemote} onChange={(e) => { setQaRemote(e.target.checked); }} />
+              <span style={{ fontSize: '0.8rem', color: '#7f8c8d' }}>(Select if the MCP server starts with http/https, e.g.: "https://mcp.atlassian.com/v1/sse")</span>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Arguments</label>
-              <input type="text" value={qaArgs} onChange={(e) => setQaArgs(e.target.value)} placeholder='["-y","@supabase/mcp-server-supabase@latest","--project-ref=<project-ref>"]' style={{ width: '100%', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', fontFamily: 'monospace' }} />
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>
+                <span>Arguments</span>
+                <span title="At least one user line required" style={{ color: '#f1c40f' }}>*</span>
+              </label>
+              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                <div style={{ color: '#7f8c8d' }}>[</div>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#7f8c8d', paddingLeft: '1rem' }}>
+                  <span>"-y",</span>
+                </div>
+                {qaRemote && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#7f8c8d', paddingLeft: '1rem' }}>
+                    <span>"mcp-remote",</span>
+                  </div>
+                )}
+                {qaArgsList.map((val, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingLeft: '1rem' }}>
+                    <span>"</span>
+                    <input value={val} onChange={(e) => setQaArgsList(prev => prev.map((v, i) => i === idx ? e.target.value : v))} style={{ flex: 1, border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <span>",</span>
+                    <button onClick={() => setQaArgsList(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove argument line" style={{ background: 'white', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
+                  </div>
+                ))}
+                <div style={{ paddingLeft: '1rem', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button onClick={() => setQaArgsList(prev => [...prev, ''])} style={{ background: 'white', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem 0.5rem', color: '#2c3e50', cursor: 'pointer' }}>+ add line</button>
+                  {getNextArgExample() ? (
+                    <span style={{ color: '#7f8c8d', fontSize: '0.8rem' }}>e.g., {getNextArgExample()}</span>
+                  ) : null}
+                </div>
+                <div style={{ color: '#7f8c8d' }}>]</div>
+              </div>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', color: '#2c3e50', marginBottom: '0.5rem', fontWeight: '500' }}>Environment Variables</label>
-              <textarea value={qaEnv} onChange={(e) => setQaEnv(e.target.value)} placeholder='{"SUPABASE_ACCESS_TOKEN":"your-supabase-access-token"}' style={{ width: '100%', minHeight: '80px', padding: '0.5rem', border: '1px solid #bdc3c7', borderRadius: '6px', fontFamily: 'monospace' }} />
+              <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                <div style={{ color: '#7f8c8d' }}>{'{'}</div>
+                {qaEnvRows.map((row, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', paddingLeft: '1rem', marginBottom: '0.25rem' }}>
+                    <span>"</span>
+                    <input value={row.key} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, key: e.target.value } : r))} placeholder="KEY" style={{ width: '180px', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <span>": "</span>
+                    <input value={row.value} onChange={(e) => setQaEnvRows(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))} placeholder="value" style={{ flex: 1, border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem', fontFamily: 'monospace' }} />
+                    <span>",</span>
+                    <button onClick={() => setQaEnvRows(prev => prev.filter((_, i) => i !== idx))} title="Remove line" aria-label="Remove env line" style={{ background: 'white', border: '1px solid #e0e0e0', borderRadius: '4px', padding: '0.1rem 0.4rem', color: '#c0392b', cursor: 'pointer' }}>×</button>
+                  </div>
+                ))}
+                <div style={{ paddingLeft: '1rem', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button onClick={() => setQaEnvRows(prev => [...prev, { key: '', value: '' }])} style={{ background: 'white', border: '1px solid #bdc3c7', borderRadius: '4px', padding: '0.25rem 0.5rem', color: '#2c3e50', cursor: 'pointer' }}>+ add line</button>
+                  <span style={{ color: '#7f8c8d', fontSize: '0.8rem' }}>e.g., SUPABASE_ACCESS_TOKEN: your-supabase-access-token</span>
+                </div>
+                <div style={{ color: '#7f8c8d' }}>{'}'}</div>
+              </div>
             </div>
 
             <div style={{ gridColumn: '1 / span 2' }}>
               <div style={{ background: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '6px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', color: '#7f8c8d' }}>
-{`{
-  "name": "supabase",
-  "command": "npx",
-  "args": ["-y", "@supabase/mcp-server-supabase@latest", "--project-ref=<project-ref>"],
-  "env": { "SUPABASE_ACCESS_TOKEN": "your-supabase-access-token" }
-}`}
+                {JSON.stringify({
+                  name: qaName || '',
+                  command: qaCommand,
+                  args: getArgsNormalized(),
+                  env: getEnvObject()
+                }, null, 2)}
               </div>
             </div>
 
@@ -1227,7 +1306,7 @@ endpoints:
             )}
 
             <div style={{ gridColumn: '1 / span 2', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-              <button onClick={() => { setQaOpen(false); setQaName(''); setQaCommand(''); setQaArgs(''); setQaEnv(''); setQaVerified(null); setQaError(null); }} style={{ background: '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setQaOpen(false); setQaName(''); setQaCommand('npx'); setQaArgsList([]); setQaEnvRows([]); setQaVerified(null); setQaError(null); setQaRemote(false); }} style={{ background: '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
               <button onClick={verifyMcp} disabled={!canVerify} style={{ background: canVerify ? '#27ae60' : '#95a5a6', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: canVerify ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 {qaVerifying ? '⏳ Verifying…' : 'Verify'} {qaVerified === true ? '✅' : qaVerified === false ? '❌' : ''}
               </button>
