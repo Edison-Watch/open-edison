@@ -422,6 +422,25 @@ async function startReactDevServer(): Promise<void> {
 }
 
 async function createWindow(): Promise<void> {
+  // Set macOS dock icon (this affects notification icons too)
+  if (process.platform === 'darwin') {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
+      const iconPath = path.join(base, 'media', 'Edison.icns')
+      if (fs.existsSync(iconPath)) {
+        const img = nativeImage.createFromPath(iconPath)
+        if (!img.isEmpty()) {
+          app.dock.setIcon(img)
+          console.log('Set Open Edison dock icon:', iconPath)
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to set dock icon:', e)
+    }
+  }
+
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -870,28 +889,6 @@ async function startMainApplication() {
 app.whenReady().then(async () => {
   console.log('Electron app ready, checking installation...')
 
-  // Set dock icon in development (non-DMG run)
-  try {
-    if (process.platform === 'darwin' && !app.isPackaged) {
-      const { nativeImage } = require('electron') as typeof import('electron')
-      const fs = require('fs') as typeof import('fs')
-      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset', 'icon_256x256.png')
-      const exists = fs.existsSync(icon)
-      let set = false
-
-      if (exists) {
-        const img = nativeImage.createFromPath(icon)
-        if (!img.isEmpty()) {
-          try { app.dock.setIcon(img) } catch { }
-          console.log('Set macOS dock icon for development run:', icon)
-          set = true
-        }
-      }
-      if (!set) {
-        console.warn('Dock icon not found or could not be loaded. Tried:', icon)
-      }
-    }
-  } catch { }
 
 
   // Check if Open Edison is installed
@@ -1672,6 +1669,15 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
       const fs = require('fs')
       const preloadExists = fs.existsSync(preloadPath)
 
+      console.log('Dashboard loading:', {
+        isDev,
+        isPackaged: app.isPackaged,
+        __dirname,
+        preloadPath,
+        preloadExists,
+        dashUrl
+      })
+
       if (!preloadExists) {
         console.warn('⚠️ Dashboard preload script not found! Notifications will fall back to in-page banner.')
       }
@@ -1685,12 +1691,39 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
           preload: preloadExists ? preloadPath : undefined
         }
       })
-      dashboardView.webContents.loadURL(dashUrl)
+
+      console.log('Loading dashboard URL:', dashUrl)
+
+      // In packaged mode, retry loading dashboard if backend isn't ready yet
+      const loadDashboard = async (retries = 10) => {
+        try {
+          await dashboardView.webContents.loadURL(dashUrl)
+        } catch (e) {
+          if (retries > 0) {
+            console.log(`Dashboard load failed, retrying in 1s... (${retries} attempts left)`)
+            setTimeout(() => loadDashboard(retries - 1), 1000)
+          } else {
+            console.error('Dashboard failed to load after all retries')
+          }
+        }
+      }
+
+      if (app.isPackaged) {
+        // Wait a bit for backend to be fully ready
+        setTimeout(() => loadDashboard(), 2000)
+      } else {
+        dashboardView.webContents.loadURL(dashUrl)
+      }
 
       // When the dashboard finishes loading, apply the current theme
       try {
         dashboardView.webContents.on('did-finish-load', () => {
+          console.log('Dashboard loaded successfully')
           try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
+        })
+
+        dashboardView.webContents.on('did-fail-load', (event: any, errorCode: number, errorDescription: string, validatedURL: string) => {
+          console.error('Dashboard failed to load:', { errorCode, errorDescription, validatedURL })
         })
       } catch { }
 
@@ -1824,10 +1857,10 @@ ipcMain.handle('show-system-notification', async (event, payload: NotificationDa
     // Include reason for blocking if available
     const bodyText = payload.reason
       ? `${payload.kind}: ${payload.name}\n\nBlocked because: ${payload.reason}`
-      : `${payload.kind}: ${payload.name}\n\nThis action was blocked by Open Edison's security policy.`
+      : `${payload.kind}: ${payload.name}\n\nThis action is blocked by Edison.`
 
     const notification = new Notification({
-      title: payload.title || 'Open Edison - Approval Required',
+      title: 'Edison Firewall: Approval Required',
       body: bodyText,
       subtitle: `${payload.kind} requires approval`,
       hasReply: false,
@@ -1877,7 +1910,7 @@ ipcMain.handle('show-system-notification', async (event, payload: NotificationDa
           })
         })
 
-        // Notify the dashboard webview that the action was completed
+        // Notify the dashboard webview that the action was completed (to clear from queue)
         if (dashboardView) {
           dashboardView.webContents.send('notification-action-completed', {
             sessionId: payload.sessionId,

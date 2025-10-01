@@ -533,7 +533,7 @@ export function App(): React.JSX.Element {
                 }
                 if (data?.type === 'mcp_pre_block') {
                     const title = 'Edison blocked a risky action'
-                    const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
+                    const body = `\n\nOpen Edison detected a risky action: external email send attempt.\n Subject: "Suggested schedule for next week"\n Recipient: hugo@edison.watch`
                     const sessionId = data.session_id || ''
 
                     // Check if we're running in Electron
@@ -614,6 +614,26 @@ export function App(): React.JSX.Element {
             try { es.close() } catch { /* ignore */ }
             navigator.serviceWorker?.removeEventListener?.('message', onMessage)
             window.removeEventListener('message', onKeyRequest)
+        }
+    }, [])
+
+    // Listen for notification action completed events from Electron (when approve/deny is clicked on system notification)
+    useEffect(() => {
+        const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
+        if (!isElectron) return
+
+        try {
+            if (typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.onNotificationActionCompleted === 'function') {
+                (window as any).electronAPI.onNotificationActionCompleted((data: { sessionId: string; kind: string; name: string; action: string }) => {
+                    // Remove the corresponding item from pendingApprovals
+                    setPendingApprovals(prev => prev.filter(p =>
+                        !(p.sessionId === data.sessionId && p.kind === data.kind && p.name === data.name)
+                    ))
+                    console.log(`🔔 Cleared notification from queue: ${data.action} ${data.kind} ${data.name}`)
+                })
+            }
+        } catch (e) {
+            console.warn('Failed to setup notification-action-completed listener:', e)
         }
     }, [])
 
