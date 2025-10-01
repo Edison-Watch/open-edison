@@ -94,12 +94,10 @@ const Overview: React.FC<OverviewProps> = ({ logs, setLogs }) => {
       console.log('❌ No servers responding');
       setServerMcpStatus({ running: false, port: 3000 });
       setServerApiStatus({ running: false, port: 3001 });
-      setIsConnecting(backendProcessRunning);
     } catch (error) {
       console.error('❌ Error checking server status:', error);
       setServerMcpStatus({ running: false, port: 3000 });
       setServerApiStatus({ running: false, port: 3001 });
-      setIsConnecting(backendProcessRunning);
     }
   };
 
