@@ -1,4 +1,16 @@
-# Open Edison Project Structure
+---
+title: Project Structure
+description: Complete overview of Open Edison's architecture and codebase organization
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Card, Cards } from 'fumadocs-ui/components/card'
+
+# Project Structure
+
+<Callout type="info">
+  Open Edison is a **single-user MCP (Model Context Protocol) proxy server** designed for simplicity and local deployment.
+</Callout>
 
 ## Overview
 

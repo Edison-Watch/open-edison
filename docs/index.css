@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    .prose {
+        color: rgb(55 65 81);
+        max-width: none;
+    }
+
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4,
+    .prose h5,
+    .prose h6 {
+        color: rgb(17 24 39);
+        font-weight: 600;
+        line-height: 1.25;
+        margin-bottom: 1rem;
+        margin-top: 2rem;
+    }
+
+    .prose h1 {
+        font-size: 2.25rem;
+        margin-top: 0;
+    }
+
+    .prose h2 {
+        font-size: 1.875rem;
+    }
+
+    .prose h3 {
+        font-size: 1.5rem;
+    }
+
+    .prose p {
+        margin-bottom: 1rem;
+        line-height: 1.75;
+    }
+
+    .prose a {
+        color: rgb(59 130 246);
+        text-decoration: underline;
+    }
+
+    .prose a:hover {
+        color: rgb(37 99 235);
+    }
+
+    .prose code {
+        background-color: rgb(243 244 246);
+        color: rgb(31 41 55);
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+        font-size: 0.875em;
+    }
+
+    .prose pre {
+        background-color: rgb(243 244 246);
+        color: rgb(31 41 55);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+
+    .prose pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+
+    .prose ul,
+    .prose ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+
+    .prose li {
+        margin-bottom: 0.5rem;
+    }
+
+    .dark .prose {
+        color: rgb(243 244 246);
+    }
+
+    .dark .prose h1,
+    .dark .prose h2,
+    .dark .prose h3,
+    .dark .prose h4,
+    .dark .prose h5,
+    .dark .prose h6 {
+        color: rgb(243 244 246);
+    }
+
+    .dark .prose a {
+        color: rgb(96 165 250);
+    }
+
+    .dark .prose a:hover {
+        color: rgb(147 197 253);
+    }
+
+    .dark .prose code {
+        background-color: rgb(31 41 55);
+        color: rgb(243 244 246);
+    }
+
+    .dark .prose pre {
+        background-color: rgb(31 41 55);
+        color: rgb(243 244 246);
+    }
+}

@@ -1,6 +1,16 @@
+---
+title: Open Edison Documentation
+description: Comprehensive documentation for Open Edison - the single-user MCP proxy server
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout'
+
 # Open Edison Documentation
 
-Welcome to Open Edison documentation! This directory contains comprehensive guides for users, developers, and contributors to the single-user MCP proxy server.
+<Callout type="info">
+  Welcome to Open Edison documentation! This directory contains comprehensive guides for users, developers, and contributors to the single-user MCP proxy server.
+</Callout>
 
 ## 📚 Documentation Structure
 
