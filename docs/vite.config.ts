@@ -9,8 +9,13 @@ export default defineConfig({
             '@': path.resolve(__dirname, '.'),
         },
     },
+    assetsInclude: ['**/*.md', '**/*.mdx'],
     server: {
         port: 3001,
-        open: true
+        open: true,
+        fs: {
+            // Allow serving files from the docs directory
+            allow: ['.']
+        }
     }
 })
