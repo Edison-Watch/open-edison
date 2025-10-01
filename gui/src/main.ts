@@ -626,7 +626,7 @@ async function createWindow(): Promise<void> {
       const fs = require('fs') as typeof import('fs')
       const path = require('path') as typeof import('path')
       const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
-      const icon = path.join(base, 'media', 'Edison.iconset', 'icon_16x16.png')
+      const icon = path.join(base, 'media', 'Edison.iconset', 'icon_16x16@4x.png')
       let img = null as ReturnType<typeof nativeImage.createFromPath> | null
       if (fs.existsSync(icon)) {
         img = nativeImage.createFromPath(icon)
@@ -894,7 +894,7 @@ app.whenReady().then(async () => {
     if (process.platform === 'darwin' && !app.isPackaged) {
       const { nativeImage } = require('electron') as typeof import('electron')
       const fs = require('fs') as typeof import('fs')
-      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset','icon_256x256.png')
+      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset','icon_256x256@2x.png')
       const exists = fs.existsSync(icon)
       let set = false
 
