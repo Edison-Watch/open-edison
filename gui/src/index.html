@@ -16,7 +16,6 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
             height: 100vh;
             overflow: hidden;
         }
@@ -25,49 +24,146 @@
             height: 100vh;
         }
 
-        /* Inline theme variables to ensure availability even if external CSS fails to load */
+        /* CSS variables inline to ensure immediate availability */
         :root[data-theme='light'] {
             --bg: #f8fafc;
+            --bg-1: #f8fafc;
+            --bg-2: #e2e8f0;
+            --bg-3: #f8fafc;
             --text-primary: #111827;
             --text-muted: #6b7280;
+            --text-secondary: #7f8c8d;
+            --text-heading: #2c3e50;
             --panel-bg: #ffffff;
             --panel-border: #e5e7eb;
-            --tab-bg: #e5e7eb;
-            --tab-active: #d1d5db;
-            --tab-active-text: #111827;
-            --tab-inactive-text: #4b5563;
-            --tab-border: #cbd5e1;
-            --accent: #2563eb;
-            --button-bg: #e5e7eb;
-            --button-bg-hover: #d1d5db;
-            --button-text: #111827;
+            --card-bg: #ffffff;
+            --card-border: #e5e7eb;
+            --card-hover-bg: #f8fafc;
+            --status-online: #10b981;
+            --status-connecting: #f59e0b;
+            --status-badge-bg: #f1f5f9;
+            --wizard-button-bg: #8b5cf6;
+            --wizard-button-hover: #7c3aed;
+            --start-button-bg: #ffffff;
+            --start-button-hover: #059669;
+            --start-button-text: #0f172a;
+            --stop-button-bg: #ffffff;
+            --stop-button-hover: #ef4444;
+            --stop-button-text: #0f172a;
+            --sidebar-bg: #ffffff;
+            --sidebar-border: #e5e7eb;
+            --sidebar-text: #64748b;
+            --sidebar-text-active: #8b5cf6;
+            --code-bg: #f8f9fa;
+            --code-border: #e9ecef;
+            --code-text: #2c3e50;
+            --info-bg: #e8f4fd;
+            --info-border: #bee5eb;
+            --info-text: #0c5460;
+            --input-bg: #ffffff;
+            --input-border: #bdc3c7;
+            --input-text: #111827;
+            --input-disabled-bg: #f8f9fa;
+            --input-disabled-text: #7f8c8d;
         }
-
+        
         :root[data-theme='dark'] {
-            --bg: #0b0f14;
-            --text-primary: #e5e7eb;
-            --text-muted: #9ca3af;
+            --bg: #0a0e14;
+            --bg-1: #0a0e14;
+            --bg-2: #060809;
+            --bg-3: #0a0e14;
+            --text-primary: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-secondary: #94a3b8;
+            --text-heading: #f1f5f9;
+            --panel-bg: #060809;
+            --panel-border: #1a1f26;
+            --card-bg: #0f1419;
+            --card-border: #1a1f26;
+            --card-hover-bg: #151a21;
+            --status-online: #10b981;
+            --status-connecting: #f59e0b;
+            --status-badge-bg: #0f1419;
+            --wizard-button-bg: #8b5cf6;
+            --wizard-button-hover: #7c3aed;
+            --start-button-bg: #0f1419;
+            --start-button-hover: #059669;
+            --start-button-text: #f8fafc;
+            --stop-button-bg: #0f1419;
+            --stop-button-hover: #b91c1c;
+            --stop-button-text: #f8fafc;
+            --sidebar-bg: #060809;
+            --sidebar-border: #0f1419;
+            --sidebar-text: #64748b;
+            --sidebar-text-active: #8b5cf6;
+            --code-bg: #1a1f26;
+            --code-border: #252a33;
+            --code-text: #e2e8f0;
+            --info-bg: #1a2332;
+            --info-border: #2d3e50;
+            --info-text: #93c5fd;
+            --input-bg: #0f1419;
+            --input-border: #252a33;
+            --input-text: #f1f5f9;
+            --input-disabled-bg: #1a1f26;
+            --input-disabled-text: #64748b;
+        }
+        
+        :root[data-theme='blue'] {
+            --bg: #1e293b;
+            --bg-1: #1e293b;
+            --bg-2: #0f172a;
+            --bg-3: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-secondary: #94a3b8;
+            --text-heading: #f1f5f9;
             --panel-bg: #111827;
-            --panel-border: #1f2937;
-            --tab-bg: #34495e;
-            --tab-active: #2c3e50;
-            --tab-active-text: #ffffff;
-            --tab-inactive-text: #bdc3c7;
-            --tab-border: #2c3e50;
-            --accent: #3498db;
-            --button-bg: #555a;
-            --button-bg-hover: #666;
-            --button-text: #ffffff;
+            --panel-border: #334155;
+            --card-bg: #2d3b4e;
+            --card-border: #3d4f66;
+            --card-hover-bg: #334155;
+            --status-online: #10b981;
+            --status-connecting: #f59e0b;
+            --status-badge-bg: #1e293b;
+            --wizard-button-bg: #8b5cf6;
+            --wizard-button-hover: #7c3aed;
+            --start-button-bg: #2d3b4e;
+            --start-button-hover: #059669;
+            --start-button-text: #f8fafc;
+            --stop-button-bg: #2d3b4e;
+            --stop-button-hover: #b91c1c;
+            --stop-button-text: #f8fafc;
+            --sidebar-bg: #0f172a;
+            --sidebar-border: #1e293b;
+            --sidebar-text: #64748b;
+            --sidebar-text-active: #8b5cf6;
+            --code-bg: #1a1f26;
+            --code-border: #252a33;
+            --code-text: #e2e8f0;
+            --info-bg: #1a2332;
+            --info-border: #2d3e50;
+            --info-text: #93c5fd;
+            --input-bg: #0f1419;
+            --input-border: #252a33;
+            --input-text: #f1f5f9;
+            --input-disabled-bg: #1a1f26;
+            --input-disabled-text: #64748b;
         }
     </style>
     <script>
         // Set initial theme before React mounts to avoid FOUC
         (function() {
             try {
-                const raw = window.localStorage && window.localStorage.getItem('app-theme');
-                document.documentElement.setAttribute('data-theme', raw === 'dark' ? 'dark' : 'light');
+                // Read saved theme or default to blue
+                const savedTheme = window.localStorage ? window.localStorage.getItem('app-theme') : null;
+                const theme = (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'blue') ? savedTheme : 'blue';
+                document.documentElement.setAttribute('data-theme', theme);
+                if (window.localStorage) {
+                    window.localStorage.setItem('app-theme', theme);
+                }
             } catch (e) {
-                document.documentElement.setAttribute('data-theme', 'light');
+                document.documentElement.setAttribute('data-theme', 'blue');
             }
         })();
     </script>

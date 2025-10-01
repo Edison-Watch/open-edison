@@ -255,10 +255,10 @@ export function App(): React.JSX.Element {
         if (!showUnknown) return base
         return base + unknownSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)
     }, [filtered, unknownSessions, showUnknown])
-    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const [theme, setTheme] = useState<'light' | 'dark' | 'blue'>(() => {
         try {
-            const saved = safeLocalStorage.getItem('app_theme')
-            if (saved === 'light' || saved === 'dark') {
+            const saved = safeLocalStorage.getItem('app-theme')
+            if (saved === 'light' || saved === 'dark' || saved === 'blue') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -273,9 +273,34 @@ export function App(): React.JSX.Element {
     // Save theme state to localStorage whenever it changes
     useEffect(() => {
         try {
-            safeLocalStorage.setItem('app_theme', theme)
+            safeLocalStorage.setItem('app-theme', theme)
         } catch { /* ignore */ }
     }, [theme])
+
+    // Listen for theme changes from Electron
+    useEffect(() => {
+        // Create global theme setter for Electron to call
+        (window as any).__setTheme = (newTheme: 'light' | 'dark' | 'blue') => {
+            if (newTheme === 'light' || newTheme === 'dark' || newTheme === 'blue') {
+                setTheme(newTheme)
+            }
+        }
+
+        // Also listen to theme-changed event
+        const handleThemeChange = (event: CustomEvent) => {
+            const newTheme = event.detail?.effective
+            if (newTheme === 'light' || newTheme === 'dark' || newTheme === 'blue') {
+                setTheme(newTheme)
+            }
+        }
+        
+        window.addEventListener('theme-changed', handleThemeChange as EventListener)
+        
+        return () => {
+            window.removeEventListener('theme-changed', handleThemeChange as EventListener)
+            delete (window as any).__setTheme
+        }
+    }, [])
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
@@ -521,8 +546,7 @@ export function App(): React.JSX.Element {
         navigator.serviceWorker?.addEventListener?.('message', onMessage)
 
         const es = new EventSource(`/events`)
-
-        es.onmessage = async (ev) => {
+        es.onmessage = (ev) => {
             try {
                 const data = JSON.parse(ev.data || '{}') as any
                 if (data?.type === 'sessions_db_changed') {
@@ -533,30 +557,8 @@ export function App(): React.JSX.Element {
                 }
                 if (data?.type === 'mcp_pre_block') {
                     const title = 'Edison blocked a risky action'
-                    const body = `\n\nOpen Edison detected a risky action: external email send attempt.\n Subject: "Suggested schedule for next week"\n Recipient: hugo@edison.watch`
+                    const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
                     const sessionId = data.session_id || ''
-
-                    // Check if we're running in Electron
-                    const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
-
-                    if (isElectron && sessionId && data.kind && data.name) {
-                        // Use Electron system notifications
-                        try {
-                            if (typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.showSystemNotification === 'function') {
-                                await (window as any).electronAPI.showSystemNotification({
-                                    sessionId,
-                                    kind: data.kind,
-                                    name: data.name,
-                                    reason: data.reason,
-                                    title,
-                                    body
-                                })
-                            }
-                        } catch (e) {
-                            console.warn('Failed to show Electron notification:', e)
-                        }
-                    }
-
                     // Always surface an in-page approval banner as a reliable fallback
                     if (sessionId && data.kind && data.name) {
                         const newItem: PendingApproval = {
@@ -573,40 +575,34 @@ export function App(): React.JSX.Element {
                         })
                         setLastBannerAt(Date.now())
                     }
-
-                    // For browser mode (non-Electron), use service worker
-                    if (!isElectron) {
-                        const trySW = async () => {
-                            try {
-                                if ('serviceWorker' in navigator && Notification) {
-                                    const ensurePerm = async () => {
-                                        if (Notification.permission === 'granted') return true
-                                        if (Notification.permission === 'denied') return false
-                                        const p = await Notification.requestPermission();
-                                        return p === 'granted'
-                                    }
-                                    const ok = await ensurePerm()
-                                    if (!ok) return false
-                                    const reg = await navigator.serviceWorker.ready
-                                    reg.active?.postMessage({
-                                        type: 'SHOW_MCP_BLOCK_NOTIFICATION',
-                                        title,
-                                        body,
-                                        data: { sessionId, kind: data.kind, name: data.name }
-                                    })
+                    const trySW = async () => {
+                        try {
+                            if ('serviceWorker' in navigator && Notification) {
+                                const ensurePerm = async () => {
+                                    if (Notification.permission === 'granted') return true
+                                    if (Notification.permission === 'denied') return false
+                                    const p = await Notification.requestPermission();
+                                    return p === 'granted'
                                 }
-                            } catch { /* ignore */ }
-                        }
-                        void trySW()
+                                const ok = await ensurePerm()
+                                if (!ok) return false
+                                const reg = await navigator.serviceWorker.ready
+                                reg.active?.postMessage({
+                                    type: 'SHOW_MCP_BLOCK_NOTIFICATION',
+                                    title,
+                                    body,
+                                    data: { sessionId, kind: data.kind, name: data.name }
+                                })
+                            }
+                        } catch { /* ignore */ }
                     }
+                    void trySW()
                 }
                 // For any other events, still tick now to advance live ranges
                 setNowMs(Date.now())
             } catch { /* ignore */ }
         }
-        es.onerror = (error) => {
-            console.error('❌ SSE connection error:', error)
-            console.error('SSE readyState:', es.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSED)')
+        es.onerror = () => {
             try { es.close() } catch { /* ignore */ }
         }
 
@@ -614,26 +610,6 @@ export function App(): React.JSX.Element {
             try { es.close() } catch { /* ignore */ }
             navigator.serviceWorker?.removeEventListener?.('message', onMessage)
             window.removeEventListener('message', onKeyRequest)
-        }
-    }, [])
-
-    // Listen for notification action completed events from Electron (when approve/deny is clicked on system notification)
-    useEffect(() => {
-        const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
-        if (!isElectron) return
-
-        try {
-            if (typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.onNotificationActionCompleted === 'function') {
-                (window as any).electronAPI.onNotificationActionCompleted((data: { sessionId: string; kind: string; name: string; action: string }) => {
-                    // Remove the corresponding item from pendingApprovals
-                    setPendingApprovals(prev => prev.filter(p =>
-                        !(p.sessionId === data.sessionId && p.kind === data.kind && p.name === data.name)
-                    ))
-                    console.log(`🔔 Cleared notification from queue: ${data.action} ${data.kind} ${data.name}`)
-                })
-            }
-        } catch (e) {
-            console.warn('Failed to setup notification-action-completed listener:', e)
         }
     }, [])
 
@@ -815,7 +791,7 @@ export function App(): React.JSX.Element {
     )
 }
 
-function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' }) {
+function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRoot: string; onUnsavedChangesChange?: (hasUnsaved: boolean) => void; theme: 'light' | 'dark' | 'blue' }) {
     const files = useMemo(() => (
         [
             {
@@ -1221,7 +1197,7 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
                             height="520px"
                             defaultLanguage="json"
                             language="json"
-                            theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
+                            theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
                             options={{ minimap: { enabled: false }, fontSize: 12, wordWrap: 'on', scrollBeyondLastLine: false }}
                             value={val}
                             onChange={(value) => setContent(prev => ({ ...prev, [active]: value ?? '' }))}

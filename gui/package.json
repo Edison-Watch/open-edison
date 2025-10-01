@@ -1,6 +1,6 @@
 {
   "name": "open-edison-desktop",
-  "version": "0.1.117",
+  "version": "0.1.116",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
   "scripts": {
@@ -18,7 +18,7 @@
   "author": "Open Edison Team",
   "dependencies": {
     "electron-updater": "^6.1.7",
-    "react-icons": "^5.2.1"
+    "lucide-react": "^0.468.0"
   },
   "devDependencies": {
     "electron": "^32.3.3",

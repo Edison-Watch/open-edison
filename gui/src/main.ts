@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu, dialog, Tray, nativeImage, Notification } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol, session, Menu, dialog, Tray, nativeImage } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
@@ -13,7 +13,8 @@ let setupWizardApiProcess: ChildProcess | null = null
 let isBackendRunning = false
 let isSetupWizardApiRunning = false
 let dashboardView: any = null
-const DASHBOARD_HEADER_OFFSET_DIP = 38
+const SIDEBAR_WIDTH_DIP = 80
+const PAGE_HEADER_HEIGHT_DIP = 66
 let tray: Tray | null = null
 let ngrokProcessCount = 0
 let isNgrokRunning = false
@@ -64,7 +65,7 @@ async function readServerConfig(): Promise<{ host: string; port: number; api_key
     }
     return {
       host: config.server?.host || 'localhost',
-      port: config.server?.port + 1 || 3001,
+      port: config.server?.port+1 || 3001,
       api_key: config.server?.api_key
     }
   } catch (error) {
@@ -422,25 +423,6 @@ async function startReactDevServer(): Promise<void> {
 }
 
 async function createWindow(): Promise<void> {
-  // Set macOS dock icon (this affects notification icons too)
-  if (process.platform === 'darwin') {
-    try {
-      const fs = require('fs')
-      const path = require('path')
-      const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
-      const iconPath = path.join(base, 'media', 'Edison.icns')
-      if (fs.existsSync(iconPath)) {
-        const img = nativeImage.createFromPath(iconPath)
-        if (!img.isEmpty()) {
-          app.dock.setIcon(img)
-          console.log('Set Open Edison dock icon:', iconPath)
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to set dock icon:', e)
-    }
-  }
-
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -455,7 +437,9 @@ async function createWindow(): Promise<void> {
       webviewTag: true
     },
     show: false, // Don't show until ready
-    title: 'Open Edison Desktop'
+    title: 'Open Edison Desktop',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 15, y: 15 }
   })
 
   // Load the React desktop interface
@@ -550,10 +534,10 @@ async function createWindow(): Promise<void> {
   // Application menu with a Dashboard DevTools item and Check for Updates
   try {
     const isMac = process.platform === 'darwin'
-    const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
+      const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
       label: 'Check for Updates…',
       click: async () => {
-        try { mainWindow?.webContents.send('update-status', 'checking') } catch { }
+        try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
         try {
           if (app.isPackaged) {
             const updaterMod = require('electron-updater') as typeof import('electron-updater')
@@ -564,10 +548,10 @@ async function createWindow(): Promise<void> {
               const win = BrowserWindow.getFocusedWindow() || mainWindow
               if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
             }
-          } else {
-            setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch { } }, 250)
-            const win = BrowserWindow.getFocusedWindow() || mainWindow
-            if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
+              const win = BrowserWindow.getFocusedWindow() || mainWindow
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
           }
         } catch (err) {
           console.warn('Manual update check failed:', err)
@@ -614,7 +598,8 @@ async function createWindow(): Promise<void> {
             submenu: [
               { label: 'Light', type: 'radio', checked: false, click: () => setThemeMode('light') },
               { label: 'Dark', type: 'radio', checked: false, click: () => setThemeMode('dark') },
-              { label: 'System', type: 'radio', checked: true, click: () => setThemeMode('system') }
+              { label: 'Blue', type: 'radio', checked: true, click: () => setThemeMode('blue') },
+              { label: 'System', type: 'radio', checked: false, click: () => setThemeMode('system') }
             ]
           },
           {
@@ -651,84 +636,84 @@ async function createWindow(): Promise<void> {
       }
       tray = new Tray(img)
       tray.setToolTip('Open Edison')
-    }
+      }
 
-    const isMac = process.platform === 'darwin'
-    const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
-      label: 'Check for Updates…',
-      click: async () => {
-        try { mainWindow?.webContents.send('update-status', 'checking') } catch { }
-        try {
-          if (app.isPackaged) {
-            const updaterMod = require('electron-updater') as typeof import('electron-updater')
-            const autoUpdater = updaterMod.autoUpdater
-            const res = await autoUpdater.checkForUpdatesAndNotify()
-            if (!res) {
+      const isMac = process.platform === 'darwin'
+      const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
+        label: 'Check for Updates…',
+        click: async () => {
+          try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+          try {
+            if (app.isPackaged) {
+              const updaterMod = require('electron-updater') as typeof import('electron-updater')
+              const autoUpdater = updaterMod.autoUpdater
+              const res = await autoUpdater.checkForUpdatesAndNotify()
+              if (!res) {
+                const win = BrowserWindow.getFocusedWindow() || mainWindow
+                if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
+              }
+            } else {
+              setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
               const win = BrowserWindow.getFocusedWindow() || mainWindow
-              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
+              if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
             }
-          } else {
-            setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch { } }, 250)
-            const win = BrowserWindow.getFocusedWindow() || mainWindow
-            if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date (dev)', detail: `${app.getName()} dev run`, buttons: ['OK'] })
+          } catch (err) {
+            console.warn('Tray manual update check failed:', err)
           }
-        } catch (err) {
-          console.warn('Tray manual update check failed:', err)
         }
       }
-    }
 
-    const statusLabel = () => {
-      if (isBackendRunning && isNgrokRunning) return 'Running with global access'
-      if (isBackendRunning) return 'Running with local access'
-      return 'Not Running'
-    }
+      const statusLabel = () => {
+        if (isBackendRunning && isNgrokRunning) return 'Running with global access'
+        if (isBackendRunning) return 'Running with local access'
+        return 'Not Running'
+      }
 
-    const buildContextMenu = () => Menu.buildFromTemplate([
-      { label: statusLabel(), enabled: false },
-      { type: 'separator' },
-      {
-        label: 'Show Open Edison',
-        click: () => {
-          try {
-            if (mainWindow) {
-              if (!mainWindow.isVisible()) mainWindow.show()
-              mainWindow.focus()
-            }
-          } catch { }
-        }
-      },
-      { type: 'separator' },
-      checkForUpdatesItem,
-      { type: 'separator' },
-      { role: 'quit', label: isMac ? 'Quit Open Edison' : 'Quit' }
-    ])
-    tray?.setContextMenu(buildContextMenu())
-    const refreshTrayMenu = () => { try { tray?.setContextMenu(buildContextMenu()) } catch { } }
-    // Periodically refresh to reflect backend/ngrok state
-    setInterval(refreshTrayMenu, 2000)
-    tray?.on('click', () => {
-      try {
-        if (!mainWindow) return
-        if (mainWindow.isVisible()) {
-          mainWindow.hide()
-        } else {
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      } catch { }
-    })
-  }
+      const buildContextMenu = () => Menu.buildFromTemplate([
+        { label: statusLabel(), enabled: false },
+        { type: 'separator' },
+        {
+          label: 'Show Open Edison',
+          click: () => {
+            try {
+              if (mainWindow) {
+                if (!mainWindow.isVisible()) mainWindow.show()
+                mainWindow.focus()
+              }
+            } catch { }
+          }
+        },
+        { type: 'separator' },
+        checkForUpdatesItem,
+        { type: 'separator' },
+        { role: 'quit', label: isMac ? 'Quit Open Edison' : 'Quit' }
+      ])
+      tray?.setContextMenu(buildContextMenu())
+      const refreshTrayMenu = () => { try { tray?.setContextMenu(buildContextMenu()) } catch { } }
+      // Periodically refresh to reflect backend/ngrok state
+      setInterval(refreshTrayMenu, 2000)
+      tray?.on('click', () => {
+        try {
+          if (!mainWindow) return
+          if (mainWindow.isVisible()) {
+            mainWindow.hide()
+          } else {
+            mainWindow.show()
+            mainWindow.focus()
+          }
+        } catch { }
+      })
+    }
   catch (e) {
     console.warn('Failed to create tray:', e)
   }
 }
 
 // Theme management
-type ThemeMode = 'light' | 'dark' | 'system'
-let themeMode: ThemeMode = 'system'
+type ThemeMode = 'light' | 'dark' | 'blue' | 'system'
+let themeMode: ThemeMode = 'blue'
 
-function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' {
+function getEffectiveTheme(mode: ThemeMode): 'light' | 'dark' | 'blue' {
   if (mode === 'system') {
     try {
       const { nativeTheme } = require('electron') as typeof import('electron')
@@ -749,7 +734,7 @@ ipcMain.handle('theme-get', async () => {
   return { mode: themeMode, effective: getEffectiveTheme(themeMode) }
 })
 
-function applyThemeToDashboard(effective: 'light' | 'dark', mode: ThemeMode) {
+function applyThemeToDashboard(effective: 'light' | 'dark' | 'blue', mode: ThemeMode) {
   if (!dashboardView) return
   const script = `
     try {
@@ -837,7 +822,7 @@ async function createWizardWindow(isFirstInstall: boolean = false): Promise<void
   // Handle window closed
   wizardWindow.on('closed', () => {
     wizardWindow = null
-    try { mainWindow?.webContents.send('wizard-closed') } catch { }
+    try { mainWindow?.webContents.send('wizard-closed') } catch {}
   })
 
   // Handle navigation errors
@@ -904,7 +889,29 @@ async function startMainApplication() {
 app.whenReady().then(async () => {
   console.log('Electron app ready, checking installation...')
 
+  // Set dock icon in development (non-DMG run)
+  try {
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      const { nativeImage } = require('electron') as typeof import('electron')
+      const fs = require('fs') as typeof import('fs')
+      const icon = join(app.getAppPath(), '..', 'media', 'Edison.iconset','icon_256x256.png')
+      const exists = fs.existsSync(icon)
+      let set = false
 
+      if (exists) {
+        const img = nativeImage.createFromPath(icon)
+        if (!img.isEmpty()) {
+          try { app.dock.setIcon(img) } catch { }
+          console.log('Set macOS dock icon for development run:', icon)
+          set = true
+        }
+      }
+      if (!set) {
+        console.warn('Dock icon not found or could not be loaded. Tried:', icon)
+      }
+    }
+  } catch { }
+  
 
   // Check if Open Edison is installed
   isFirstInstall = await installOpenEdison()
@@ -936,18 +943,18 @@ app.whenReady().then(async () => {
       autoUpdater.autoDownload = true
       autoUpdater.autoInstallOnAppQuit = true
 
-      autoUpdater.on('checking-for-update', () => { try { mainWindow?.webContents.send('update-status', 'checking') } catch { } })
-      autoUpdater.on('update-available', (info) => { try { mainWindow?.webContents.send('update-status', 'available', info) } catch { } })
+      autoUpdater.on('checking-for-update', () => { try { mainWindow?.webContents.send('update-status', 'checking') } catch {} })
+      autoUpdater.on('update-available', (info) => { try { mainWindow?.webContents.send('update-status', 'available', info) } catch {} })
       autoUpdater.on('update-not-available', () => {
-        try { mainWindow?.webContents.send('update-status', 'none') } catch { }
+        try { mainWindow?.webContents.send('update-status', 'none') } catch {}
         // If user triggered manual check (menu item), show dialog. We infer manual checks by recent 'checking' send.
         try {
           const win = BrowserWindow.getFocusedWindow() || mainWindow
           if (win) dialog.showMessageBox(win, { type: 'info', message: 'You’re up to date', detail: `${app.getName()} ${app.getVersion()} is the latest version.`, buttons: ['OK'] })
-        } catch { }
+        } catch {}
       })
-      autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch { } })
-      autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch { } })
+      autoUpdater.on('download-progress', (p) => { try { mainWindow?.webContents.send('update-progress', p) } catch {} })
+      autoUpdater.on('update-downloaded', () => { try { mainWindow?.webContents.send('update-status', 'ready') } catch {} })
       // To debug update errors... 
       // autoUpdater.on('error', (e) => {
       //   try { mainWindow?.webContents.send('update-status', 'error', { message: e?.message || String(e) }) } catch {}
@@ -975,12 +982,12 @@ app.whenReady().then(async () => {
         }
       })
 
-      setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch { } }, 2000)
+      setTimeout(() => { try { autoUpdater.checkForUpdatesAndNotify() } catch {} }, 2000)
     } else {
       // Dev: provide IPC stubs so manual check logs appear
       ipcMain.handle('updates-check', async () => {
-        try { mainWindow?.webContents.send('update-status', 'checking') } catch { }
-        setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch { } }, 250)
+        try { mainWindow?.webContents.send('update-status', 'checking') } catch {}
+        setTimeout(() => { try { mainWindow?.webContents.send('update-status', 'none') } catch {} }, 250)
         return { ok: true, result: null }
       })
       ipcMain.handle('updates-install', async () => ({ ok: false, error: 'Not available in development' }))
@@ -1048,6 +1055,16 @@ ipcMain.handle('restart-backend', async () => {
   }
   await startBackend()
   return isBackendRunning
+})
+
+ipcMain.handle('stop-backend', async () => {
+  if (backendProcess) {
+    backendProcess.kill()
+    isBackendRunning = false
+    backendProcess = null
+    return true
+  }
+  return false
 })
 
 // Get application support path
@@ -1334,7 +1351,7 @@ ipcMain.handle('get-server-config', async () => {
 ipcMain.handle('reinitialize-mcp', async () => {
   try {
     const { host, port, api_key } = await readServerConfig()
-    const url = `http://${host || 'localhost'}:${port + 1 || 3001}/mcp/reinitialize`
+    const url = `http://${host || 'localhost'}:${port+1 || 3001}/mcp/reinitialize`
     const headers: Record<string, string> = { 'Accept': 'application/json' }
     if (api_key) headers['Authorization'] = `Bearer ${api_key}`
     const res = await fetch(url, { method: 'POST', headers })
@@ -1380,7 +1397,7 @@ ipcMain.handle('add-mcp-server', async (_event, payload: { name: string; command
   try {
     const configPath = join(app.getPath('userData'), 'config.json')
     let raw = '{}'
-    try { raw = await readFile(configPath, 'utf8') } catch { }
+    try { raw = await readFile(configPath, 'utf8') } catch {}
     let config: any
     try { config = JSON.parse(raw || '{}') } catch { config = {} }
     if (!config || typeof config !== 'object') config = {}
@@ -1406,8 +1423,8 @@ ipcMain.handle('add-mcp-server', async (_event, payload: { name: string; command
       const url = `http://${host || 'localhost'}:${apiPort}/mcp/reinitialize`
       const headers: Record<string, string> = { 'Accept': 'application/json' }
       if (api_key) headers['Authorization'] = `Bearer ${api_key}`
-      await fetch(url, { method: 'POST', headers }).catch(() => { })
-    } catch { }
+      await fetch(url, { method: 'POST', headers }).catch(() => {})
+    } catch {}
 
     return { ok: true }
   } catch (e) {
@@ -1674,100 +1691,39 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
     const dashUrl = `http://${host}:3001/dashboard/?embed=electron&api_key=${encodeURIComponent(apiKey)}`
 
     if (!dashboardView) {
-      // Determine preload script path for both dev and production
-      const isDev = process.env.NODE_ENV === 'development'
-      const preloadPath = isDev
-        ? join(__dirname, '..', 'dist', 'dashboard-preload.js')
-        : join(__dirname, 'dashboard-preload.js')
-
-      // Check if preload file exists
-      const fs = require('fs')
-      const preloadExists = fs.existsSync(preloadPath)
-
-      console.log('Dashboard loading:', {
-        isDev,
-        isPackaged: app.isPackaged,
-        __dirname,
-        preloadPath,
-        preloadExists,
-        dashUrl
-      })
-
-      if (!preloadExists) {
-        console.warn('⚠️ Dashboard preload script not found! Notifications will fall back to in-page banner.')
-      }
-
       dashboardView = new WebContentsView({
         webPreferences: {
           partition: 'persist:dashboard',
           nodeIntegration: false,
           contextIsolation: true,
           javascript: true,
-          preload: preloadExists ? preloadPath : undefined
         }
       })
-
-      console.log('Loading dashboard URL:', dashUrl)
-
-      // In packaged mode, retry loading dashboard if backend isn't ready yet
-      const loadDashboard = async (retries = 10) => {
-        try {
-          await dashboardView.webContents.loadURL(dashUrl)
-          // Mark environment so dashboard can hide its own theme switch
-          try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
-          // Store api_key in localStorage for dashboard
-          try { setApiKeyForDashboard(apiKey) } catch { }
-        } catch (e) {
-          if (retries > 0) {
-            console.log(`Dashboard load failed, retrying in 1s... (${retries} attempts left)`)
-            setTimeout(() => loadDashboard(retries - 1), 1000)
-          } else {
-            console.error('Dashboard failed to load after all retries')
-          }
-        }
-      }
-
-      if (app.isPackaged) {
-        // Wait a bit for backend to be fully ready
-        setTimeout(() => loadDashboard(), 2000)
-      } else {
-        dashboardView.webContents.loadURL(dashUrl)
-        // Mark environment so dashboard can hide its own theme switch
-        try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
-        // Store api_key in localStorage for dashboard
-        try { setApiKeyForDashboard(apiKey) } catch { }
-      }
-
+      dashboardView.webContents.loadURL(dashUrl)
+      // Mark environment so dashboard can hide its own theme switch
+      try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
+      // Store api_key in localStorage for dashboard
+      try { setApiKeyForDashboard(apiKey) } catch { }
       // When the dashboard finishes loading, apply the current theme
       try {
         dashboardView.webContents.on('did-finish-load', () => {
-          console.log('Dashboard loaded successfully')
           try { setApiKeyForDashboard(apiKey) } catch { }
           try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
         })
-
-        dashboardView.webContents.on('did-fail-load', (event: any, errorCode: number, errorDescription: string, validatedURL: string) => {
-          console.error('Dashboard failed to load:', { errorCode, errorDescription, validatedURL })
-        })
       } catch { }
-
-      // Log any console messages from the dashboard for debugging
-      dashboardView.webContents.on('console-message', (_event: any, level: number, message: string) => {
-        console.log(`Dashboard console [${level}]:`, message)
-      })
     }
 
     // Attach if not already attached
     const cv = (mainWindow as any).contentView
     try { cv.addChildView(dashboardView) } catch { }
-    // Compute bounds below the header in DIP
+    // Compute bounds below the header and to the right of sidebar in DIP
     const updateBounds = () => {
       try {
         const winBounds = mainWindow!.getContentBounds()
-        const x = 0
-        const y = DASHBOARD_HEADER_OFFSET_DIP
-        const width = Math.max(0, winBounds.width)
-        const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+        const x = SIDEBAR_WIDTH_DIP
+        const y = PAGE_HEADER_HEIGHT_DIP
+        const width = Math.max(0, winBounds.width - SIDEBAR_WIDTH_DIP)
+        const height = Math.max(0, winBounds.height - PAGE_HEADER_HEIGHT_DIP)
         dashboardView.setBounds({ x, y, width, height })
         dashboardView.setVisible(true)
       } catch { }
@@ -1791,10 +1747,10 @@ ipcMain.handle('dashboard-set-bounds', async (event, bounds: { x: number; y: num
     if (!mainWindow || !dashboardView) return { success: false }
     try {
       const winBounds = mainWindow.getContentBounds()
-      const x = 0
-      const y = DASHBOARD_HEADER_OFFSET_DIP
-      const width = Math.max(0, winBounds.width)
-      const height = Math.max(0, winBounds.height - DASHBOARD_HEADER_OFFSET_DIP)
+      const x = SIDEBAR_WIDTH_DIP
+      const y = PAGE_HEADER_HEIGHT_DIP
+      const width = Math.max(0, winBounds.width - SIDEBAR_WIDTH_DIP)
+      const height = Math.max(0, winBounds.height - PAGE_HEADER_HEIGHT_DIP)
       dashboardView.setBounds({ x, y, width, height })
       dashboardView.setVisible(true)
     } catch { }
@@ -1833,145 +1789,14 @@ ipcMain.handle('dashboard-open-devtools', async () => {
 ipcMain.handle('dashboard-refresh', async () => {
   try {
     if (!dashboardView) return { success: false, error: 'No dashboard view' }
-
-    // Force clear cache
-    const ses = session.fromPartition('persist:dashboard')
-    await ses.clearCache()
-
     const urlInfo = await readServerConfig()
     const host = urlInfo.host || 'localhost'
     const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
-    const dashUrl = `http://${host}:3001/dashboard/?api_key=${encodeURIComponent(apiKey)}&_t=${Date.now()}`
+    const dashUrl = `http://${host}:3001/dashboard/?api_key=${encodeURIComponent(apiKey)}`
     dashboardView.webContents.loadURL(dashUrl)
     return { success: true }
   } catch (e) {
     console.error('dashboard-refresh error:', e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
-  }
-})
-
-// System notification handling for approve/deny actions
-type NotificationData = {
-  sessionId: string
-  kind: 'tool' | 'resource' | 'prompt'
-  name: string
-  reason?: string
-}
-
-// Store active notifications to handle responses
-const activeNotifications = new Map<string, { notification: Notification; data: NotificationData }>()
-
-ipcMain.handle('show-system-notification', async (event, payload: NotificationData & { title: string; body: string }) => {
-  try {
-    // Check if notifications are supported
-    if (!Notification.isSupported()) {
-      console.warn('System notifications not supported')
-      return { success: false, error: 'Not supported' }
-    }
-
-    const notificationId = `${payload.sessionId}-${payload.kind}-${payload.name}`
-
-    // Close any existing notification with the same ID
-    const existing = activeNotifications.get(notificationId)
-    if (existing) {
-      try { existing.notification.close() } catch { }
-      activeNotifications.delete(notificationId)
-    }
-
-    // Create notification with more details
-    // Include reason for blocking if available
-    const bodyText = payload.reason
-      ? `${payload.kind}: ${payload.name}\n\nBlocked because: ${payload.reason}`
-      : `${payload.kind}: ${payload.name}\n\nThis action is blocked by Edison.`
-
-    const notification = new Notification({
-      title: 'Edison Firewall: Approval Required',
-      body: bodyText,
-      subtitle: `${payload.kind} requires approval`,
-      hasReply: false,
-      actions: [
-        { type: 'button', text: 'Approve' },
-        { type: 'button', text: 'Deny' }
-      ],
-      closeButtonText: 'Later',
-      timeoutType: 'never',
-      urgency: 'critical',
-      sound: 'default'
-    })
-
-    // Store notification data
-    activeNotifications.set(notificationId, {
-      notification,
-      data: {
-        sessionId: payload.sessionId,
-        kind: payload.kind,
-        name: payload.name,
-        reason: payload.reason
-      }
-    })
-
-    // Handle approve/deny action
-    notification.on('action', async (event, index) => {
-      const action = index === 0 ? 'approve' : 'deny'
-      console.log(`🔔 Notification button clicked: ${action} for ${payload.kind} ${payload.name}`)
-
-      try {
-        const urlInfo = await readServerConfig()
-        const host = urlInfo.host || 'localhost'
-        const port = urlInfo.port || 3001
-        const apiKey = urlInfo.api_key || ''
-
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-
-        await fetch(`http://${host}:${port}/api/approve_or_deny`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            session_id: payload.sessionId,
-            kind: payload.kind,
-            name: payload.name,
-            command: action
-          })
-        })
-
-        // Notify the dashboard webview that the action was completed (to clear from queue)
-        if (dashboardView) {
-          dashboardView.webContents.send('notification-action-completed', {
-            sessionId: payload.sessionId,
-            kind: payload.kind,
-            name: payload.name,
-            action
-          })
-        }
-      } catch (error) {
-        console.error(`Failed to ${action} ${payload.kind} ${payload.name}:`, error)
-      }
-
-      activeNotifications.delete(notificationId)
-    })
-
-    // Handle close
-    notification.on('close', () => {
-      activeNotifications.delete(notificationId)
-    })
-
-    // Handle click on notification body (not action buttons)
-    notification.on('click', () => {
-      console.log(`🔔 Notification body clicked for ${payload.kind} ${payload.name}`)
-      if (mainWindow) {
-        if (!mainWindow.isVisible()) mainWindow.show()
-        mainWindow.focus()
-        // Send message to switch to dashboard tab
-        mainWindow.webContents.send('switch-to-dashboard')
-      }
-    })
-
-    notification.show()
-
-    return { success: true, notificationId }
-  } catch (error) {
-    console.error('Error showing system notification:', error)
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })

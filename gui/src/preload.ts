@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
+  stopBackend: () => ipcRenderer.invoke('stop-backend'),
 
   // Backend log listener
   onBackendLog: (callback: (log: { type: string; message: string }) => void) => {
@@ -97,20 +98,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDashboardBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('dashboard-set-bounds', bounds),
   hideDashboard: () => ipcRenderer.invoke('dashboard-hide'),
   refreshDashboard: () => ipcRenderer.invoke('dashboard-refresh'),
-  openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools'),
-
-  // System notifications for approve/deny actions
-  showSystemNotification: (payload: { sessionId: string; kind: 'tool' | 'resource' | 'prompt'; name: string; reason?: string; title: string; body: string }) =>
-    ipcRenderer.invoke('show-system-notification', payload),
-  onNotificationActionCompleted: (callback: (data: { sessionId: string; kind: string; name: string; action: string }) => void) => {
-    ipcRenderer.on('notification-action-completed', (_event, data) => callback(data))
-  },
-  onSwitchToDashboard: (callback: () => void) => {
-    ipcRenderer.on('switch-to-dashboard', () => callback())
-  }
+  openDashboardDevTools: () => ipcRenderer.invoke('dashboard-open-devtools')
   ,
   // Theme events
-  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => {
+  onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }) => void) => {
     ipcRenderer.on('theme-changed', (_event, payload) => callback(payload))
   },
   getTheme: () => ipcRenderer.invoke('theme-get')
@@ -132,6 +123,7 @@ declare global {
     electronAPI: {
       getBackendStatus: () => Promise<{ running: boolean; port: number }>
       restartBackend: () => Promise<boolean>
+      stopBackend: () => Promise<boolean>
       onBackendLog: (callback: (log: { type: string; message: string }) => void) => void
       removeBackendLogListener: () => void
       getApplicationSupportPath: () => Promise<string>
@@ -167,11 +159,8 @@ declare global {
       hideDashboard: () => Promise<{ success: boolean }>
       refreshDashboard: () => Promise<{ success: boolean; error?: string }>
       openDashboardDevTools: () => Promise<{ success: boolean; error?: string }>
-      showSystemNotification: (payload: { sessionId: string; kind: 'tool' | 'resource' | 'prompt'; name: string; reason?: string; title: string; body: string }) => Promise<{ success: boolean; notificationId?: string; error?: string }>
-      onNotificationActionCompleted: (callback: (data: { sessionId: string; kind: string; name: string; action: string }) => void) => void
-      onSwitchToDashboard: (callback: () => void) => void
-      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }) => void) => void
-      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'system'; effective: 'light' | 'dark' }>
+      onThemeChanged: (callback: (payload: { mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }) => void) => void
+      getTheme: () => Promise<{ mode: 'light' | 'dark' | 'blue' | 'system'; effective: 'light' | 'dark' | 'blue' }>
       checkForUpdates: () => Promise<{ ok: boolean; result?: any; error?: string }>
       installUpdates: () => Promise<{ ok: boolean; error?: string }>
       onUpdateStatus: (callback: (status: string, info?: any) => void) => void

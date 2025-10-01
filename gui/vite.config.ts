@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig(({ command }) => {
   const isDev = command === 'serve'
-
+  
   if (isDev) {
     // Development server configuration for React app
     return {
@@ -38,7 +38,6 @@ export default defineConfig(({ command }) => {
           input: {
             main: resolve(__dirname, 'src/main.ts'),
             preload: resolve(__dirname, 'src/preload.ts'),
-            'dashboard-preload': resolve(__dirname, 'src/dashboard-preload.ts'),
             index: resolve(__dirname, 'src/index.html')
           },
           external: ['electron', 'child_process', 'fs', 'fs/promises', 'path', 'url', 'electron-updater'],
@@ -47,7 +46,6 @@ export default defineConfig(({ command }) => {
             entryFileNames: (chunkInfo) => {
               if (chunkInfo.name === 'main') return 'main.js'
               if (chunkInfo.name === 'preload') return 'preload.js'
-              if (chunkInfo.name === 'dashboard-preload') return 'dashboard-preload.js'
               return 'assets/[name]-[hash].js'
             },
             // Ensure relative paths for assets
