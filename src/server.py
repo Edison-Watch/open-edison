@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -408,8 +408,11 @@ class OpenEdisonProxy:
         )  # type: ignore[arg-type]
 
         # Redirect root to dashboard
-        async def _root_redirect() -> RedirectResponse:  # type: ignore[override]
-            return RedirectResponse(url="/dashboard")
+        async def _root_redirect(request: Request) -> RedirectResponse:  # type: ignore[override]
+            # Preserve query string (e.g., api_key) when redirecting to /dashboard
+            query = request.url.query
+            target = "/dashboard" if not query else f"/dashboard?{query}"
+            return RedirectResponse(url=target)
 
         app.add_api_route("/", _root_redirect, methods=["GET"])  # type: ignore[arg-type]
 

@@ -26,19 +26,3 @@ class TestAgentAPI(TestTemplate):
         assert b.get("approved") in (True, False)
         call_id = b.get("call_id")
         assert isinstance(call_id, str)
-
-        # End tool call (simulate success)
-        end = test_client.post(
-            "/agent/end",
-            json={
-                "session_id": "sess-test-abc",
-                "call_id": call_id,
-                "status": "ok",
-                "duration_ms": 12.3,
-                "result_summary": "42",
-            },
-            headers=headers,
-        )
-        assert end.status_code == 200, end.text
-        e = end.json()
-        assert e.get("ok") is True

@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --bg: #0b0c10;
+    --card: #111318;
+    --border: #1f2430;
+    --text: #e6e6e6;
+    --muted: #a0a7b4;
+    --accent: #7c3aed;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --border: #e5e7eb;
+        --text: #0f172a;
+        --muted: #475569;
+    }
+}
+
+@layer base {
+    body {
+        background-color: var(--bg);
+        color: var(--text);
+    }
+
+    .prose {
+        color: var(--text);
+        max-width: none;
+    }
+
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4,
+    .prose h5,
+    .prose h6 {
+        color: var(--text);
+        font-weight: 600;
+        line-height: 1.25;
+        margin-bottom: 1rem;
+        margin-top: 2rem;
+    }
+
+    .prose h1 {
+        font-size: 2.25rem;
+        margin-top: 0;
+    }
+
+    .prose h2 {
+        font-size: 1.875rem;
+    }
+
+    .prose h3 {
+        font-size: 1.5rem;
+    }
+
+    .prose p {
+        margin-bottom: 1rem;
+        line-height: 1.75;
+        color: var(--text);
+    }
+
+    .prose a {
+        color: var(--accent);
+        text-decoration: underline;
+    }
+
+    .prose a:hover {
+        filter: brightness(1.2);
+    }
+
+    .prose code {
+        background-color: var(--card);
+        color: var(--accent);
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.375rem;
+        font-size: 0.875em;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        border: 1px solid var(--border);
+    }
+
+    .prose pre {
+        background-color: var(--card) !important;
+        padding: 1rem !important;
+        border-radius: 0.5rem !important;
+        overflow-x: auto !important;
+        margin-bottom: 1rem !important;
+        border: 1px solid var(--border);
+    }
+
+    .prose pre code {
+        background-color: transparent !important;
+        padding: 0 !important;
+        color: var(--text) !important;
+        border: none !important;
+    }
+
+    .prose ul,
+    .prose ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+
+    .prose li {
+        margin-bottom: 0.5rem;
+        color: var(--text);
+    }
+
+    .prose blockquote {
+        border-left: 4px solid var(--accent);
+        padding-left: 1rem;
+        margin: 1.5rem 0;
+        color: var(--muted);
+    }
+
+    .prose strong {
+        color: var(--text);
+    }
+
+    .prose table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+    }
+
+    .prose th,
+    .prose td {
+        border: 1px solid var(--border);
+        padding: 0.5rem;
+        text-align: left;
+    }
+
+    .prose th {
+        background-color: var(--card);
+        font-weight: 600;
+    }
+
+    .prose tr:hover {
+        background-color: var(--card);
+    }
+}

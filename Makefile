@@ -335,20 +335,41 @@ show_version: ## Show current project version from pyproject.toml
 	print(f"Current version: {m.group(1)}.{m.group(2)}.{m.group(3)}")
 	PY
 
-bump_version: ## Bump project version in pyproject.toml (PART=patch|minor|major; default: patch) and commit it
+bump_version: gui_check_version_matches_backend ## Bump project version in pyproject.toml (PART=patch|minor|major; default: patch) and commit it
 	@echo "$(YELLOW)🔧 Bumping $(PART) version in pyproject.toml...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --commit
 	@echo "$(GREEN)✅ Version bumped and committed.$(RESET)"
 
-bump_version_no_commit: ## Bump version without committing (PART=patch|minor|major)
+bump_version_no_commit: gui_check_version_matches_backend ## Bump version without committing (PART=patch|minor|major)
 	@echo "$(YELLOW)🔧 Bumping $(PART) version in pyproject.toml (no commit)...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --no-commit
 	@echo "$(GREEN)✅ Version bumped (not committed).$(RESET)"
 
-bump_version_amend: ## Bump version and amend the last commit
+bump_version_amend: gui_check_version_matches_backend ## Bump version and amend the last commit
 	@echo "$(YELLOW)🔧 Bumping $(PART) version and amending last commit...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --commit --amend
 	@echo "$(GREEN)✅ Version bumped and amended into last commit.$(RESET)"
+
+# GUI/Desktop version helpers (keep GUI app version aligned with backend when bundling)
+.PHONY: gui_check_version_matches_backend gui_sync_version_to_backend
+gui_check_version_matches_backend: ## Fail if GUI app version != backend version
+	@GUI_VER=$$(node -p "require('./gui/package.json').version"); \
+	BACKEND_VER=$$(grep -E '^[[:space:]]*version[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/'); \
+	if [ "$$GUI_VER" != "$$BACKEND_VER" ]; then \
+		echo "$(RED)❌ Version mismatch: GUI=$$GUI_VER, backend=$$BACKEND_VER. Bump GUI to match backend.$(RESET)"; \
+		exit 3; \
+	else \
+		echo "$(GREEN)✅ Versions aligned: $$GUI_VER$(RESET)"; \
+	fi
+
+gui_sync_version_to_backend: ## Set gui/package.json version to backend version from pyproject.toml
+	@BACKEND_VER=$$(grep -E '^[[:space:]]*version[[:space:]]*=[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/'); \
+	if [ -z "$$BACKEND_VER" ]; then \
+		echo "$(RED)❌ Could not determine backend version from pyproject.toml$(RESET)"; \
+		exit 2; \
+	fi; \
+	node -e "const fs=require('fs');const p=require('./gui/package.json');p.version='$$BACKEND_VER';fs.writeFileSync('./gui/package.json',JSON.stringify(p,null,2)+'\n')"; \
+	echo "$(GREEN)✅ gui/package.json version set to $$BACKEND_VER$(RESET)"
 
 ########################################################
 # Frontend Website
@@ -385,6 +406,160 @@ frontend_pack: ## Build the frontend and sync to src/frontend_dist for the serve
 	@rm -rf src/frontend_dist && mkdir -p src/frontend_dist
 	@cp -R frontend/dist/* src/frontend_dist/
 	@echo "$(GREEN)✅ Frontend packed to src/frontend_dist.$(RESET)"
+
+########################################################
+# GUI
+########################################################
+
+.PHONY: gui gui_dev gui_pack frontend_pack
+.PHONY: gui_run gui_run_wizard install-check
+
+install-check: ## Ensure GUI dependencies are installed
+	@echo "$(YELLOW)🔍 Checking GUI dependencies...$(RESET)"
+	@if ! command -v node > /dev/null 2>&1; then \
+		echo "$(RED)❌ Node.js is not installed. Please install Node.js (v18+).$(RESET)"; \
+		exit 1; \
+	fi
+	@if ! command -v npm > /dev/null 2>&1; then \
+		echo "$(RED)❌ npm is not installed. Please install npm.$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -d "gui/node_modules" ] || [ ! -d "gui/node_modules/vite" ]; then \
+		echo "$(YELLOW)📦 Installing GUI dependencies...$(RESET)"; \
+		cd gui && npm install; \
+	else \
+		echo "$(GREEN)✅ GUI dependencies present.$(RESET)"; \
+	fi
+
+gui_dev: install-check frontend_pack gui_pack ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop in development mode...$(RESET)"
+	@cd gui && OPEN_EDISON_GUI_MODE=development npm run dev
+
+gui_run: install-check gui_pack ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop...$(RESET)"
+	@cd gui && npm run electron
+
+gui_run_wizard: install-check gui_pack ## Run the desktop app in development mode
+	@echo "$(BLUE)🚀 Starting Open Edison Desktop with wizard...$(RESET)"
+	@cd gui && npm run first-install
+
+gui_pack: install-check sync_gui_version ## Build the desktop app for distribution
+	@echo "$(YELLOW)🏗️  Building desktop app (Electron) for distribution...$(RESET)"
+	@cd gui && npm install && npm run build
+	@echo "$(YELLOW)📦 Building Electron distribution packages...$(RESET)"
+	@cd gui && CSC_IDENTITY_AUTO_DISCOVERY=false APPLE_ID="" npm run dist
+	@echo "$(GREEN)✅ Desktop app packaged to gui/release/.$(RESET)"
+
+sync_gui_version: ## Sync version from pyproject.toml to gui/package.json
+	@echo "$(YELLOW)🔄 Syncing version from pyproject.toml to gui/package.json...$(RESET)"
+	@$(PYTHON) scripts/sync_gui_version.py
+
+
+########################################################
+# PyInstaller (freeze backend) and Electron dist
+########################################################
+
+.PHONY: pyinstall electron_dist app_dist
+
+pyinstall: check_uv frontend_pack ## Build standalone backend binary with PyInstaller (depends on frontend_pack)
+	@echo "$(YELLOW)🏗️  Building PyInstaller binary...$(RESET)"
+	@uv run pyinstaller -F -n open-edison-backend -p src \
+		--additional-hooks-dir pyinstaller_hooks \
+		--add-data "src/frontend_dist:src/frontend_dist" \
+		--collect-submodules uvicorn \
+		--hidden-import=sqlite3 \
+		--hidden-import=_sqlite3 \
+		--hidden-import=pysqlite2 \
+		--hidden-import=MySQLdb \
+		--collect-submodules sqlalchemy.dialects \
+		main.py
+	@echo "$(GREEN)✅ PyInstaller binary at dist/open-edison-backend$(RESET)"
+	@echo "$(YELLOW)🏗️  Building Setup Wizard API binary...$(RESET)"
+	@uv run pyinstaller -F -n open-edison-wizard -p src \
+		--additional-hooks-dir pyinstaller_hooks \
+		--collect-submodules uvicorn \
+		src/mcp_importer/wizard_server.py
+	@echo "$(GREEN)✅ PyInstaller binary at dist/open-edison-wizard$(RESET)"
+
+.PHONY: pyinstall_clean
+pyinstall_clean: ## Clean PyInstaller outputs (binary, build dir, spec, copied backend)
+	@echo "$(YELLOW)🧹 Cleaning PyInstaller artifacts...$(RESET)"
+	@rm -rf build
+	@rm -f open-edison-backend.spec
+	@rm -f open-edison-wizard.spec
+	@rm -f dist/open-edison-backend
+	@rm -f dist/open-edison-wizard
+	@echo "$(GREEN)✅ PyInstaller artifacts cleaned.$(RESET)"
+
+electron_dist: sync_gui_version ## Build Electron distribution (requires pyinstall run to copy backend)
+	@echo "$(YELLOW)📦 Preparing Electron app with bundled backend...$(RESET)"
+	@if [ ! -f "dist/open-edison-backend" ]; then \
+		echo "$(RED)❌ dist/open-edison-backend not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "dist/open-edison-wizard" ]; then \
+		echo "$(RED)❌ dist/open-edison-wizard not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@mkdir -p gui/extraResources/backend
+	@cp dist/open-edison-backend gui/extraResources/backend/
+	@cp dist/open-edison-wizard gui/extraResources/backend/
+	@echo "$(YELLOW)🏗️  Building Electron app (no signing/notarization)...$(RESET)"
+	@cd gui && CSC_IDENTITY_AUTO_DISCOVERY=false APPLE_ID="" npm run dist
+	@echo "$(GREEN)✅ Electron app built to gui/release/$(RESET)"
+
+.PHONY: electron_dist_env notarize_dmg
+
+# Load environment variables from .env and build with signing/notarization
+electron_dist_env: sync_gui_version ## Load .env then build Electron distribution (sign/notarize if configured)
+	@echo "$(YELLOW)📦 Preparing Electron app with bundled backend (with .env)...$(RESET)"
+	@if [ ! -f "dist/open-edison-backend" ]; then \
+		echo "$(RED)❌ dist/open-edison-backend not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "dist/open-edison-wizard" ]; then \
+		echo "$(RED)❌ dist/open-edison-wizard not found. Run 'make pyinstall' first.$(RESET)"; \
+		exit 1; \
+	fi
+	@mkdir -p gui/extraResources/backend
+	@cp dist/open-edison-backend gui/extraResources/backend/
+	@cp dist/open-edison-wizard gui/extraResources/backend/
+	@echo "$(YELLOW)🏗️  Building Electron app (sign/notarize from .env)...$(RESET)"
+	@set -a; [ -f ".env" ] && . ./.env; set +a; cd gui && npm run dist
+	@echo "$(GREEN)✅ Electron app built to gui/release/$(RESET)"
+
+electron_dist_clean: pyinstall_clean ## Clean Electron distribution outputs
+	@echo "$(YELLOW)🧹 Cleaning Electron distribution artifacts...$(RESET)"
+	@rm -rf gui/extraResources/backend
+	@rm -rf gui/release
+	@rm -rf gui/dist
+	@echo "$(GREEN)✅ Electron distribution artifacts cleaned.$(RESET)"
+
+
+app_dist: pyinstall electron_dist ## Build full macOS app bundle (backend + frontend + GUI)
+	@echo "$(GREEN)✅ Full macOS app bundle built with version from pyproject.toml$(RESET)"
+
+
+# Publish packaged GUI to GitHub Releases using electron-builder (requires GH_TOKEN)
+# These releases are checked by Open Edison Desktop for auto-updates
+.PHONY: app_release
+app_release: app_dist ## Build (pyinstaller + electron) and publish GUI to GitHub Releases
+	@if [ -z "$$GH_TOKEN" ]; then \
+		echo "$(RED)❌ GH_TOKEN is not set. Export GH_TOKEN with a GitHub token that has repo permissions.$(RESET)"; \
+		exit 2; \
+	fi
+	@echo "$(YELLOW)🔎 Checking if release for current GUI version already exists...$(RESET)"
+	@VERSION=$$(node -p "require('./gui/package.json').version"); \
+	TAG=v$$VERSION; \
+	STATUS=$$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $$GH_TOKEN" https://api.github.com/repos/Edison-Watch/open-edison/releases/tags/$$TAG); \
+	if [ "$$STATUS" = "200" ]; then \
+		echo "$(RED)❌ GitHub release $$TAG already exists for Edison-Watch/open-edison. Bump version before releasing.$(RESET)"; \
+		exit 3; \
+	fi
+	@echo "$(YELLOW)🚀 Publishing GUI to GitHub Releases (Edison-Watch/open-edison)...$(RESET)"
+	@cd gui && npm run build && npx electron-builder --publish always
+	@echo "$(GREEN)✅ GUI release published. Check GitHub Releases for artifacts.$(RESET)"
+
 
 ########################################################
 # Package Build (Python wheel + packaged frontend)

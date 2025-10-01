@@ -32,6 +32,14 @@
     --muted: #475569;
 }
 
+[data-theme="blue"] {
+    --bg: #1e293b;
+    --card: #2d3b4e;
+    --border: #3d4f66;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+}
+
 @media (prefers-color-scheme: light) {
     :root {
         --bg: #f8fafc;

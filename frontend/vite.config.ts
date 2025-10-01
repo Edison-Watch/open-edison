@@ -116,8 +116,25 @@ export default defineConfig({
             // Allow reading files from the monorepo root so we can fetch the live SQLite db via @fs
             allow: [projectRoot],
         },
+        // Proxy API requests to the backend server
+        proxy: {
+            '/api': {
+                target: 'http://localhost:3001',
+                changeOrigin: true,
+                secure: false
+            },
+            '/mcp': {
+                target: 'http://localhost:3001',
+                changeOrigin: true,
+                secure: false
+            },
+            '/health': {
+                target: 'http://localhost:3001',
+                changeOrigin: true,
+                secure: false
+            }
+        },
         // Local save endpoint is provided by localSavePlugin
-        // No proxy needed; we read the SQLite db directly using sql.js
     },
 })
 

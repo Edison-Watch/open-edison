@@ -221,7 +221,9 @@ install_id
 dev_config_dir/
 sessions.db
 .env
+typings/
 .DS_Store
 typings/
 ngrok.yml
 .env
+gui/extraResources/backend/
