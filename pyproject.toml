@@ -1,6 +1,6 @@
 [project]
 name = "open-edison"
-version = "0.1.117"
+version = "0.1.118"
 description = "Open-source MCP security, aggregation, and monitoring. Single-user, self-hosted MCP proxy."
 readme = "README.md"
 authors = [
@@ -64,7 +64,7 @@ dev = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src", "open_edison"]
 include = [
   "README.md",
   "LICENSE",
@@ -98,6 +98,7 @@ include = [
   "resource_permissions.json",
   "prompt_permissions.json",
   "src/**",
+  "open_edison/**",
   "docs/**",
   "desktop_ext/**",
 ]
@@ -143,7 +144,7 @@ ignore = [".venv", "tests/**", "alembic", "tests"]
 reportMissingTypeStubs = true
 reportUnusedFunction = false  # Disable unused function warnings since we have many dynamically registered functions
 venvPath = ".venv"
-extraPaths = ["src"]
+extraPaths = [".", "src"]
 
 [tool.ty.rules]
 possibly-unresolved-reference = "error"
