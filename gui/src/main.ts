@@ -1042,9 +1042,22 @@ app.on('before-quit', () => {
 
 // IPC handlers for communication with renderer process
 ipcMain.handle('get-backend-status', async () => {
-  return {
-    running: isBackendRunning,
-    port: BACKEND_PORT
+  try {
+    const { host, port } = await readServerConfig()
+    const effectivePort = typeof port === 'number' ? port : BACKEND_PORT
+    const effectiveHost = typeof host === 'string' && host.trim() ? host : 'localhost'
+    const running = await checkBackendRunning(effectiveHost, effectivePort)
+    isBackendRunning = running
+    return {
+      running,
+      port: effectivePort
+    }
+  } catch (error) {
+    console.warn('get-backend-status failed:', error)
+    return {
+      running: isBackendRunning,
+      port: BACKEND_PORT
+    }
   }
 })
 
