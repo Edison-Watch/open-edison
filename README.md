@@ -10,10 +10,6 @@ OpenEdison helps address the [lethal trifecta problem](https://simonwillison.net
 
 **Join our Discord** for feedback, feature requests, and to discuss MCP security for your use case: [discord.gg/tXjATaKgTV](https://discord.gg/tXjATaKgTV)
 
-<p align="center">
-  <img src="media/trifecta520p.gif" alt="Trifecta Security Risk Animation" width="520">
-</p>
-
 <div align="center">
   <h2>📧 To get visibility, control and exfiltration blocker into AI's interaction with your company software, systems of record, DBs, <a href="mailto:hello@edison.watch">Contact us</a> to discuss.</h2>
 </div>
