@@ -227,3 +227,5 @@ typings/
 ngrok.yml
 .env
 gui/extraResources/backend/
+todo.md
+todo/
