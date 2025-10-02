@@ -15,6 +15,8 @@ export type Session = {
   created_at?: string | null
   tool_calls: ToolCall[]
   data_access_summary: Record<string, unknown>
+  agent_name?: string | null
+  agent_type?: string | null
 }
 
 export type SessionsResponse = { sessions: Session[] }

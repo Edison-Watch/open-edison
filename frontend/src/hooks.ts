@@ -18,19 +18,19 @@ export function useSessions(dbPath: string) {
         const urlParams = new URLSearchParams(window.location.search);
         const urlApiKey = urlParams.get('api_key');
         const globalApiKey = (window as any).OPEN_EDISON_API_KEY;
-        const storedKey = (() => { 
-            try { 
-                return localStorage.getItem('api_key') || globalApiKey || urlApiKey || '' 
-            } catch { 
-                return globalApiKey || urlApiKey || '' 
-            } 
+        const storedKey = (() => {
+          try {
+            return localStorage.getItem('api_key') || globalApiKey || urlApiKey || ''
+          } catch {
+            return globalApiKey || urlApiKey || ''
+          }
         })()
         const headers: Record<string, string> = { 'Cache-Control': 'no-cache' }
         if (storedKey) {
-            headers['Authorization'] = `Bearer ${storedKey}`
-            console.log('Using API key for sessions request:', storedKey)
+          headers['Authorization'] = `Bearer ${storedKey}`
+          console.log('Using API key for sessions request:', storedKey)
         } else {
-            console.log('No API key found for sessions request')
+          console.log('No API key found for sessions request')
         }
         const fileResp = await fetch(`/@fs${dbPath}`, {
           cache: 'no-cache',
@@ -39,7 +39,7 @@ export function useSessions(dbPath: string) {
         if (!fileResp.ok) throw new Error(`Cannot read DB at ${dbPath}`)
         const buf = new Uint8Array(await fileResp.arrayBuffer())
         const db = new SQL.Database(buf as any as BufferSource)
-        const query = `SELECT session_id, correlation_id, tool_calls, data_access_summary FROM mcp_sessions ORDER BY id DESC LIMIT 200;`
+        const query = `SELECT session_id, correlation_id, tool_calls, data_access_summary, agent_name, agent_type FROM mcp_sessions ORDER BY id DESC LIMIT 200;`
         const result = db.exec(query)
         const sessions: Session[] = []
         if (result.length > 0) {

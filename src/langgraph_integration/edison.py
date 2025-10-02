@@ -25,6 +25,8 @@ class Edison:
         timeout_s: float = 30.0,
         healthcheck: bool = True,
         healthcheck_timeout_s: float = 3.0,
+        agent_name: str | None = None,
+        agent_type: str | None = None,
     ):
         # Management API base (FastAPI), not MCP. Default to localhost:3001
         base = api_base or os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")
@@ -33,6 +35,8 @@ class Edison:
             "OPEN_EDISON_API_KEY", "dev-api-key-change-me"
         )
         self.timeout_s: float = timeout_s
+        self.agent_name: str | None = agent_name
+        self.agent_type: str | None = agent_type
         # Headers are added per-request via _http_headers()
         # Best-effort healthchecks (background)
         if healthcheck:
@@ -98,8 +102,6 @@ class Edison:
         self,
         session_id: str | None = None,
         name: str | None = None,
-        agent_name: str | None = None,
-        agent_type: str | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator to gate and log tool calls via the OE server.
 
@@ -112,13 +114,14 @@ class Edison:
         Args:
             session_id: Fixed session ID for all calls
             name: Tool name override
-            agent_name: Agent identity (e.g., "hr_assistant")
-            agent_type: Agent role type (e.g., "hr", "engineering")
         """
 
         def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # noqa: C901
             tool_name = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
             bound_sid = session_id or Edison.get_session_id()
+            # Use instance-level agent identity
+            agent_name = self.agent_name
+            agent_type = self.agent_type
 
             async def _end_async(
                 sid: str, call_id: str, status: str, duration_ms: float, summary: str

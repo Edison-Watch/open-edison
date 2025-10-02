@@ -213,10 +213,8 @@ class Permissions:
     def get_tool_permission(self, tool_name: str) -> ToolPermission:
         """Get permission for a specific tool"""
         if tool_name not in self.tool_permissions:
-            if tool_name.startswith("builtin_"):
-                log.info(
-                    f"Tool '{tool_name}' not found; returning builtin safe default (enabled, 0 risk)"
-                )
+            if tool_name.startswith(("builtin_", "agent_")):
+                log.info(f"Tool '{tool_name}' not found; returning safe default (enabled, 0 risk)")
                 return ToolPermission(
                     enabled=True,
                     write_operation=False,

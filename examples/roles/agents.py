@@ -1,6 +1,15 @@
 # agents.py
-# Four simple LangGraph agents with dummy tools.
-# NOTE: No Edison features are included. Add @edison.track() to any tool later.
+# Four simple LangGraph agents with dummy tools tracked by Open Edison.
+#
+# SETUP: Ensure agent configs exist in your Open Edison config directory:
+# - When running via `make run`: Configs are in dev_config_dir/agents/
+# - When running standalone server: Configs should be in ~/Library/Application Support/Open Edison/agents/
+#
+# Agent configs for this example:
+# - hr_assistant (restrictive - blocks writes)
+# - eng_copilot (permissive - uses base)
+# - rd_researcher (mixed - blocks delete only)
+# - finance_analyst (restrictive - blocks all writes)
 
 import asyncio
 from typing import Annotated, Any, TypedDict
@@ -11,6 +20,14 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 from tqdm.auto import tqdm
+
+from src.langgraph_integration.edison import Edison
+
+# Create Edison trackers for each agent type (with identity set at instance level)
+edison_hr = Edison(agent_name="hr_assistant", agent_type="hr")
+edison_eng = Edison(agent_name="eng_copilot", agent_type="engineering")
+edison_rd = Edison(agent_name="rd_researcher", agent_type="rd")
+edison_fin = Edison(agent_name="finance_analyst", agent_type="finance")
 
 # -------------------------
 # Generic agent scaffolding
@@ -85,12 +102,14 @@ def build_agent(
 
 
 @tool
+@edison_hr.track()
 def hr_get_employee_profile(employee_id: str) -> str:
     """Fetch a basic employee profile by employee_id. Dummy data only."""
     return f"[HR] Profile for {employee_id}: name=Alex Example, dept=Engineering, salary=£85k, email=alex@example.com"
 
 
 @tool
+@edison_hr.track()
 def hr_lookup_policy(topic: str) -> str:
     """Look up a human resources policy snippet by topic. Dummy data only."""
     snippets = {
@@ -102,6 +121,7 @@ def hr_lookup_policy(topic: str) -> str:
 
 
 @tool
+@edison_hr.track()
 def hr_create_case(employee_id: str, category: str, note: str) -> str:
     """Open an HR case/ticket for an employee. Returns a dummy case ID."""
     return f"[HR] Opened case #{hash((employee_id, category, note)) % 10000} for {employee_id} ({category})."
@@ -126,6 +146,7 @@ def make_hr_agent(llm: BaseChatModel):
 
 
 @tool
+@edison_eng.track()
 def eng_search_codebase(query: str) -> str:
     """Search the codebase for a keyword and return dummy file hits."""
     hits = [
@@ -137,6 +158,7 @@ def eng_search_codebase(query: str) -> str:
 
 
 @tool
+@edison_eng.track()
 def eng_open_pr(repo: str, title: str, body: str) -> str:
     """Open a pull request with a title/body. Returns a dummy PR URL."""
     pr_id = abs(hash((repo, title))) % 5000
@@ -144,6 +166,7 @@ def eng_open_pr(repo: str, title: str, body: str) -> str:
 
 
 @tool
+@edison_eng.track()
 def eng_ci_status(pipeline: str) -> str:
     """Get the last CI result for a pipeline. Dummy values."""
     return f"[ENG] Pipeline '{pipeline}' status: SUCCESS (duration: 4m32s)"
@@ -168,6 +191,7 @@ def make_engineering_agent(llm: BaseChatModel):
 
 
 @tool
+@edison_rd.track()
 def rnd_lit_search(topic: str) -> str:
     """Search recent literature by topic; returns dummy citations."""
     results = [
@@ -179,6 +203,7 @@ def rnd_lit_search(topic: str) -> str:
 
 
 @tool
+@edison_rd.track()
 def rnd_get_dataset(name: str) -> str:
     """Return dummy dataset card metadata by name."""
     return (
@@ -188,6 +213,7 @@ def rnd_get_dataset(name: str) -> str:
 
 
 @tool
+@edison_rd.track()
 def rnd_log_experiment(name: str, params_json: str) -> str:
     """Log an experiment run with params as JSON string. Returns a dummy run ID."""
     run_id = abs(hash((name, params_json))) % 100000
@@ -213,12 +239,14 @@ def make_rnd_agent(llm: BaseChatModel):
 
 
 @tool
+@edison_fin.track()
 def fin_get_budget(department: str) -> str:
     """Return dummy department budget status."""
     return f"[FIN] {department} budget: allocated=£2.0M; spent=£1.35M; remaining=£0.65M; FY=2025."
 
 
 @tool
+@edison_fin.track()
 def fin_submit_expense(employee_id: str, amount: float, description: str) -> str:
     """Submit an expense claim. Returns a dummy expense ID."""
     expense_id = abs(hash((employee_id, amount, description))) % 80000
@@ -226,6 +254,7 @@ def fin_submit_expense(employee_id: str, amount: float, description: str) -> str
 
 
 @tool
+@edison_fin.track()
 def fin_generate_invoice(customer_id: str, amount: float) -> str:
     """Generate an invoice for a customer. Returns a dummy invoice number."""
     invoice_no = 100000 + (abs(hash((customer_id, amount))) % 900000)

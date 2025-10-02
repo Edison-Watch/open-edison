@@ -325,9 +325,9 @@ export function App(): React.JSX.Element {
                 setTheme(newTheme)
             }
         }
-        
+
         window.addEventListener('theme-changed', handleThemeChange as EventListener)
-        
+
         return () => {
             window.removeEventListener('theme-changed', handleThemeChange as EventListener)
             delete (window as any).__setTheme
@@ -336,10 +336,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents'>(() => {
         try {
             const saved = safeLocalStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -348,7 +348,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -654,13 +654,15 @@ export function App(): React.JSX.Element {
                         {view === 'sessions' && 'Live view of recent MCP sessions from the local SQLite store.'}
                         {view === 'configs' && 'Direct JSON editing for configuration and permission files.'}
                         {view === 'manager' && 'Manage MCP servers, tools, and permissions with a guided interface.'}
+                        {view === 'agents' && 'Monitor agent identities, sessions, and permission overrides.'}
                     </p>
                 </div>
                 <div className="flex gap-2 items-center">
                     <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'agents' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('agents')}>Agents</button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
@@ -756,6 +758,8 @@ export function App(): React.JSX.Element {
                 <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} theme={theme} />
             ) : view === 'manager' ? (
                 <ConfigurationManager projectRoot={projectRoot} />
+            ) : view === 'agents' ? (
+                <AgentsView sessions={uiSessions} />
             ) : (
                 <div className="space-y-4">
                     <Kpis sessions={timeFiltered} prevSessions={prevTimeFiltered} />
@@ -3028,6 +3032,111 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                             ×
                         </button>
                     </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: string })[] }) {
+    type Agent = { name: string; has_tool_overrides: boolean; has_prompt_overrides: boolean; has_resource_overrides: boolean }
+    const [agents, setAgents] = useState<Agent[]>([])
+    const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+
+    // Load agents list from API
+    useEffect(() => {
+        const loadAgents = async () => {
+            try {
+                const apiKey = getApiKey()
+                const headers: Record<string, string> = {}
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+                const resp = await fetch('/api/agents', { headers })
+                if (!resp.ok) return
+                const data = await resp.json()
+                setAgents(data.agents || [])
+            } catch { /* ignore */ }
+        }
+        loadAgents()
+    }, [])
+
+    // Filter sessions by selected agent
+    const agentSessions = useMemo(() => {
+        if (!selectedAgent) return sessions
+        return sessions.filter(s => s.agent_name === selectedAgent)
+    }, [sessions, selectedAgent])
+
+    // Compute stats for each agent
+    const agentStats = useMemo(() => {
+        const stats = new Map<string, { sessionCount: number; callCount: number; lastActive: number }>()
+        for (const s of sessions) {
+            const name = s.agent_name || '_unknown'
+            const existing = stats.get(name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
+            existing.sessionCount += 1
+            existing.callCount += s.tool_calls.length
+            const ts = s.created_at || s.tool_calls[0]?.timestamp
+            if (ts) {
+                const t = Date.parse(ts)
+                if (!Number.isNaN(t) && t > existing.lastActive) existing.lastActive = t
+            }
+            stats.set(name, existing)
+        }
+        return stats
+    }, [sessions])
+
+    if (selectedAgent) {
+        // Per-agent dashboard view
+        return (
+            <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <button className="button" onClick={() => setSelectedAgent(null)}>← Back to Agents</button>
+                    <h2 className="text-xl font-bold">{selectedAgent}</h2>
+                </div>
+                <Kpis sessions={agentSessions} />
+                <SessionTable sessions={agentSessions} />
+                <Stats sessions={agentSessions} />
+            </div>
+        )
+    }
+
+    // Agent list view
+    return (
+        <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {agents.map(agent => {
+                    const stats = agentStats.get(agent.name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
+                    const lastActiveStr = stats.lastActive > 0 ? new Date(stats.lastActive).toLocaleString() : 'Never'
+                    return (
+                        <div key={agent.name} className="card">
+                            <div className="flex items-start justify-between mb-2">
+                                <div className="font-semibold">{agent.name}</div>
+                                <div className="text-xs">
+                                    {agent.has_tool_overrides && <span className="badge">Tool overrides</span>}
+                                </div>
+                            </div>
+                            <div className="text-sm space-y-1 mb-3">
+                                <div className="flex justify-between">
+                                    <span className="text-app-muted">Sessions:</span>
+                                    <span>{stats.sessionCount}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-app-muted">Calls:</span>
+                                    <span>{stats.callCount}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-app-muted">Last active:</span>
+                                    <span className="text-xs">{lastActiveStr}</span>
+                                </div>
+                            </div>
+                            <button className="button w-full" onClick={() => setSelectedAgent(agent.name)}>
+                                View Dashboard
+                            </button>
+                        </div>
+                    )
+                })}
+            </div>
+            {agents.length === 0 && (
+                <div className="card text-center text-app-muted">
+                    No agents configured. Create agent folders in `&lt;config_dir&gt;/agents/`
                 </div>
             )}
         </div>

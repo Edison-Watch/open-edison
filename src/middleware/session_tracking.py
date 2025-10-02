@@ -26,7 +26,7 @@ from fastmcp.server.proxy import ProxyPrompt, ProxyResource, ProxyTool
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
-from sqlalchemy import JSON, Column, Integer, String, create_engine, event
+from sqlalchemy import JSON, Column, Integer, String, create_engine, event, text
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
@@ -129,6 +129,23 @@ def create_db_session() -> Generator[Session, None, None]:
 
     # Ensure tables exist
     Base.metadata.create_all(engine)  # type: ignore
+
+    # Migrate existing databases: add agent columns if missing
+    with engine.connect() as conn:
+        try:
+            # Check if columns exist by trying to query them
+            conn.execute(text("SELECT agent_name FROM mcp_sessions LIMIT 1"))
+        except Exception:
+            # Columns don't exist, add them
+            try:
+                conn.execute(text("ALTER TABLE mcp_sessions ADD COLUMN agent_name TEXT"))
+                conn.execute(text("ALTER TABLE mcp_sessions ADD COLUMN agent_type TEXT"))
+                conn.commit()
+                log.info("✅ Migrated sessions.db: Added agent_name and agent_type columns")
+            except Exception:
+                # Columns might have been added between check and add, ignore
+                pass
+
     session = Session(engine)
     try:
         yield session
