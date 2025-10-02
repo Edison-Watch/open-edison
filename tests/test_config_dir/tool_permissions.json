@@ -1,0 +1,337 @@
+{
+  "_metadata": {
+    "description": "Tool security classifications for Open Edison data access tracker",
+    "last_updated": "2025-08-07"
+  },
+  "builtin": {
+    "echo": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "get_server_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "get_security_status": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "get_available_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "tools_changed": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    }
+  },
+  "filesystem": {
+    "create_directory": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "directory_tree": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "edit_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "get_file_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_allowed_directories": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_directory": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_directory_with_sizes": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "move_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_media_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_multiple_files": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_text_file": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "search_files": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "write_file": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    }
+  },
+  "fetch": {
+    "fetch": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    }
+  },
+  "sqlite": {
+    "create_record": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "db_info": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "delete_records": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "get_table_schema": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "list_tables": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "query": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "read_records": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    },
+    "update_records": {
+      "enabled": true,
+      "write_operation": true,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "SECRET"
+    }
+  },
+  "test_server": {
+    "test_server/*": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": false,
+      "acl": "PRIVATE"
+    }
+  },
+  "atlassian": {
+    "getAccessibleAtlassianResources": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": true,
+      "read_untrusted_public_data": true,
+      "acl": "PUBLIC"
+    }
+  },
+  "zapier": {
+    "add_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "edit_tools": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    }
+  },
+  "agent": {
+    "web_search": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "fetch_url": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "http_head": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": true,
+      "acl": "SECRET"
+    },
+    "summarize": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "regex_extract": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "token_count": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "add": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "multiply": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "random_int": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "now_iso": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "sleep_ms": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "list_top": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    },
+    "dict_keys": {
+      "enabled": true,
+      "write_operation": false,
+      "read_private_data": false,
+      "read_untrusted_public_data": false,
+      "acl": "PUBLIC"
+    }
+  }
+}

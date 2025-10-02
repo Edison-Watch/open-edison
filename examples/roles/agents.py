@@ -396,8 +396,10 @@ def build_prompts(quick_mode: bool = False):
     ]
 
     # Apply quick mode filter (use only first element of each list)
+    def data_slicer(x: dict[str, Any]) -> dict[str, Any]:
+        return {k: v[:1] if isinstance(v, list) else v for k, v in x.items()}
+
     if quick_mode:
-        data_slicer = lambda x: {k: v[:1] if isinstance(v, list) else v for k, v in x.items()}
         hr_data, eng_data, rnd_data, fin_data = (
             [data_slicer(d) for d in data] for data in (hr_data, eng_data, rnd_data, fin_data)
         )

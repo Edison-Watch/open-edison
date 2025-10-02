@@ -95,7 +95,11 @@ class Edison:
         return base if base.startswith("agent_") else f"agent_{base}"
 
     def track(  # noqa: C901
-        self, session_id: str | None = None, name: str | None = None
+        self,
+        session_id: str | None = None,
+        name: str | None = None,
+        agent_name: str | None = None,
+        agent_type: str | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator to gate and log tool calls via the OE server.
 
@@ -104,9 +108,15 @@ class Edison:
         - POST /agent/begin (gating/approval)
         - Execute function
         - POST /agent/end (status, duration, result summary)
+
+        Args:
+            session_id: Fixed session ID for all calls
+            name: Tool name override
+            agent_name: Agent identity (e.g., "hr_assistant")
+            agent_type: Agent role type (e.g., "hr", "engineering")
         """
 
-        def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # noqa: C901
             tool_name = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
             bound_sid = session_id or Edison.get_session_id()
 
@@ -153,14 +163,17 @@ class Edison:
                 @wraps(func)
                 async def _aw(*args: Any, **kwargs: Any) -> Any:
                     sid = kwargs.pop("__edison_session_id", None) or bound_sid
-                    call_id = await self._begin(
-                        {
-                            "session_id": sid,
-                            "name": tool_name,
-                            "args_summary": self._build_args_preview(args, kwargs),
-                            "timeout_s": self.timeout_s,
-                        }
-                    )
+                    payload = {
+                        "session_id": sid,
+                        "name": tool_name,
+                        "args_summary": self._build_args_preview(args, kwargs),
+                        "timeout_s": self.timeout_s,
+                    }
+                    if agent_name:
+                        payload["agent_name"] = agent_name
+                    if agent_type:
+                        payload["agent_type"] = agent_type
+                    call_id = await self._begin(payload)
                     start = time.perf_counter()
                     try:
                         result = await func(*args, **kwargs)
@@ -179,14 +192,17 @@ class Edison:
             @wraps(func)
             def _sw(*args: Any, **kwargs: Any) -> Any:
                 sid = kwargs.pop("__edison_session_id", None) or bound_sid
-                call_id = self._begin_sync(
-                    {
-                        "session_id": sid,
-                        "name": tool_name,
-                        "args_summary": self._build_args_preview(args, kwargs),
-                        "timeout_s": self.timeout_s,
-                    }
-                )
+                payload = {
+                    "session_id": sid,
+                    "name": tool_name,
+                    "args_summary": self._build_args_preview(args, kwargs),
+                    "timeout_s": self.timeout_s,
+                }
+                if agent_name:
+                    payload["agent_name"] = agent_name
+                if agent_type:
+                    payload["agent_type"] = agent_type
+                call_id = self._begin_sync(payload)
                 start = time.perf_counter()
                 try:
                     result = func(*args, **kwargs)

@@ -1,0 +1,34 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 3000,
+    "api_key": "dev-api-key-change-me",
+    "ssl_cert_file": null,
+    "ssl_key_file": null
+  },
+  "logging": {
+    "level": "INFO",
+    "database_path": null
+  },
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "command": "uvx",
+      "args": [
+        "mcp-server-filesystem",
+        "/tmp"
+      ],
+      "env": {},
+      "enabled": false,
+      "roots": null,
+      "oauth_scopes": null,
+      "oauth_client_name": null
+    }
+  ],
+  "telemetry": {
+    "enabled": true,
+    "otlp_endpoint": "https://otel-collector-production-e7a6.up.railway.app/v1/metrics",
+    "headers": null,
+    "export_interval_ms": 60000
+  }
+}

@@ -556,6 +556,13 @@ class OpenEdisonProxy:
             methods=["POST"],
             dependencies=[Depends(self.verify_api_key)],
         )
+        # Endpoint to list configured agents
+        app.add_api_route(
+            "/api/agents",
+            self.list_agents,
+            methods=["GET"],
+            dependencies=[Depends(self.verify_api_key)],
+        )
         app.add_api_route(
             "/mcp/validate",
             self.validate_mcp_server,
@@ -658,6 +665,35 @@ class OpenEdisonProxy:
         except Exception as e:  # noqa: BLE001
             log.error(f"Failed to process permissions-changed: {e}")
             raise HTTPException(status_code=500, detail="Failed to invalidate caches") from e
+
+    async def list_agents(self) -> dict[str, Any]:
+        """List all configured agents from <config_dir>/agents/ folder."""
+        config_dir = _get_cfg_dir()
+        agents_dir = config_dir / "agents"
+
+        if not agents_dir.exists():
+            return {"agents": []}
+
+        agents: list[dict[str, Any]] = []
+        for agent_folder in agents_dir.iterdir():
+            if not agent_folder.is_dir():
+                continue
+
+            agent_name = agent_folder.name
+            has_tool_overrides = (agent_folder / "tool_permissions.json").exists()
+            has_prompt_overrides = (agent_folder / "prompt_permissions.json").exists()
+            has_resource_overrides = (agent_folder / "resource_permissions.json").exists()
+
+            agents.append(
+                {
+                    "name": agent_name,
+                    "has_tool_overrides": has_tool_overrides,
+                    "has_prompt_overrides": has_prompt_overrides,
+                    "has_resource_overrides": has_resource_overrides,
+                }
+            )
+
+        return {"agents": agents}
 
     async def mcp_status(self) -> dict[str, list[dict[str, Any]]]:
         """Get status of configured MCP servers (auth required)."""

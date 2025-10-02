@@ -1,0 +1,40 @@
+{
+    "_metadata": {
+        "description": "Finance Analyst - Read-only permissions, no code modification",
+        "agent_type": "finance"
+    },
+    "builtin": {
+        "write": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC",
+            "description": "Blocked for Finance analyst"
+        },
+        "search_replace": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC",
+            "description": "Blocked for Finance analyst"
+        },
+        "delete_file": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC",
+            "description": "Blocked for Finance analyst"
+        },
+        "run_terminal_cmd": {
+            "enabled": false,
+            "write_operation": true,
+            "read_private_data": false,
+            "read_untrusted_public_data": false,
+            "acl": "PUBLIC",
+            "description": "Blocked for Finance analyst"
+        }
+    }
+}
