@@ -1,6 +1,6 @@
 {
   "name": "open-edison-desktop",
-  "version": "0.1.118",
+  "version": "0.1.119",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
   "scripts": {
@@ -51,8 +51,8 @@
         "to": "backend"
       },
       {
-        "from": "../media/Edison.iconset",
-        "to": "media/Edison.iconset"
+        "from": "../media/icons/macos",
+        "to": "media/icons/macos"
       }
     ],
     "asar": true,
@@ -69,7 +69,7 @@
       "notarize": {
         "teamId": "CFU4KD26KS"
       },
-      "icon": "../media/Edison.icns"
+      "icon": "../media/icons/macos/Edison.icns"
     },
     "win": {
       "target": "nsis"
