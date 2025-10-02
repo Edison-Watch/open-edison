@@ -12,6 +12,7 @@
 # - finance_analyst (restrictive - blocks all writes)
 
 import asyncio
+import uuid
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -23,11 +24,18 @@ from tqdm.auto import tqdm
 
 from src.langgraph_integration.edison import Edison
 
-# Create Edison trackers for each agent type (with identity set at instance level)
-edison_hr = Edison(agent_name="hr_assistant", agent_type="hr")
-edison_eng = Edison(agent_name="eng_copilot", agent_type="engineering")
-edison_rd = Edison(agent_name="rd_researcher", agent_type="rd")
-edison_fin = Edison(agent_name="finance_analyst", agent_type="finance")
+# Create unique session IDs for each agent to avoid session sharing
+
+hr_session = str(uuid.uuid4())
+eng_session = str(uuid.uuid4())
+rd_session = str(uuid.uuid4())
+fin_session = str(uuid.uuid4())
+
+# Create Edison trackers for each agent type
+edison_hr = Edison(agent_name="hr_assistant", agent_type="hr", session_id=hr_session)
+edison_eng = Edison(agent_name="eng_copilot", agent_type="engineering", session_id=eng_session)
+edison_rd = Edison(agent_name="rd_researcher", agent_type="rd", session_id=rd_session)
+edison_fin = Edison(agent_name="finance_analyst", agent_type="finance", session_id=fin_session)
 
 # -------------------------
 # Generic agent scaffolding

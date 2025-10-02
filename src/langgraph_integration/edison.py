@@ -27,6 +27,7 @@ class Edison:
         healthcheck_timeout_s: float = 3.0,
         agent_name: str | None = None,
         agent_type: str | None = None,
+        session_id: str | None = None,
     ):
         # Management API base (FastAPI), not MCP. Default to localhost:3001
         base = api_base or os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")
@@ -37,12 +38,14 @@ class Edison:
         self.timeout_s: float = timeout_s
         self.agent_name: str | None = agent_name
         self.agent_type: str | None = agent_type
+        # Bind to a specific session ID, or generate one per instance
+        self.session_id: str = session_id or str(uuid.uuid4())
         # Headers are added per-request via _http_headers()
         # Best-effort healthchecks (background)
         if healthcheck:
             Thread(target=self._healthcheck, args=(healthcheck_timeout_s,), daemon=True).start()
 
-    @classmethod
+    @classmethod  # noqa
     def get_session_id(cls) -> str:
         current = _session_ctx.get(None)
         if current:
@@ -118,7 +121,8 @@ class Edison:
 
         def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # noqa: C901
             tool_name = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
-            bound_sid = session_id or Edison.get_session_id()
+            # Use provided session_id, instance session_id, or contextvar
+            bound_sid = session_id or self.session_id
             # Use instance-level agent identity
             agent_name = self.agent_name
             agent_type = self.agent_type

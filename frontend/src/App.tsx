@@ -3042,6 +3042,7 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
     type Agent = { name: string; has_tool_overrides: boolean; has_prompt_overrides: boolean; has_resource_overrides: boolean }
     const [agents, setAgents] = useState<Agent[]>([])
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+    const [sessionLimit, setSessionLimit] = useState<number>(25)
 
     // Load agents list from API
     useEffect(() => {
@@ -3053,23 +3054,25 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
                 const resp = await fetch('/api/agents', { headers })
                 if (!resp.ok) return
                 const data = await resp.json()
-                setAgents(data.agents || [])
+                const agentList = data.agents || []
+                setAgents(agentList)
+                // Auto-select first agent if available
+                if (agentList.length > 0 && !selectedAgent) {
+                    setSelectedAgent(agentList[0].name)
+                }
             } catch { /* ignore */ }
         }
         loadAgents()
     }, [])
 
-    // Filter sessions by selected agent
-    const agentSessions = useMemo(() => {
-        if (!selectedAgent) return sessions
-        return sessions.filter(s => s.agent_name === selectedAgent)
-    }, [sessions, selectedAgent])
-
-    // Compute stats for each agent
+    // Compute stats for each agent from sessions
     const agentStats = useMemo(() => {
         const stats = new Map<string, { sessionCount: number; callCount: number; lastActive: number }>()
+        console.log(`[AgentsView] Computing stats from ${sessions.length} sessions`)
         for (const s of sessions) {
-            const name = s.agent_name || '_unknown'
+            const name = s.agent_name
+            console.log(`[AgentsView] Session ${s.session_id}: agent_name=${name}`)
+            if (!name) continue // Skip sessions without agent
             const existing = stats.get(name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
             existing.sessionCount += 1
             existing.callCount += s.tool_calls.length
@@ -3080,65 +3083,109 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
             }
             stats.set(name, existing)
         }
+        console.log(`[AgentsView] Stats computed:`, Array.from(stats.entries()))
         return stats
     }, [sessions])
 
-    if (selectedAgent) {
-        // Per-agent dashboard view
+    // Filter sessions by selected agent and apply limit
+    const agentSessions = useMemo(() => {
+        if (!selectedAgent) return []
+        return sessions.filter(s => s.agent_name === selectedAgent)
+    }, [sessions, selectedAgent])
+
+    const limitedSessions = useMemo(() => {
+        return agentSessions.slice(0, sessionLimit)
+    }, [agentSessions, sessionLimit])
+
+    if (agents.length === 0) {
         return (
-            <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                    <button className="button" onClick={() => setSelectedAgent(null)}>← Back to Agents</button>
-                    <h2 className="text-xl font-bold">{selectedAgent}</h2>
-                </div>
-                <Kpis sessions={agentSessions} />
-                <SessionTable sessions={agentSessions} />
-                <Stats sessions={agentSessions} />
+            <div className="card text-center text-app-muted">
+                No agents configured. Create agent folders in `&lt;config_dir&gt;/agents/`
             </div>
         )
     }
 
-    // Agent list view
     return (
-        <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid gap-4" style={{ gridTemplateColumns: '240px 1fr' }}>
+            {/* Sidebar with agent list */}
+            <div className="space-y-2">
+                <div className="text-sm font-semibold mb-2 px-2">Agents</div>
                 {agents.map(agent => {
                     const stats = agentStats.get(agent.name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
-                    const lastActiveStr = stats.lastActive > 0 ? new Date(stats.lastActive).toLocaleString() : 'Never'
+                    const selected = selectedAgent === agent.name
                     return (
-                        <div key={agent.name} className="card">
-                            <div className="flex items-start justify-between mb-2">
-                                <div className="font-semibold">{agent.name}</div>
-                                <div className="text-xs">
-                                    {agent.has_tool_overrides && <span className="badge">Tool overrides</span>}
-                                </div>
-                            </div>
-                            <div className="text-sm space-y-1 mb-3">
-                                <div className="flex justify-between">
-                                    <span className="text-app-muted">Sessions:</span>
+                        <button
+                            key={agent.name}
+                            className={`w-full text-left card transition-all active:scale-95 ${selected ? 'border-app-accent bg-app-accent/10' : 'hover:bg-app-border/20'}`}
+                            onClick={() => setSelectedAgent(agent.name)}
+                        >
+                            <div className="font-semibold text-sm mb-1">{agent.name}</div>
+                            <div className="text-xs space-y-0.5">
+                                <div className="flex justify-between text-app-muted">
+                                    <span>Sessions:</span>
                                     <span>{stats.sessionCount}</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-app-muted">Calls:</span>
+                                <div className="flex justify-between text-app-muted">
+                                    <span>Calls:</span>
                                     <span>{stats.callCount}</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-app-muted">Last active:</span>
-                                    <span className="text-xs">{lastActiveStr}</span>
-                                </div>
                             </div>
-                            <button className="button w-full" onClick={() => setSelectedAgent(agent.name)}>
-                                View Dashboard
-                            </button>
-                        </div>
+                            {agent.has_tool_overrides && (
+                                <div className="mt-2">
+                                    <span className="badge text-[10px]">Overrides</span>
+                                </div>
+                            )}
+                        </button>
                     )
                 })}
             </div>
-            {agents.length === 0 && (
-                <div className="card text-center text-app-muted">
-                    No agents configured. Create agent folders in `&lt;config_dir&gt;/agents/`
-                </div>
-            )}
+
+            {/* Main area with agent dashboard */}
+            <div className="space-y-4">
+                {selectedAgent ? (
+                    <>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-xl font-bold">{selectedAgent}</h2>
+                                <span className="text-sm text-app-muted">
+                                    ({agentSessions.length} sessions, {agentSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)} calls)
+                                </span>
+                            </div>
+                        </div>
+                        <Kpis sessions={agentSessions} />
+                        <AgentDataflow sessions={agentSessions as any} />
+                        <Stats sessions={agentSessions} />
+                        <div className="card">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="text-sm font-semibold">Sessions</div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-app-muted">Show:</span>
+                                    <select
+                                        className="button text-xs"
+                                        value={sessionLimit}
+                                        onChange={(e) => setSessionLimit(Number(e.target.value))}
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <SessionTable sessions={limitedSessions} />
+                            {agentSessions.length > sessionLimit && (
+                                <div className="text-xs text-app-muted mt-2 text-center">
+                                    Showing {sessionLimit} of {agentSessions.length} sessions
+                                </div>
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <div className="card text-center text-app-muted">
+                        Select an agent from the sidebar
+                    </div>
+                )}
+            </div>
         </div>
     )
 }

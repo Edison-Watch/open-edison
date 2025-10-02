@@ -59,6 +59,8 @@ export function useSessions(dbPath: string) {
               correlation_id: String(record.correlation_id ?? ''),
               tool_calls: toolCalls,
               data_access_summary: summary,
+              agent_name: record.agent_name || null,
+              agent_type: record.agent_type || null,
             })
           }
         }
