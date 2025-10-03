@@ -1437,7 +1437,7 @@ endpoints:
             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
               Having issues with Open Edison? Let us know what's going wrong and we'll help you out! You can also contact us on our{' '}
               <a
-                href="https://discord.gg/8UTc5Tmh"
+                href="https://discord.gg/tXjATaKgTV"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: 'var(--link-color)', textDecoration: 'underline' }}
