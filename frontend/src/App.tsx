@@ -3043,6 +3043,9 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
     const [agents, setAgents] = useState<Agent[]>([])
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
     const [sessionLimit, setSessionLimit] = useState<number>(25)
+    const [currentPage, setCurrentPage] = useState<number>(1)
+    const [startDay, setStartDay] = useState<string>('')
+    const [endDay, setEndDay] = useState<string>('')
 
     // Load agents list from API
     useEffect(() => {
@@ -3087,15 +3090,36 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
         return stats
     }, [sessions])
 
-    // Filter sessions by selected agent and apply limit
+    // Filter sessions by selected agent and date range
     const agentSessions = useMemo(() => {
         if (!selectedAgent) return []
-        return sessions.filter(s => s.agent_name === selectedAgent)
-    }, [sessions, selectedAgent])
+        let filtered = sessions.filter(s => s.agent_name === selectedAgent)
 
-    const limitedSessions = useMemo(() => {
-        return agentSessions.slice(0, sessionLimit)
-    }, [agentSessions, sessionLimit])
+        // Apply date range filter
+        if (startDay || endDay) {
+            filtered = filtered.filter(s => {
+                const day = (s as any).day as string | undefined
+                if (!day) return false
+                if (startDay && day < startDay) return false
+                if (endDay && day > endDay) return false
+                return true
+            })
+        }
+
+        return filtered
+    }, [sessions, selectedAgent, startDay, endDay])
+
+    // Pagination
+    const totalPages = Math.ceil(agentSessions.length / sessionLimit)
+    const paginatedSessions = useMemo(() => {
+        const start = (currentPage - 1) * sessionLimit
+        return agentSessions.slice(start, start + sessionLimit)
+    }, [agentSessions, currentPage, sessionLimit])
+
+    // Reset to page 1 when agent or filters change
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [selectedAgent, startDay, endDay, sessionLimit])
 
     if (agents.length === 0) {
         return (
@@ -3152,6 +3176,12 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
                                 </span>
                             </div>
                         </div>
+                        <DateRangeSlider
+                            sessions={sessions.filter(s => s.agent_name === selectedAgent)}
+                            startTimeLabel={startDay}
+                            endTimeLabel={endDay}
+                            onTimeRangeChange={(s, e) => { setStartDay(s); setEndDay(e) }}
+                        />
                         <Kpis sessions={agentSessions} />
                         <AgentDataflow sessions={agentSessions as any} />
                         <Stats sessions={agentSessions} />
@@ -3159,7 +3189,7 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
                             <div className="flex items-center justify-between mb-3">
                                 <div className="text-sm font-semibold">Sessions</div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs text-app-muted">Show:</span>
+                                    <span className="text-xs text-app-muted">Per page:</span>
                                     <select
                                         className="button text-xs"
                                         value={sessionLimit}
@@ -3172,12 +3202,33 @@ function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: st
                                     </select>
                                 </div>
                             </div>
-                            <SessionTable sessions={limitedSessions} />
-                            {agentSessions.length > sessionLimit && (
-                                <div className="text-xs text-app-muted mt-2 text-center">
-                                    Showing {sessionLimit} of {agentSessions.length} sessions
+                            <SessionTable sessions={paginatedSessions} />
+                            <div className="flex items-center justify-between mt-3">
+                                <div className="text-xs text-app-muted">
+                                    Showing {Math.min((currentPage - 1) * sessionLimit + 1, agentSessions.length)}-{Math.min(currentPage * sessionLimit, agentSessions.length)} of {agentSessions.length} sessions
                                 </div>
-                            )}
+                                {totalPages > 1 && (
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            className="button text-xs"
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-xs text-app-muted">
+                                            Page {currentPage} of {totalPages}
+                                        </span>
+                                        <button
+                                            className="button text-xs"
+                                            disabled={currentPage === totalPages}
+                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </>
                 ) : (
