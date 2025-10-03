@@ -10,6 +10,9 @@ interface ServerConfig {
   enabled: boolean;
   roots?: string[];
   client?: string; // Track which client this server came from
+  includeInSave?: boolean; // Whether this server should be included when saving
+  potential_duplicate?: boolean;
+  duplicate_reason?: string | null;
 }
 
 interface ImportResponse {
@@ -36,7 +39,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [importedServers, setImportedServers] = useState<ServerConfig[]>([]);
-  const [selectedServers, setSelectedServers] = useState<ServerConfig[]>([]);
+  const [selectedServers, setSelectedServers] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -44,7 +47,6 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [skipOAuth, setSkipOAuth] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
-  const [activePreviewTab, setActivePreviewTab] = useState(0);
   const [autoImport, setAutoImport] = useState<boolean | null>(null);
   const [wizardReady, setWizardReady] = useState(false);
   const [checkingWizard, setCheckingWizard] = useState(true);
@@ -55,7 +57,23 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   const [showReplacePreview, setShowReplacePreview] = useState(false);
 
   // Verification state
-  const [verificationResults, setVerificationResults] = useState<Record<string, 'pending' | 'success' | 'failed'>>({});
+  const [verificationResults, setVerificationResults] = useState<Record<string, 'pending' | 'success' | 'failed' | 'timeout'>>({});
+  const [verificationTimeout, setVerificationTimeout] = useState<number | null>(30);  // Default 30 seconds
+
+  const getServerKey = (server: ServerConfig) => `${server.client ?? 'unknown'}::${server.name}`;
+
+  const getServersToSave = () =>
+    getSelectedServerDetails().filter(server => server.includeInSave !== false);
+
+  const getSelectedServerDetails = () => {
+    const serverMap = new Map(importedServers.map(server => [getServerKey(server), server]));
+    return Array.from(selectedServers)
+      .map(key => serverMap.get(key))
+      .filter((server): server is ServerConfig => Boolean(server));
+  };
+
+  const getVerificationTargets = () =>
+    importedServers.filter(server => selectedServers.has(getServerKey(server)));
 
   // Step 1: Detect available clients
   useEffect(() => {
@@ -133,12 +151,35 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     );
   };
 
+  const isSameServer = (a: ServerConfig, b: ServerConfig) => {
+    const clientA = a.client || 'unknown';
+    const clientB = b.client || 'unknown';
+    return clientA === clientB && a.name === b.name;
+  };
+
   const handleServerToggle = (server: ServerConfig) => {
-    // Prevent deselection of already selected servers
-    if (selectedServers.includes(server)) {
-      return; // Do nothing if trying to deselect
-    }
-    setSelectedServers(prev => [...prev, server]);
+    setSelectedServers(prev => {
+      const next = new Set(prev);
+      const key = getServerKey(server);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const toggleServerInclusion = (server: ServerConfig, include: boolean) => {
+    setImportedServers(prev => prev.map(existing => {
+      if (isSameServer(existing, server)) {
+        return {
+          ...existing,
+          includeInSave: include
+        };
+      }
+      return existing;
+    }));
   };
 
   const goToStep = (targetStep: number) => {
@@ -198,18 +239,35 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       });
 
       if (data.success) {
-        setImportedServers(data.servers);
-        setSelectedServers(data.servers); // Select all by default
-        setStep(3);
-      } else {
-        setError(data.message);
-        setSuccessMessage(null);
-        if (data.errors.length > 0) {
-          setError(data.errors.join('; '));
+        const newServers = data.servers.map(server => ({
+          ...server,
+          includeInSave: true
+        }));
+
+        setImportedServers(prev => {
+          const existingByKey = new Map(prev.map(server => [getServerKey(server), server]));
+          newServers.forEach(server => existingByKey.set(getServerKey(server), server));
+          return Array.from(existingByKey.values());
+        });
+
+        setSelectedServers(prev => {
+          const next = new Set(prev);
+          newServers.forEach(server => next.add(getServerKey(server)));
+          return next;
+        });
+
+        if (newServers.length === 0) {
+          setError('No servers were imported from the selected clients.');
+          setSuccessMessage(null);
+        } else {
+          setStep(3);
         }
+      } else {
+        setError(data.errors.length > 0 ? data.errors.join('; ') : data.message);
+        setSuccessMessage(null);
       }
     } catch (err) {
-      setError('Failed to import servers. Please check your connection.');
+      setError(`Failed to import servers. ${err instanceof Error ? err.message : 'Please try again.'}`);
       setSuccessMessage(null);
     } finally {
       setLoading(false);
@@ -217,7 +275,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
   };
 
   const proceedToVerification = () => {
-    if (selectedServers.length === 0) {
+    if (selectedServers.size === 0) {
       setError('Please select at least one server to import.');
       setSuccessMessage(null);
       return;
@@ -233,14 +291,16 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
 
     // Initialize all servers as pending
     const initialResults: Record<string, 'pending' | 'success' | 'failed'> = {};
-    selectedServers.forEach(server => {
-      initialResults[server.name] = 'pending';
+    getSelectedServerDetails().forEach(server => {
+      const key = getServerKey(server);
+      initialResults[key] = 'pending';
     });
     setVerificationResults(initialResults);
 
     try {
       const data = await wizardApiService.verifyServers({
-        servers: selectedServers,
+        servers: getVerificationTargets(),
+        timeout_seconds: verificationTimeout,
       });
 
       // Debug: Log the API response
@@ -250,13 +310,35 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       console.log('data.message:', data.message);
 
       // Always update results based on individual server results, regardless of overall success
-      const updatedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
-      selectedServers.forEach(server => {
-        const serverResult = data.results[server.name];
+      const updatedResults: Record<string, 'pending' | 'success' | 'failed' | 'timeout'> = {};
+      const updatedServers = importedServers.map(server => {
+        const key = getServerKey(server);
+        if (!selectedServers.has(key)) {
+          return server;
+        }
+
+        const clientKey = `${server.client ?? 'unknown'}:${server.name}`;
+        const serverResult = clientKey in data.results ? data.results[clientKey] : data.results[server.name];
         console.log(`Server ${server.name} result:`, serverResult, typeof serverResult);
-        console.log(`Server ${server.name} result === true:`, serverResult === true);
-        updatedResults[server.name] = serverResult === true ? 'success' : 'failed';
+        
+        // Map string status to our state
+        let status: 'success' | 'failed' | 'timeout' = 'failed';
+        if (serverResult === 'success') {
+          status = 'success';
+        } else if (serverResult === 'timeout') {
+          status = 'timeout';
+        } else {
+          status = 'failed';
+        }
+        
+        updatedResults[key] = status;
+        return {
+          ...server,
+          includeInSave: server.includeInSave ?? (status === 'success')
+        };
       });
+
+      setImportedServers(updatedServers);
 
       console.log('Final updatedResults:', updatedResults);
       setVerificationResults(updatedResults);
@@ -264,29 +346,33 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       // Check if any servers succeeded
       const successCount = Object.values(updatedResults).filter(status => status === 'success').length;
       const failureCount = Object.values(updatedResults).filter(status => status === 'failed').length;
+      const timeoutCount = Object.values(updatedResults).filter(status => status === 'timeout').length;
 
       // Always show verification completed message
-      setSuccessMessage(`Verification completed: ${successCount} succeeded, ${failureCount} failed`);
+      const messageParts = [`${successCount} succeeded`];
+      if (failureCount > 0) messageParts.push(`${failureCount} failed`);
+      if (timeoutCount > 0) messageParts.push(`${timeoutCount} timed out`);
+      setSuccessMessage(`Verification completed: ${messageParts.join(', ')}`);
 
-      if (successCount > 0 && failureCount === 0) {
-        // All servers succeeded, clear any errors and auto-advance
-        setError(null);
-
-        // Move to next step after a short delay to show results
-        setTimeout(() => {
-          setStep(5);
-        }, 2000);
-      } else {
-        // Mixed results or all failed - don't auto-advance, let user see the results
-        setError(null);
-      }
+      // Don't auto-advance - let user review and manually choose which servers to include
+      setError(null);
     } catch (err) {
       // Mark all as failed on exception
-      const failedResults: Record<string, 'pending' | 'success' | 'failed'> = {};
-      selectedServers.forEach(server => {
-        failedResults[server.name] = 'failed';
+      const failedResults: Record<string, 'pending' | 'success' | 'failed' | 'timeout'> = {};
+      const updatedServers = importedServers.map(server => {
+        const key = getServerKey(server);
+        if (!selectedServers.has(key)) {
+          return server;
+        }
+
+        failedResults[key] = 'failed';
+        return {
+          ...server,
+          includeInSave: false
+        };
       });
       setVerificationResults(failedResults);
+      setImportedServers(updatedServers);
       setError('Failed to verify servers. Please check your connection.');
       setSuccessMessage(null);
     } finally {
@@ -296,13 +382,21 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
 
   const showPreviewData = () => {
     // Generate preview data from selected servers without API call
+    const serversToSave = getServersToSave();
+
+    if (serversToSave.length === 0) {
+      setError('Select at least one server to include before viewing changes.');
+      setSuccessMessage(null);
+      return;
+    }
+
     const previewData = {
       config: {
         server: {
           host: "localhost",
           port: 3000
         },
-        mcp_servers: selectedServers.reduce((acc, server) => {
+        mcp_servers: serversToSave.reduce((acc, server) => {
           acc[server.name] = {
             command: server.command,
             args: server.args,
@@ -315,10 +409,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         logging: {
           level: "INFO"
         }
-      },
-      tool_permissions: {},
-      resource_permissions: {},
-      prompt_permissions: {}
+      }
     };
 
     setPreviewData(previewData);
@@ -330,16 +421,25 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setError(null);
     setSuccessMessage(null);
 
+    const serversToSave = getServersToSave();
+
+    if (serversToSave.length === 0) {
+      setLoading(false);
+      setError('Select at least one verified server to save.');
+      setSuccessMessage(null);
+      return;
+    }
+
     try {
       if (dryRun) {
         // In dry run mode, skip the actual save and just show success
-        onImportComplete(selectedServers);
+        onImportComplete(serversToSave);
         onClose();
       } else {
-        const data = await wizardApiService.saveServers({
-          servers: selectedServers,
-          dry_run: dryRun,
-        });
+      const data = await wizardApiService.saveServers({
+        servers: serversToSave,
+        dry_run: dryRun,
+      });
 
         if (data.success) {
           // Move to replace step instead of completing
@@ -395,6 +495,13 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     setSuccessMessage(null);
 
     try {
+      // Get list of server names that should be replaced (only those with includeInSave: true)
+      // Servers with includeInSave: false will be retained in the target configuration
+      const serversToReplace = getServersToSave();
+      const selectedServerNames = serversToReplace
+        .map(server => server.name)
+        .filter((name): name is string => name !== undefined);
+
       const response = await wizardApiService.replaceMcpServers({
         clients: replaceClients,
         url: 'http://localhost:3000/mcp/',
@@ -402,7 +509,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         server_name: 'open-edison',
         dry_run: dryRun,
         force: false,
-        create_if_missing: true
+        create_if_missing: true,
+        selected_servers: selectedServerNames
       });
 
       if (response.success) {
@@ -643,21 +751,75 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
         <p>Importing MCP servers from selected clients...</p>
       ) : (
         <div>
-          <p>Import completed! Found {importedServers.length} server(s).</p>
-          <button
-            onClick={() => setStep(3)}
-            style={{
-              background: '#3498db',
-              color: 'white',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              marginTop: '1rem'
-            }}
-          >
-            Continue to Server Selection
-          </button>
+          {error ? (
+            <div>
+              <p style={{ color: '#e74c3c', marginBottom: '1rem' }}>{error}</p>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={importServers}
+                  style={{
+                    background: '#e67e22',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Retry Import
+                </button>
+                <button
+                  onClick={() => setStep(1)}
+                  style={{
+                    background: '#95a5a6',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Back to Client Selection
+                </button>
+              </div>
+            </div>
+          ) : importedServers.length === 0 ? (
+            <div>
+              <p>No servers were imported from the selected clients.</p>
+              <button
+                onClick={() => setStep(1)}
+                style={{
+                  background: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginTop: '1rem'
+                }}
+              >
+                Choose Different Clients
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p>Import completed! Found {importedServers.length} server(s).</p>
+              <button
+                onClick={() => setStep(3)}
+                style={{
+                  background: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  marginTop: '1rem'
+                }}
+              >
+                Continue to Server Selection
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -715,41 +877,52 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           </div>
 
           {isExpanded && (
-            <div style={{
-              marginTop: '0.5rem',
-              paddingLeft: '1rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem'
-            }}>
+            <div
+              style={{
+                marginTop: '0.5rem',
+                paddingLeft: '1rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem'
+              }}
+            >
               {clientServers.map(server => {
-                const isSelected = selectedServers.includes(server);
+                const serverKey = getServerKey(server);
+                const isSelected = selectedServers.has(serverKey);
+                const isDuplicate = server.potential_duplicate === true;
                 return (
-                  <label key={server.name} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem',
-                    border: '1px solid #bdc3c7',
-                    borderRadius: '4px',
-                    opacity: isSelected ? 0.6 : 1,
-                    backgroundColor: isSelected ? '#f8f9fa' : 'transparent'
-                  }}>
+                  <label
+                    key={serverKey}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.5rem',
+                      border: '1px solid #bdc3c7',
+                      borderRadius: '4px',
+                      backgroundColor: isDuplicate ? '#fff6d1' : isSelected ? '#e8f4fc' : 'transparent',
+                      boxShadow: isSelected ? 'inset 0 0 0 1px #3498db' : 'none'
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={isSelected}
-                      disabled={isSelected}
                       onChange={() => handleServerToggle(server)}
-                      style={{ cursor: isSelected ? 'not-allowed' : 'pointer' }}
+                      style={{ cursor: 'pointer' }}
                     />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 'bold', color: isSelected ? '#95a5a6' : '#2c3e50' }}>{server.name}</div>
-                      <div style={{ fontSize: '0.875rem', color: isSelected ? '#bdc3c7' : '#7f8c8d' }}>
+                      <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{server.name}</div>
+                      <div style={{ fontSize: '0.875rem', color: '#7f8c8d' }}>
                         {server.command} {server.args.join(' ')}
                       </div>
                       {server.roots && server.roots.length > 0 && (
-                        <div style={{ fontSize: '0.75rem', color: isSelected ? '#d5dbdb' : '#95a5a6' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#95a5a6' }}>
                           Roots: {server.roots.join(', ')}
+                        </div>
+                      )}
+                      {isDuplicate && (
+                        <div style={{ fontSize: '0.75rem', color: '#f39c12', marginTop: '0.25rem' }}>
+                          Possible duplicate{server.duplicate_reason ? `: ${server.duplicate_reason}` : ''}
                         </div>
                       )}
                     </div>
@@ -764,35 +937,66 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
 
     return (
       <div>
-        <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers (coming soon)</h3>
+        <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 3: Select Servers</h3>
         <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
           Select which servers to import to Open Edison:
         </p>
         <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
           {selectedClients.map(client => renderClientSection(client))}
         </div>
+        <div style={{ marginTop: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <label htmlFor="verification-timeout" style={{ fontSize: '0.875rem', fontWeight: 'bold', color: '#2c3e50', whiteSpace: 'nowrap' }}>
+            Timeout:
+          </label>
+          <select
+            id="verification-timeout"
+            value={verificationTimeout === null ? 'none' : verificationTimeout}
+            onChange={(e) => {
+              const value = e.target.value;
+              setVerificationTimeout(value === 'none' ? null : parseInt(value, 10));
+            }}
+            style={{
+              padding: '0.4rem 0.6rem',
+              borderRadius: '4px',
+              border: '1px solid #bdc3c7',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              minWidth: '130px'
+            }}
+          >
+            <option value="none">No timeout</option>
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+            <option value="30">30 seconds</option>
+            <option value="60">60 seconds</option>
+          </select>
+          <span style={{ fontSize: '0.75rem', color: '#7f8c8d', fontStyle: 'italic' }}>
+            Servers can be imported even if they fail or timeout.
+          </span>
+        </div>
         <button
           onClick={proceedToVerification}
-          disabled={selectedServers.length === 0}
+          disabled={selectedServers.size === 0}
           style={{
             background: '#3498db',
             color: 'white',
             border: 'none',
             padding: '0.75rem 1.5rem',
             borderRadius: '6px',
-            cursor: selectedServers.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: selectedServers.length === 0 ? 0.5 : 1,
+            cursor: selectedServers.size === 0 ? 'not-allowed' : 'pointer',
+            opacity: selectedServers.size === 0 ? 0.5 : 1,
             marginTop: '1rem'
           }}
         >
-          Verify Selected Servers ({selectedServers.length})
+          Verify Selected Servers ({selectedServers.size})
         </button>
       </div>
     );
   };
 
   const renderStep4 = () => {
-    const getStatusColor = (status: 'pending' | 'success' | 'failed') => {
+    const getStatusColor = (status: 'pending' | 'success' | 'failed' | 'timeout') => {
       switch (status) {
         case 'pending':
           return '#f39c12'; // Orange
@@ -800,12 +1004,14 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           return '#27ae60'; // Green
         case 'failed':
           return '#e74c3c'; // Red
+        case 'timeout':
+          return '#e67e22'; // Dark orange
         default:
           return '#7f8c8d'; // Gray
       }
     };
 
-    const getStatusText = (status: 'pending' | 'success' | 'failed') => {
+    const getStatusText = (status: 'pending' | 'success' | 'failed' | 'timeout') => {
       switch (status) {
         case 'pending':
           return 'In progress';
@@ -813,6 +1019,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           return 'Success';
         case 'failed':
           return 'Failed';
+        case 'timeout':
+          return 'Timeout';
         default:
           return 'Unknown';
       }
@@ -825,18 +1033,20 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           <div>
             <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>Verifying server configurations...</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {selectedServers.map(server => {
-                const status = verificationResults[server.name] || 'pending';
+              {getSelectedServerDetails().map(server => {
+                const key = getServerKey(server);
+                const status = verificationResults[key] || 'pending';
                 const client = server.client || 'Unknown';
+                const isDuplicate = server.potential_duplicate === true;
                 return (
-                  <div key={server.name} style={{
+                  <div key={key} style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem',
                     padding: '0.75rem',
                     border: '1px solid #bdc3c7',
                     borderRadius: '4px',
-                    backgroundColor: '#f8f9fa'
+                    backgroundColor: isDuplicate ? '#fff6d1' : '#f8f9fa'
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
@@ -849,6 +1059,11 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                       }}>
                         Status: {getStatusText(status)}
                       </div>
+                      {isDuplicate && (
+                        <div style={{ fontSize: '0.75rem', color: '#f39c12', marginTop: '0.25rem' }}>
+                          Possible duplicate{server.duplicate_reason ? `: ${server.duplicate_reason}` : ''}
+                        </div>
+                      )}
                     </div>
                     {status === 'pending' && (
                       <div style={{
@@ -875,18 +1090,20 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
           <div>
             <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>Server verification completed!</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-              {selectedServers.map(server => {
-                const status = verificationResults[server.name] || 'failed';
+              {getSelectedServerDetails().map(server => {
+                const key = getServerKey(server);
+                const status = verificationResults[key] || 'failed';
                 const client = server.client || 'Unknown';
+                const isDuplicate = server.potential_duplicate === true;
                 return (
-                  <div key={server.name} style={{
+                  <div key={key} style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem',
                     padding: '0.75rem',
                     border: '1px solid #bdc3c7',
                     borderRadius: '4px',
-                    backgroundColor: status === 'success' ? '#d5f4e6' : '#fadbd8'
+                    backgroundColor: isDuplicate ? '#fff6d1' : (status === 'success' ? '#d5f4e6' : '#fadbd8')
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>
@@ -908,13 +1125,26 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
                           Command: {server.command} {server.args.join(' ')}
                         </div>
                       )}
+                      {isDuplicate && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: '#b9770e',
+                          marginTop: '0.25rem'
+                        }}>
+                          Possible duplicate{server.duplicate_reason ? `: ${server.duplicate_reason}` : ''}
+                        </div>
+                      )}
                     </div>
-                    {status === 'success' && (
-                      <div style={{ color: '#27ae60', fontSize: '1.2rem' }}>✓</div>
-                    )}
-                    {status === 'failed' && (
-                      <div style={{ color: '#e74c3c', fontSize: '1.2rem' }}>✗</div>
-                    )}
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: status === 'success' ? '#27ae60' : '#e74c3c' }}>
+                        <input
+                          type="checkbox"
+                          checked={server.includeInSave !== false}
+                          onChange={(e) => toggleServerInclusion(server, e.target.checked)}
+                        />
+                        <span>{status === 'success' ? 'Include in save' : 'Include failed server'}</span>
+                      </label>
+                    </div>
                   </div>
                 );
               })}
@@ -951,7 +1181,7 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
     <div>
       <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Step 5: Save Configuration</h3>
       <p style={{ marginBottom: '1rem', color: '#7f8c8d' }}>
-        Ready to save {selectedServers.length} server(s) to your Open Edison configuration.
+        Ready to save {getServersToSave().length} server(s) to your Open Edison configuration.
       </p>
       {dryRun && (
         <div style={{
@@ -997,28 +1227,6 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
             </button>
           </div>
 
-          {/* Tabs for different config files */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #bdc3c7' }}>
-            {['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'].map((fileName, index) => (
-              <button
-                key={fileName}
-                onClick={() => setActivePreviewTab(index)}
-                style={{
-                  flex: 1,
-                  padding: '0.75rem',
-                  border: 'none',
-                  background: activePreviewTab === index ? '#3498db' : '#ecf0f1',
-                  color: activePreviewTab === index ? 'white' : '#2c3e50',
-                  cursor: 'pointer',
-                  fontSize: '0.875rem',
-                  borderRight: index < 3 ? '1px solid #bdc3c7' : 'none'
-                }}
-              >
-                {fileName}
-              </button>
-            ))}
-          </div>
-
           {/* Preview Content */}
           <div style={{
             padding: '1rem',
@@ -1035,24 +1243,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
               wordBreak: 'break-word'
             }}>
               {(() => {
-                const fileNames = ['config.json', 'tool_permissions.json', 'resource_permissions.json', 'prompt_permissions.json'];
-                const currentFile = fileNames[activePreviewTab];
-
                 if (!previewData) return 'No preview data available';
-
-                // Show different data based on the active tab
-                switch (activePreviewTab) {
-                  case 0: // config.json
-                    return JSON.stringify(previewData.config, null, 2);
-                  case 1: // tool_permissions.json
-                    return JSON.stringify(previewData.tool_permissions, null, 2);
-                  case 2: // resource_permissions.json
-                    return JSON.stringify(previewData.resource_permissions, null, 2);
-                  case 3: // prompt_permissions.json
-                    return JSON.stringify(previewData.prompt_permissions, null, 2);
-                  default:
-                    return JSON.stringify(previewData, null, 2);
-                }
+                return JSON.stringify(previewData.config, null, 2);
               })()}
             </pre>
           </div>
@@ -1062,28 +1254,30 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
       <div style={{ display: 'flex', gap: '1rem' }}>
         <button
           onClick={showPreviewData}
+          disabled={getServersToSave().length === 0}
           style={{
             background: '#3498db',
             color: 'white',
             border: 'none',
             padding: '0.75rem 1.5rem',
             borderRadius: '6px',
-            cursor: 'pointer'
+            cursor: getServersToSave().length === 0 ? 'not-allowed' : 'pointer',
+            opacity: getServersToSave().length === 0 ? 0.5 : 1
           }}
         >
           View Changes
         </button>
         <button
           onClick={saveConfiguration}
-          disabled={loading}
+          disabled={loading || getServersToSave().length === 0}
           style={{
             background: '#27ae60',
             color: 'white',
             border: 'none',
             padding: '0.75rem 1.5rem',
             borderRadius: '6px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.5 : 1
+            cursor: (loading || getServersToSave().length === 0) ? 'not-allowed' : 'pointer',
+            opacity: (loading || getServersToSave().length === 0) ? 0.5 : 1
           }}
         >
           {loading ? 'Saving...' : 'Save Configuration'}
@@ -1231,7 +1425,8 @@ const McpImportWizard: React.FC<McpImportWizardProps> = ({ onClose, onImportComp
 
             <button
               onClick={() => {
-                onImportComplete(selectedServers);
+                const serversToSave = getServersToSave();
+                onImportComplete(serversToSave);
                 onClose();
               }}
               style={{

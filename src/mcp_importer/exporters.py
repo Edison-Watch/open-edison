@@ -229,6 +229,139 @@ def _build_open_edison_server(
     }
 
 
+def _inject_retained_servers(
+    *,
+    target_path: Path,
+    servers_key: str,
+    selected_servers: list[str] | None,
+) -> dict[str, Any]:
+    """Read original servers from target config and return those not in selected_servers.
+
+    Args:
+        target_path: Path to the client config file
+        servers_key: Key used for servers ("mcpServers" or "servers")
+        selected_servers: List of server names that were selected for import (to be filtered out).
+            If None, all servers are replaced (nothing retained).
+            If empty list, all servers are retained (nothing was selected for replacement).
+
+    Returns:
+        Dict of server_name -> server_config for servers that were NOT selected
+        and are NOT already Open Edison servers
+    """
+    if not target_path.exists():
+        return {}
+
+    # If selected_servers is None, replace everything (retain nothing)
+    if selected_servers is None:
+        log.debug("No selected_servers specified, replacing all servers in {}", target_path)
+        return {}
+
+    selected_set = set(selected_servers)
+
+    try:
+        current = _read_json_or_error(target_path)
+        servers_raw: Any = current.get(servers_key)
+        if not isinstance(servers_raw, dict):
+            return {}
+
+        servers_node: dict[str, Any] = cast(dict[str, Any], servers_raw)
+
+        # Filter out:
+        # 1. Servers that were selected for import
+        # 2. Servers that are already Open Edison servers (to avoid duplicates)
+        retained: dict[str, Any] = {}
+        for name, config in servers_node.items():
+            if name in selected_set:
+                continue
+            if _is_server_spec_open_edison(config):
+                log.debug("Skipping existing Open Edison server '{}' from retained list", name)
+                continue
+            retained[name] = config
+
+        log.debug(
+            "Retained {} server(s) from {} (filtered out {} selected)",
+            len(retained),
+            target_path,
+            len(selected_set),
+        )
+
+        return retained
+    except Exception as e:
+        log.warning("Failed to read retained servers from {}: {}", target_path, e)
+        return {}
+
+
+def _build_open_edison_with_retained_servers(
+    *,
+    name: str,
+    url: str,
+    api_key: str,
+    target_path: Path,
+    servers_key: str,
+    selected_servers: list[str] | None,
+) -> dict[str, Any]:
+    """Build Open Edison server config and inject retained (non-selected) servers.
+
+    Args:
+        name: Name for the Open Edison server
+        url: URL for the Open Edison server
+        api_key: API key for the Open Edison server
+        target_path: Path to the client config file
+        servers_key: Key used for servers ("mcpServers" or "servers")
+        selected_servers: List of server names that were selected for import
+
+    Returns:
+        Dict with open-edison server plus retained servers
+    """
+    # Start with open-edison server
+    result = _build_open_edison_server(name=name, url=url, api_key=api_key)
+
+    # Add retained servers (those not selected during import)
+    retained = _inject_retained_servers(
+        target_path=target_path,
+        servers_key=servers_key,
+        selected_servers=selected_servers,
+    )
+
+    # Merge retained servers (they come after open-edison)
+    result.update(retained)
+
+    return result
+
+
+def _is_server_spec_open_edison(server_spec: Any) -> bool:
+    """Check if a single server specification is an Open Edison server.
+
+    Args:
+        server_spec: Dict with server config (command, args, etc.)
+
+    Returns:
+        True if this server spec matches the Open Edison pattern
+    """
+    if not isinstance(server_spec, dict):
+        return False
+
+    server_dict: dict[str, Any] = cast(dict[str, Any], server_spec)
+    cmd_val_any: Any = server_dict.get("command")
+    if cmd_val_any != "npx":
+        return False
+
+    args_obj_any: Any = server_dict.get("args")
+    if not isinstance(args_obj_any, list):
+        return False
+
+    args_list: list[Any] = cast(list[Any], args_obj_any)
+    args_str = [str(a) for a in args_list]
+
+    # Check for Open Edison signature: npx mcp-remote with http-only transport
+    return (
+        "mcp-remote" in args_str
+        and "--transport" in args_str
+        and "http-only" in args_str
+        and "--allow-http" in args_str
+    )
+
+
 def _is_already_open_edison(
     config_obj: dict[str, Any], *, url: str, api_key: str, name: str
 ) -> bool:
@@ -444,14 +577,15 @@ def export_to_cursor(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
+    selected_servers: list[str] | None = None,
 ) -> ExportResult:
-    """Export editor config for Cursor to point solely to Open Edison.
+    """Export editor config for Cursor to point to Open Edison.
 
     Behavior:
     - Back up existing file if present.
     - Abort on malformed JSON.
     - If file does not exist, require create_if_missing=True or raise ExportError.
-    - Write a minimal mcpServers object with a single Open Edison server.
+    - Write mcpServers with Open Edison server plus retained (non-selected) servers.
     - Atomic writes.
     """
 
@@ -462,9 +596,16 @@ def export_to_cursor(
 
     _validate_or_confirm_create(target_path, create_if_missing=create_if_missing, label="Cursor")
 
-    # Build the minimal config
+    # Build config with open-edison server and retained servers
     new_config: dict[str, Any] = {
-        "mcpServers": _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+        "mcpServers": _build_open_edison_with_retained_servers(
+            name=server_name,
+            url=url,
+            api_key=api_key,
+            target_path=target_path,
+            servers_key="mcpServers",
+            selected_servers=selected_servers,
+        )
     }
 
     # If already configured exactly as desired and not forcing, no-op
@@ -501,8 +642,9 @@ def export_to_vscode(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
+    selected_servers: list[str] | None = None,
 ) -> ExportResult:
-    """Export editor config for VS Code to point solely to Open Edison.
+    """Export editor config for VS Code to point to Open Edison.
 
     Uses the user-level `mcp.json` path used by the importer.
 
@@ -510,7 +652,7 @@ def export_to_vscode(
     - Back up existing file if present.
     - Abort on malformed JSON.
     - If file does not exist, require create_if_missing=True or raise ExportError.
-    - Write a minimal mcpServers object with a single Open Edison server.
+    - Write servers with Open Edison server plus retained (non-selected) servers.
     - Atomic writes.
     """
 
@@ -521,9 +663,16 @@ def export_to_vscode(
 
     _validate_or_confirm_create(target_path, create_if_missing=create_if_missing, label="VS Code")
 
-    # Build the minimal config
+    # Build config with open-edison server and retained servers
     new_config: dict[str, Any] = {
-        "servers": _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+        "servers": _build_open_edison_with_retained_servers(
+            name=server_name,
+            url=url,
+            api_key=api_key,
+            target_path=target_path,
+            servers_key="servers",
+            selected_servers=selected_servers,
+        )
     }
 
     # If already configured exactly as desired and not forcing, no-op
@@ -569,11 +718,12 @@ def export_to_claude_code(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
+    selected_servers: list[str] | None = None,
 ) -> ExportResult:
     """Export for Claude Code.
 
     - If target is a general settings file, preserve non-MCP keys and replace MCP.
-    - Otherwise, write minimal MCP-only object.
+    - Otherwise, write MCP-only object with open-edison and retained servers.
     """
 
     _require_supported_os()
@@ -600,7 +750,14 @@ def export_to_claude_code(
             )
         current = {}
 
-    new_mcp = _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+    new_mcp = _build_open_edison_with_retained_servers(
+        name=server_name,
+        url=url,
+        api_key=api_key,
+        target_path=target_path,
+        servers_key="mcpServers",
+        selected_servers=selected_servers,
+    )
     if is_existing and current:
         new_config = _merge_preserving_non_mcp(current, new_mcp)
     else:
@@ -624,10 +781,11 @@ def export_to_claude_desktop(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
+    selected_servers: list[str] | None = None,
 ) -> ExportResult:
     """Export for Claude Desktop.
 
-    - Preserve non-MCP keys in existing config; otherwise write minimal MCP-only object.
+    - Preserve non-MCP keys in existing config; otherwise write MCP-only object with open-edison and retained servers.
     - Location matches platform-specific user-level paths.
     """
 
@@ -655,7 +813,14 @@ def export_to_claude_desktop(
             )
         current = {}
 
-    new_mcp = _build_open_edison_server(name=server_name, url=url, api_key=api_key)
+    new_mcp = _build_open_edison_with_retained_servers(
+        name=server_name,
+        url=url,
+        api_key=api_key,
+        target_path=target_path,
+        servers_key="mcpServers",
+        selected_servers=selected_servers,
+    )
     if is_existing and current:
         new_config = _merge_preserving_non_mcp(current, new_mcp)
     else:
