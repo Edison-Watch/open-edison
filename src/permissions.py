@@ -213,10 +213,8 @@ class Permissions:
     def get_tool_permission(self, tool_name: str) -> ToolPermission:
         """Get permission for a specific tool"""
         if tool_name not in self.tool_permissions:
-            if tool_name.startswith("builtin_"):
-                log.info(
-                    f"Tool '{tool_name}' not found; returning builtin safe default (enabled, 0 risk)"
-                )
+            if tool_name.startswith(("builtin_", "agent_")):
+                log.info(f"Tool '{tool_name}' not found; returning safe default (enabled, 0 risk)")
                 return ToolPermission(
                     enabled=True,
                     write_operation=False,
@@ -366,3 +364,77 @@ def normalize_acl(value: str | None, *, default: str = "PUBLIC") -> str:
         return acl
     except Exception:
         return default
+
+
+def _load_permission_overrides(
+    override_file: Path,
+    permission_class: type[ToolPermission] | type[ResourcePermission] | type[PromptPermission],
+    base_perms: dict[str, Any],
+) -> dict[str, Any]:
+    """Load and merge permission overrides from a file."""
+    if not override_file.exists():
+        return base_perms
+
+    perms = dict(base_perms)
+    with open(override_file) as f:
+        overrides = json.load(f)
+        for server_name, items in overrides.items():
+            if server_name == "_metadata":
+                continue
+            for item_name, item_data in items.items():  # type: ignore
+                key = f"{server_name}_{item_name}"
+                perms[key] = permission_class(**item_data)  # type: ignore
+    return perms
+
+
+def apply_agent_overrides(
+    base_permissions: Permissions,
+    agent_name: str,
+    config_dir: Path | None = None,
+) -> Permissions:
+    """
+    Apply agent-specific permission overrides to base permissions.
+
+    Args:
+        base_permissions: Base permissions loaded from config dir
+        agent_name: Name of the agent (e.g., "hr_assistant")
+        config_dir: Config directory path (defaults to get_config_dir())
+
+    Returns:
+        New Permissions object with agent overrides applied
+
+    Raises:
+        FileNotFoundError: If agent folder doesn't exist
+    """
+    if config_dir is None:
+        config_dir = get_config_dir()
+
+    agent_dir = config_dir / "agents" / agent_name
+
+    if not agent_dir.exists():
+        raise FileNotFoundError(
+            f"Agent config folder not found: {agent_dir}\nCreate folder at: {agent_dir}"
+        )
+
+    # Apply overrides for each permission type
+    tool_perms = _load_permission_overrides(
+        agent_dir / "tool_permissions.json",
+        ToolPermission,
+        base_permissions.tool_permissions,
+    )
+    prompt_perms = _load_permission_overrides(
+        agent_dir / "prompt_permissions.json",
+        PromptPermission,
+        base_permissions.prompt_permissions,
+    )
+    resource_perms = _load_permission_overrides(
+        agent_dir / "resource_permissions.json",
+        ResourcePermission,
+        base_permissions.resource_permissions,
+    )
+
+    return Permissions(
+        tool_permissions=tool_perms,
+        resource_permissions=resource_perms,
+        prompt_permissions=prompt_perms,
+    )

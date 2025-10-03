@@ -25,6 +25,9 @@ class Edison:
         timeout_s: float = 30.0,
         healthcheck: bool = True,
         healthcheck_timeout_s: float = 3.0,
+        agent_name: str | None = None,
+        agent_type: str | None = None,
+        session_id: str | None = None,
     ):
         # Management API base (FastAPI), not MCP. Default to localhost:3001
         base = api_base or os.getenv("OPEN_EDISON_API_BASE", "http://localhost:3001")
@@ -33,12 +36,16 @@ class Edison:
             "OPEN_EDISON_API_KEY", "dev-api-key-change-me"
         )
         self.timeout_s: float = timeout_s
+        self.agent_name: str | None = agent_name
+        self.agent_type: str | None = agent_type
+        # Bind to a specific session ID, or generate one per instance
+        self.session_id: str = session_id or str(uuid.uuid4())
         # Headers are added per-request via _http_headers()
         # Best-effort healthchecks (background)
         if healthcheck:
             Thread(target=self._healthcheck, args=(healthcheck_timeout_s,), daemon=True).start()
 
-    @classmethod
+    @classmethod  # noqa
     def get_session_id(cls) -> str:
         current = _session_ctx.get(None)
         if current:
@@ -95,7 +102,9 @@ class Edison:
         return base if base.startswith("agent_") else f"agent_{base}"
 
     def track(  # noqa: C901
-        self, session_id: str | None = None, name: str | None = None
+        self,
+        session_id: str | None = None,
+        name: str | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator to gate and log tool calls via the OE server.
 
@@ -104,11 +113,19 @@ class Edison:
         - POST /agent/begin (gating/approval)
         - Execute function
         - POST /agent/end (status, duration, result summary)
+
+        Args:
+            session_id: Fixed session ID for all calls
+            name: Tool name override
         """
 
-        def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # noqa: C901
             tool_name = self._normalize_agent_name(name or getattr(func, "__name__", "tracked"))
-            bound_sid = session_id or Edison.get_session_id()
+            # Use provided session_id, instance session_id, or contextvar
+            bound_sid = session_id or self.session_id
+            # Use instance-level agent identity
+            agent_name = self.agent_name
+            agent_type = self.agent_type
 
             async def _end_async(
                 sid: str, call_id: str, status: str, duration_ms: float, summary: str
@@ -153,14 +170,17 @@ class Edison:
                 @wraps(func)
                 async def _aw(*args: Any, **kwargs: Any) -> Any:
                     sid = kwargs.pop("__edison_session_id", None) or bound_sid
-                    call_id = await self._begin(
-                        {
-                            "session_id": sid,
-                            "name": tool_name,
-                            "args_summary": self._build_args_preview(args, kwargs),
-                            "timeout_s": self.timeout_s,
-                        }
-                    )
+                    payload = {
+                        "session_id": sid,
+                        "name": tool_name,
+                        "args_summary": self._build_args_preview(args, kwargs),
+                        "timeout_s": self.timeout_s,
+                    }
+                    if agent_name:
+                        payload["agent_name"] = agent_name
+                    if agent_type:
+                        payload["agent_type"] = agent_type
+                    call_id = await self._begin(payload)
                     start = time.perf_counter()
                     try:
                         result = await func(*args, **kwargs)
@@ -179,14 +199,17 @@ class Edison:
             @wraps(func)
             def _sw(*args: Any, **kwargs: Any) -> Any:
                 sid = kwargs.pop("__edison_session_id", None) or bound_sid
-                call_id = self._begin_sync(
-                    {
-                        "session_id": sid,
-                        "name": tool_name,
-                        "args_summary": self._build_args_preview(args, kwargs),
-                        "timeout_s": self.timeout_s,
-                    }
-                )
+                payload = {
+                    "session_id": sid,
+                    "name": tool_name,
+                    "args_summary": self._build_args_preview(args, kwargs),
+                    "timeout_s": self.timeout_s,
+                }
+                if agent_name:
+                    payload["agent_name"] = agent_name
+                if agent_type:
+                    payload["agent_type"] = agent_type
+                call_id = self._begin_sync(payload)
                 start = time.perf_counter()
                 try:
                     result = func(*args, **kwargs)

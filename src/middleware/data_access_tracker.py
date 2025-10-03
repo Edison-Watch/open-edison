@@ -13,6 +13,7 @@ names (with server-name/path prefixes) to their security classifications:
 """
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,6 +27,7 @@ from src.permissions import (
     PromptPermission,
     ResourcePermission,
     ToolPermission,
+    apply_agent_overrides,
     normalize_acl,
 )
 from src.telemetry import (
@@ -55,6 +57,16 @@ class DataAccessTracker:
     has_external_communication: bool = False
     # ACL tracking: the most restrictive ACL encountered during this session via reads
     highest_acl_level: str = "PUBLIC"
+    # Agent identity for permission loading
+    agent_name: str | None = None
+
+    @cached_property
+    def permissions(self) -> Permissions:
+        """Get permissions for this tracker, applying agent overrides if set."""
+        base_perms = Permissions()
+        if self.agent_name:
+            return apply_agent_overrides(base_perms, self.agent_name)
+        return base_perms
 
     def is_trifecta_achieved(self) -> bool:
         """Check if the lethal trifecta has been achieved."""
@@ -176,9 +188,8 @@ class DataAccessTracker:
             raise SecurityError(f"'{tool_name}' / Lethal trifecta")
 
         # Get tool permissions and update trifecta flags
-        perms = Permissions()
-        permissions = perms.get_tool_permission(tool_name)
-        enabled = perms.is_tool_enabled(tool_name)
+        permissions = self.permissions.get_tool_permission(tool_name)
+        enabled = self.permissions.is_tool_enabled(tool_name)
 
         log.debug(f"add_tool_call: Tool permissions: {permissions}")
 
@@ -261,8 +272,7 @@ class DataAccessTracker:
             raise SecurityError(f"'{resource_name}' / Lethal trifecta")
 
         # Get resource permissions and update trifecta flags
-        perms = Permissions()
-        permissions = perms.get_resource_permission(resource_name)
+        permissions = self.permissions.get_resource_permission(resource_name)
 
         # Check if resource is enabled and server is enabled via resource-specific resolution
         server_name = self._server_name_from_resource_uri(resource_name)
@@ -325,8 +335,7 @@ class DataAccessTracker:
             raise SecurityError(f"'{prompt_name}' / Lethal trifecta")
 
         # Get prompt permissions and update trifecta flags
-        perms = Permissions()
-        permissions = perms.get_prompt_permission(prompt_name)
+        permissions = self.permissions.get_prompt_permission(prompt_name)
 
         # Check if prompt is enabled and server is enabled via prompt-specific resolution
         server_name = self._server_name_from_prompt_name(prompt_name)
@@ -384,13 +393,12 @@ class DataAccessTracker:
 
     # Public helper: apply effects after a manual approval without re-checking
     def apply_effects_after_manual_approval(self, kind: str, name: str) -> None:
-        perms = Permissions()
         if kind == "tool":
-            permissions = perms.get_tool_permission(name)
+            permissions = self.permissions.get_tool_permission(name)
         elif kind == "resource":
-            permissions = perms.get_resource_permission(name)
+            permissions = self.permissions.get_resource_permission(name)
         elif kind == "prompt":
-            permissions = perms.get_prompt_permission(name)
+            permissions = self.permissions.get_prompt_permission(name)
         else:
             raise ValueError("Invalid kind")
         self._apply_permissions_effects(permissions, source_type=kind, name=name)

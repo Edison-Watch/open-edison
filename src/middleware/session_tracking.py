@@ -26,7 +26,7 @@ from fastmcp.server.proxy import ProxyPrompt, ProxyResource, ProxyTool
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import ToolResult
 from loguru import logger as log
-from sqlalchemy import JSON, Column, Integer, String, create_engine, event
+from sqlalchemy import JSON, Column, Integer, String, create_engine, event, text
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import select
 
@@ -63,6 +63,8 @@ class MCPSession:
     correlation_id: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     data_access_tracker: DataAccessTracker | None = None
+    agent_name: str | None = None
+    agent_type: str | None = None
 
 
 Base = declarative_base()
@@ -75,6 +77,8 @@ class MCPSessionModel(Base):  # type: ignore
     correlation_id = Column(String)  # type: ignore
     tool_calls = Column(JSON)  # type: ignore
     data_access_summary = Column(JSON)  # type: ignore
+    agent_name = Column(String, nullable=True)  # type: ignore
+    agent_type = Column(String, nullable=True)  # type: ignore
 
 
 current_session_id_ctxvar: ContextVar[str | None] = ContextVar(
@@ -125,6 +129,23 @@ def create_db_session() -> Generator[Session, None, None]:
 
     # Ensure tables exist
     Base.metadata.create_all(engine)  # type: ignore
+
+    # Migrate existing databases: add agent columns if missing
+    with engine.connect() as conn:
+        try:
+            # Check if columns exist by trying to query them
+            conn.execute(text("SELECT agent_name FROM mcp_sessions LIMIT 1"))
+        except Exception:
+            # Columns don't exist, add them
+            try:
+                conn.execute(text("ALTER TABLE mcp_sessions ADD COLUMN agent_name TEXT"))
+                conn.execute(text("ALTER TABLE mcp_sessions ADD COLUMN agent_type TEXT"))
+                conn.commit()
+                log.info("✅ Migrated sessions.db: Added agent_name and agent_type columns")
+            except Exception:
+                # Columns might have been added between check and add, ignore
+                pass
+
     session = Session(engine)
     try:
         yield session
@@ -173,9 +194,19 @@ def get_session_from_db(session_id: str) -> MCPSession:  # noqa: C901
                         raw["timestamp"] = datetime.fromisoformat(ts_val)
                 tool_calls.append(ToolCall(**raw))  # type: ignore[arg-type]
 
+        # Extract agent identity from database
+        raw_agent_name = session.agent_name  # type: ignore
+        raw_agent_type = session.agent_type  # type: ignore
+        agent_name: str | None = (
+            raw_agent_name if raw_agent_name not in (None, "", "None") else None
+        )
+        agent_type: str | None = (
+            raw_agent_type if raw_agent_type not in (None, "", "None") else None
+        )
+
         # Restore data access tracker from database if available
-        data_access_tracker = DataAccessTracker()
-        if hasattr(session, "data_access_summary") and session.data_access_summary:  # type: ignore
+        data_access_tracker = DataAccessTracker(agent_name=agent_name)
+        if session.data_access_summary:  # type: ignore
             summary_data = session.data_access_summary  # type: ignore
             if "lethal_trifecta" in summary_data:
                 trifecta = summary_data["lethal_trifecta"]
@@ -201,6 +232,8 @@ def get_session_from_db(session_id: str) -> MCPSession:  # noqa: C901
             correlation_id=str(session.correlation_id),
             tool_calls=tool_calls,
             data_access_tracker=data_access_tracker,
+            agent_name=str(agent_name),
+            agent_type=str(agent_type),
         )
 
 
@@ -225,6 +258,9 @@ def _persist_session_to_db(session: MCPSession) -> None:
             for tc in session.tool_calls
         ]
         db_session_model.tool_calls = tool_calls_dict  # type: ignore
+        # Update agent identity fields (ensure None stays as NULL, not string "None")
+        db_session_model.agent_name = session.agent_name or None  # type: ignore
+        db_session_model.agent_type = session.agent_type or None  # type: ignore
         # Merge existing summary with tracker dict so we preserve created_at and other keys
         existing_summary: dict[str, Any] = {}
         try:

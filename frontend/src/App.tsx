@@ -325,9 +325,9 @@ export function App(): React.JSX.Element {
                 setTheme(newTheme)
             }
         }
-        
+
         window.addEventListener('theme-changed', handleThemeChange as EventListener)
-        
+
         return () => {
             window.removeEventListener('theme-changed', handleThemeChange as EventListener)
             delete (window as any).__setTheme
@@ -336,10 +336,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents'>(() => {
         try {
             const saved = safeLocalStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -348,7 +348,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -654,13 +654,15 @@ export function App(): React.JSX.Element {
                         {view === 'sessions' && 'Live view of recent MCP sessions from the local SQLite store.'}
                         {view === 'configs' && 'Direct JSON editing for configuration and permission files.'}
                         {view === 'manager' && 'Manage MCP servers, tools, and permissions with a guided interface.'}
+                        {view === 'agents' && 'Monitor agent identities, sessions, and permission overrides.'}
                     </p>
                 </div>
                 <div className="flex gap-2 items-center">
                     <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'agents' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('agents')}>Agents</button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
@@ -756,6 +758,8 @@ export function App(): React.JSX.Element {
                 <JsonEditors projectRoot={projectRoot} onUnsavedChangesChange={setHasUnsavedChanges} theme={theme} />
             ) : view === 'manager' ? (
                 <ConfigurationManager projectRoot={projectRoot} />
+            ) : view === 'agents' ? (
+                <AgentsView sessions={uiSessions} />
             ) : (
                 <div className="space-y-4">
                     <Kpis sessions={timeFiltered} prevSessions={prevTimeFiltered} />
@@ -3030,6 +3034,209 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                     </div>
                 </div>
             )}
+        </div>
+    )
+}
+
+function AgentsView({ sessions }: { sessions: (Session & { ts?: number; day?: string })[] }) {
+    type Agent = { name: string; has_tool_overrides: boolean; has_prompt_overrides: boolean; has_resource_overrides: boolean }
+    const [agents, setAgents] = useState<Agent[]>([])
+    const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+    const [sessionLimit, setSessionLimit] = useState<number>(25)
+    const [currentPage, setCurrentPage] = useState<number>(1)
+    const [startDay, setStartDay] = useState<string>('')
+    const [endDay, setEndDay] = useState<string>('')
+
+    // Load agents list from API
+    useEffect(() => {
+        const loadAgents = async () => {
+            try {
+                const apiKey = getApiKey()
+                const headers: Record<string, string> = {}
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+                const resp = await fetch('/api/agents', { headers })
+                if (!resp.ok) return
+                const data = await resp.json()
+                const agentList = data.agents || []
+                setAgents(agentList)
+                // Auto-select first agent if available
+                if (agentList.length > 0 && !selectedAgent) {
+                    setSelectedAgent(agentList[0].name)
+                }
+            } catch { /* ignore */ }
+        }
+        loadAgents()
+    }, [])
+
+    // Compute stats for each agent from sessions
+    const agentStats = useMemo(() => {
+        const stats = new Map<string, { sessionCount: number; callCount: number; lastActive: number }>()
+        console.log(`[AgentsView] Computing stats from ${sessions.length} sessions`)
+        for (const s of sessions) {
+            const name = s.agent_name
+            console.log(`[AgentsView] Session ${s.session_id}: agent_name=${name}`)
+            if (!name) continue // Skip sessions without agent
+            const existing = stats.get(name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
+            existing.sessionCount += 1
+            existing.callCount += s.tool_calls.length
+            const ts = s.created_at || s.tool_calls[0]?.timestamp
+            if (ts) {
+                const t = Date.parse(ts)
+                if (!Number.isNaN(t) && t > existing.lastActive) existing.lastActive = t
+            }
+            stats.set(name, existing)
+        }
+        console.log(`[AgentsView] Stats computed:`, Array.from(stats.entries()))
+        return stats
+    }, [sessions])
+
+    // Filter sessions by selected agent and date range
+    const agentSessions = useMemo(() => {
+        if (!selectedAgent) return []
+        let filtered = sessions.filter(s => s.agent_name === selectedAgent)
+
+        // Apply date range filter
+        if (startDay || endDay) {
+            filtered = filtered.filter(s => {
+                const day = (s as any).day as string | undefined
+                if (!day) return false
+                if (startDay && day < startDay) return false
+                if (endDay && day > endDay) return false
+                return true
+            })
+        }
+
+        return filtered
+    }, [sessions, selectedAgent, startDay, endDay])
+
+    // Pagination
+    const totalPages = Math.ceil(agentSessions.length / sessionLimit)
+    const paginatedSessions = useMemo(() => {
+        const start = (currentPage - 1) * sessionLimit
+        return agentSessions.slice(start, start + sessionLimit)
+    }, [agentSessions, currentPage, sessionLimit])
+
+    // Reset to page 1 when agent or filters change
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [selectedAgent, startDay, endDay, sessionLimit])
+
+    if (agents.length === 0) {
+        return (
+            <div className="card text-center text-app-muted">
+                No agents configured. Create agent folders in `&lt;config_dir&gt;/agents/`
+            </div>
+        )
+    }
+
+    return (
+        <div className="grid gap-4" style={{ gridTemplateColumns: '240px 1fr' }}>
+            {/* Sidebar with agent list */}
+            <div className="space-y-2">
+                <div className="text-sm font-semibold mb-2 px-2">Agents</div>
+                {agents.map(agent => {
+                    const stats = agentStats.get(agent.name) || { sessionCount: 0, callCount: 0, lastActive: 0 }
+                    const selected = selectedAgent === agent.name
+                    return (
+                        <button
+                            key={agent.name}
+                            className={`w-full text-left card transition-all active:scale-95 ${selected ? 'border-app-accent bg-app-accent/10' : 'hover:bg-app-border/20'}`}
+                            onClick={() => setSelectedAgent(agent.name)}
+                        >
+                            <div className="font-semibold text-sm mb-1">{agent.name}</div>
+                            <div className="text-xs space-y-0.5">
+                                <div className="flex justify-between text-app-muted">
+                                    <span>Sessions:</span>
+                                    <span>{stats.sessionCount}</span>
+                                </div>
+                                <div className="flex justify-between text-app-muted">
+                                    <span>Calls:</span>
+                                    <span>{stats.callCount}</span>
+                                </div>
+                            </div>
+                            {agent.has_tool_overrides && (
+                                <div className="mt-2">
+                                    <span className="badge text-[10px]">Overrides</span>
+                                </div>
+                            )}
+                        </button>
+                    )
+                })}
+            </div>
+
+            {/* Main area with agent dashboard */}
+            <div className="space-y-4">
+                {selectedAgent ? (
+                    <>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-xl font-bold">{selectedAgent}</h2>
+                                <span className="text-sm text-app-muted">
+                                    ({agentSessions.length} sessions, {agentSessions.reduce((acc, s) => acc + s.tool_calls.length, 0)} calls)
+                                </span>
+                            </div>
+                        </div>
+                        <DateRangeSlider
+                            sessions={sessions.filter(s => s.agent_name === selectedAgent)}
+                            startTimeLabel={startDay}
+                            endTimeLabel={endDay}
+                            onTimeRangeChange={(s, e) => { setStartDay(s); setEndDay(e) }}
+                        />
+                        <Kpis sessions={agentSessions} />
+                        <AgentDataflow sessions={agentSessions as any} />
+                        <Stats sessions={agentSessions} />
+                        <div className="card">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="text-sm font-semibold">Sessions</div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-app-muted">Per page:</span>
+                                    <select
+                                        className="button text-xs"
+                                        value={sessionLimit}
+                                        onChange={(e) => setSessionLimit(Number(e.target.value))}
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <SessionTable sessions={paginatedSessions} />
+                            <div className="flex items-center justify-between mt-3">
+                                <div className="text-xs text-app-muted">
+                                    Showing {Math.min((currentPage - 1) * sessionLimit + 1, agentSessions.length)}-{Math.min(currentPage * sessionLimit, agentSessions.length)} of {agentSessions.length} sessions
+                                </div>
+                                {totalPages > 1 && (
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            className="button text-xs"
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-xs text-app-muted">
+                                            Page {currentPage} of {totalPages}
+                                        </span>
+                                        <button
+                                            className="button text-xs"
+                                            disabled={currentPage === totalPages}
+                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="card text-center text-app-muted">
+                        Select an agent from the sidebar
+                    </div>
+                )}
+            </div>
         </div>
     )
 }

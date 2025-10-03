@@ -19,7 +19,7 @@ from src.middleware.data_access_tracker import SecurityError  # type: ignore[rep
 from src.middleware.session_tracking import (  # type: ignore[reportMissingImports]
     MCPSession,
     ToolCall,
-    _persist_session_to_db,
+    _persist_session_to_db,  # type: ignore[reportPrivateImport]
     get_session_from_db,
 )
 from src.telemetry import record_tool_call  # type: ignore[reportMissingImports]
@@ -30,6 +30,12 @@ class _BeginBody(BaseModel):
     name: str = Field(..., description="Function/tool name (treated as agent_<name> if no prefix)")
     args_summary: str | None = Field(default=None, description="Redacted/summary of args")
     timeout_s: float | None = Field(30.0, description="Approval wait timeout in seconds")
+    agent_name: str | None = Field(
+        default=None, description="Agent identity (e.g., 'hr_assistant')"
+    )
+    agent_type: str | None = Field(
+        default=None, description="Agent type/role (e.g., 'hr', 'engineering')"
+    )
 
 
 class _BeginResponse(BaseModel):
@@ -73,6 +79,13 @@ async def agent_begin(body: _BeginBody) -> Any:  # type: ignore[override]
 
         # Get or create session object
         session: MCPSession = get_session_from_db(session_id)
+
+        # Update agent identity if provided (first call sets it, subsequent calls preserve it)
+        if body.agent_name and session.agent_name is None:
+            session.agent_name = body.agent_name
+            session.agent_type = body.agent_type
+            assert session.data_access_tracker is not None
+            session.data_access_tracker.agent_name = body.agent_name
 
         # Create a pending tool call immediately for UI visibility
         call_id = str(uuid.uuid4())
