@@ -107,6 +107,7 @@ def export_edison_to(
     dry_run: bool = False,
     force: bool = False,
     create_if_missing: bool = False,
+    selected_servers: list[str] | None = None,
 ) -> ExportResult:
     if dry_run:
         print(
@@ -127,6 +128,7 @@ def export_edison_to(
                 dry_run=dry_run,
                 force=force,
                 create_if_missing=create_if_missing,
+                selected_servers=selected_servers,
             )
         case CLIENT.VSCODE:
             return export_to_vscode(
@@ -136,6 +138,7 @@ def export_edison_to(
                 dry_run=dry_run,
                 force=force,
                 create_if_missing=create_if_missing,
+                selected_servers=selected_servers,
             )
         case CLIENT.CLAUDE_CODE:
             return export_to_claude_code(
@@ -145,6 +148,7 @@ def export_edison_to(
                 dry_run=dry_run,
                 force=force,
                 create_if_missing=create_if_missing,
+                selected_servers=selected_servers,
             )
         case CLIENT.CLAUDE_DESKTOP:
             result = export_to_claude_desktop(
@@ -154,6 +158,7 @@ def export_edison_to(
                 dry_run=dry_run,
                 force=force,
                 create_if_missing=create_if_missing,
+                selected_servers=selected_servers,
             )
             open_claude_desktop_extension_dxt()
             return result
@@ -180,12 +185,20 @@ def restore_client(
             return restore_claude_desktop(server_name=server_name, dry_run=dry_run)
 
 
-def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
-    """Minimal validation: try listing tools/resources/prompts via FastMCP within a timeout."""
+def verify_mcp_server(server: MCPServerConfig, timeout_seconds: int | None = 30) -> str:  # noqa
+    """Minimal validation: try listing tools/resources/prompts via FastMCP within a timeout.
 
-    async def _verify_async() -> bool:  # noqa: C901
+    Args:
+        server: The MCP server configuration to verify
+        timeout_seconds: Timeout in seconds for verification (None = no timeout)
+
+    Returns:
+        "success" if verification succeeded, "timeout" if timed out, "failed" otherwise
+    """
+
+    async def _verify_async() -> str:  # noqa: C901
         if not server.command.strip():
-            return False
+            return "failed"
         oauth_info = None
 
         # If this is a remote server, consult OAuth requirement first. Only skip
@@ -219,11 +232,11 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             f"Skipping verification for remote server '{server.name}' pending OAuth",
                             style="bold fg:ansiyellow",
                         )
-                        return False  # OAuth required but not available = verification failed
+                        return "failed"  # OAuth required but not available = verification failed
 
         # Remote servers
         if server.is_remote_server():
-            connection_timeout = 10.0
+            connection_timeout = float(timeout_seconds) if timeout_seconds else 10.0
             remote_url = server.get_remote_url()
             if remote_url:
                 # If inline headers are specified (e.g., API key), verify via proxy to honor headers
@@ -253,13 +266,20 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             async def _list_tools_only() -> Any:
                                 return await host_remote._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-                            await asyncio.wait_for(_list_tools_only(), timeout=10.0)
-                        return True
+                            await asyncio.wait_for(_list_tools_only(), timeout=connection_timeout)
+                        return "success"
+                    except TimeoutError as e:
+                        log.error(
+                            "MCP remote (headers) verification timed out for '{}': {}",
+                            server.name,
+                            type(e).__name__,
+                        )
+                        return "timeout"
                     except Exception as e:
                         log.error(
                             "MCP remote (headers) verification failed for '{}': {}", server.name, e
                         )
-                        return False
+                        return "failed"
                     finally:
                         for obj in (host_remote, proxy_remote):
                             if isinstance(obj, FastMCP):
@@ -275,9 +295,9 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                         )
                     # If OAuth is needed or we are already authenticated, don't initiate browser flows here
                     if oauth_info.status == OAuthStatus.AUTHENTICATED:
-                        return True
+                        return "success"
                     if oauth_info.status == OAuthStatus.NEEDS_AUTH:
-                        return False  # OAuth needed but not available = verification failed
+                        return "failed"  # OAuth needed but not available = verification failed
                     # NOT_REQUIRED: quick unauthenticated ping
                     # TODO: In debug mode, do not suppress child process output.
                     questionary.print(
@@ -298,24 +318,25 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
                             log.info(f"Ping received from '{server.name}'; shutting down client")
                             ping_succeeded = True
                         log.debug(f"Client '{server.name}' shut down")
-                    return ping_succeeded
-                except TimeoutError:
+                    return "success" if ping_succeeded else "failed"
+                except TimeoutError as e:
                     if ping_succeeded:
                         questionary.print(
                             f"Ping received from '{server.name}' but shutdown timed out (treating as success)",
                             style="bold fg:ansiyellow",
                         )
-                    else:
-                        questionary.print(
-                            f"Verification timed out (> {connection_timeout}s) for '{server.name}'",
-                            style="bold fg:ansired",
-                        )
-                    return ping_succeeded
+                        return "success"
+                    questionary.print(
+                        f"Verification timed out (> {connection_timeout}s) for '{server.name}'",
+                        style="bold fg:ansired",
+                    )
+                    log.debug(f"Timeout exception details: {type(e).__name__}: {e}")
+                    return "timeout"
                 except Exception as e:  # noqa: BLE001
                     questionary.print(
                         f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
                     )
-                    return False
+                    return "failed"
 
         # Local/stdio servers: mount via proxy and perform a single light operation (tools only)
         backend_cfg_local: dict[str, Any] = {
@@ -343,19 +364,26 @@ def verify_mcp_server(server: MCPServerConfig) -> bool:  # noqa
             async def _list_tools_only() -> Any:
                 return await host_local._tool_manager.list_tools()  # type: ignore[attr-defined]
 
-            result = await asyncio.wait_for(_list_tools_only(), timeout=30.0)
+            local_timeout = float(timeout_seconds) if timeout_seconds else 30.0
+            result = await asyncio.wait_for(_list_tools_only(), timeout=local_timeout)
 
             # Check if empty results and treat as failed
             if not result or len(result) == 0:
                 log.debug(f"Remote server {server.name} returned empty results, treating as failed")
-                return False
+                return "failed"
 
-            return True
+            return "success"
+        except TimeoutError as e:
+            questionary.print(
+                f"Verification timed out for '{server.name}'", style="bold fg:ansired"
+            )
+            log.debug(f"Timeout exception details: {type(e).__name__}: {e}")
+            return "timeout"
         except Exception as e:
             questionary.print(
                 f"Verification failed for '{server.name}': {e}", style="bold fg:ansired"
             )
-            return False
+            return "failed"
         finally:
             for obj in (host_local, proxy_local):
                 if isinstance(obj, FastMCP):

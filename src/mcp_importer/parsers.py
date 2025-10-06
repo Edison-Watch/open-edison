@@ -160,6 +160,47 @@ def _collect_nested(data: dict[str, Any], default_enabled: bool) -> list[Any]:
     return results
 
 
+def _is_open_edison_server(server: MCPServerConfig) -> bool:
+    """Check if an MCPServerConfig is an Open Edison server.
+
+    Args:
+        server: The server config to check
+
+    Returns:
+        True if this server matches the Open Edison pattern
+    """
+    if server.command != "npx":
+        return False
+
+    args = server.args
+    if not isinstance(args, list):
+        return False
+
+    # Check for Open Edison signature: npx mcp-remote with http-only transport
+    return (
+        "mcp-remote" in args
+        and "--transport" in args
+        and "http-only" in args
+        and "--allow-http" in args
+    )
+
+
+def filter_open_edison_servers(servers: list[MCPServerConfig]) -> list[MCPServerConfig]:
+    """Filter out Open Edison servers from the list.
+
+    Args:
+        servers: List of servers to filter
+
+    Returns:
+        List with Open Edison servers removed
+    """
+    filtered = [s for s in servers if not _is_open_edison_server(s)]
+    removed_count = len(servers) - len(filtered)
+    if removed_count > 0:
+        log.info("Filtered out {} existing Open Edison server(s) from import", removed_count)
+    return filtered
+
+
 def deduplicate_by_name(servers: list[MCPServerConfig]) -> list[MCPServerConfig]:
     result: list[MCPServerConfig] = []
     names = set()

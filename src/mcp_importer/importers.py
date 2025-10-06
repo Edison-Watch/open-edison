@@ -7,7 +7,12 @@ from loguru import logger as log
 
 from src.config import MCPServerConfig
 
-from .parsers import ImportErrorDetails, parse_mcp_like_json, permissive_read_json
+from .parsers import (
+    ImportErrorDetails,
+    filter_open_edison_servers,
+    parse_mcp_like_json,
+    permissive_read_json,
+)
 from .paths import (
     detect_claude_desktop_config_path,
     find_claude_code_user_all_candidates,
@@ -26,7 +31,8 @@ def import_from_cursor() -> list[MCPServerConfig]:
             Path.home() / ".cursor" / "mcp.json",
         )
     data = permissive_read_json(files[0])
-    return parse_mcp_like_json(data, default_enabled=True)
+    servers = parse_mcp_like_json(data, default_enabled=True)
+    return filter_open_edison_servers(servers)
 
 
 def import_from_vscode() -> list[MCPServerConfig]:
@@ -42,7 +48,7 @@ def import_from_vscode() -> list[MCPServerConfig]:
             data = permissive_read_json(f)
             parsed = parse_mcp_like_json(data, default_enabled=True)
             if parsed:
-                return parsed
+                return filter_open_edison_servers(parsed)
         except Exception as e:
             print(f"Failed reading VSCode config {f}: {e}")
     # If we saw files but none yielded servers, return empty with info
@@ -62,7 +68,7 @@ def import_from_claude_code() -> list[MCPServerConfig]:
             data = permissive_read_json(f)
             parsed = parse_mcp_like_json(data, default_enabled=True)
             if parsed:
-                return parsed
+                return filter_open_edison_servers(parsed)
         except Exception as e:
             log.warning("Failed reading Claude Code config {}: {}", f, e)
 
@@ -125,8 +131,9 @@ def import_from_claude_desktop() -> list[MCPServerConfig]:
         pass
 
     parsed = parse_mcp_like_json(data, default_enabled=True)
-    print(f"[Claude Desktop] Parsed server count: {len(parsed)}")
-    return parsed
+    filtered = filter_open_edison_servers(parsed)
+    print(f"[Claude Desktop] Parsed server count: {len(filtered)}")
+    return filtered
 
 
 IMPORTERS: dict[str, Callable[..., list[MCPServerConfig]]] = {

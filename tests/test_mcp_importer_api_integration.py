@@ -32,6 +32,19 @@ def _sample_mcp_json(server_name: str = "sample") -> dict[str, Any]:
     }
 
 
+def _sample_vscode_json(server_name: str = "sample") -> dict[str, Any]:
+    """VSCode uses 'servers' key instead of 'mcpServers'."""
+    return {
+        "servers": {
+            server_name: {
+                "command": "echo",
+                "args": ["hello"],
+                "enabled": True,
+            }
+        }
+    }
+
+
 def test_import_and_save_cursor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     editor_file = tmp_path / "cursor" / "mcp.json"
     _write_json(editor_file, _sample_mcp_json("from-cursor"))
@@ -77,6 +90,37 @@ def test_export_to_cursor_overwrites_to_open_edison(
     mcp = data.get("mcpServers") or {}
     assert list(mcp.keys()) == ["open-edison"]
     args = mcp["open-edison"].get("args", [])
+    assert "http://localhost:3000/mcp/" in args
+    assert "Authorization: Bearer dev-api-key-change-me" in args
+
+
+def test_export_to_vscode_overwrites_to_open_edison(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    editor_file = tmp_path / "vscode" / "mcp.json"
+    _write_json(editor_file, _sample_vscode_json("preexisting"))
+
+    # Patch exporter to target our temp file
+    monkeypatch.setattr(
+        "src.mcp_importer.exporters.find_vscode_user_mcp_file", lambda: [editor_file]
+    )
+    monkeypatch.setattr("src.mcp_importer.exporters._resolve_vscode_target", lambda: editor_file)
+
+    result = export_edison_to(
+        CLIENT.VSCODE,
+        force=True,
+        create_if_missing=True,
+        dry_run=False,
+    )
+    assert result.wrote_changes is True
+    assert result.target_path == editor_file
+
+    # New file should contain only open-edison pointing to localhost with header
+    # VSCode uses "servers" key instead of "mcpServers"
+    data = json.loads(editor_file.read_text(encoding="utf-8"))
+    servers = data.get("servers") or {}
+    assert list(servers.keys()) == ["open-edison"]
+    args = servers["open-edison"].get("args", [])
     assert "http://localhost:3000/mcp/" in args
     assert "Authorization: Bearer dev-api-key-change-me" in args
 

@@ -5,6 +5,7 @@ Provides REST endpoints for the Electron app to interact with MCP import/export 
 """
 
 import json
+from collections import defaultdict
 from typing import Any
 
 import uvicorn
@@ -37,6 +38,8 @@ class ServerConfig(BaseModel):
     enabled: bool
     client: str | None = None  # Track which client this server came from
     roots: list[str] | None = None
+    potential_duplicate: bool = False
+    duplicate_reason: str | None = None
 
 
 class ImportRequest(BaseModel):
@@ -59,6 +62,8 @@ class ExportRequest(BaseModel):
     server_name: str = "open-edison"
     dry_run: bool = False
     force: bool = False
+    create_if_missing: bool = False
+    selected_servers: list[str] | None = None
 
 
 class ExportResponse(BaseModel):
@@ -75,6 +80,7 @@ class ReplaceRequest(BaseModel):
     dry_run: bool = False
     force: bool = False
     create_if_missing: bool = True
+    selected_servers: list[str] | None = None  # List of server names that were selected for import
 
 
 class ReplaceResponse(BaseModel):
@@ -97,11 +103,12 @@ class ClientDetectionResponse(BaseModel):
 
 class VerificationRequest(BaseModel):
     servers: list[ServerConfig]
+    timeout_seconds: int | None = 30  # Default 30 seconds timeout for verification
 
 
 class VerificationResponse(BaseModel):
     success: bool
-    results: dict[str, bool]  # server_name -> verification_result
+    results: dict[str, str]  # server_name -> verification_result ("success", "failed", "timeout")
     message: str
 
 
@@ -182,53 +189,111 @@ async def detect_available_clients():
         )
 
 
+def _import_servers_from_clients(
+    client_names: list[str],
+) -> tuple[dict[str, list[MCPServerConfig]], list[str]]:
+    """Import servers from each client and track errors."""
+    client_server_map: dict[str, list[MCPServerConfig]] = {}
+    errors = []
+
+    for client_name in client_names:
+        try:
+            client = CLIENT(client_name)
+            servers = import_from(client)
+            client_server_map[client_name] = servers
+        except ValueError:
+            errors.append(f"Unknown client: {client_name}")  # type: ignore
+        except Exception as e:
+            errors.append(f"Error importing from {client_name}: {str(e)}")  # type: ignore
+
+    return client_server_map, errors  # type: ignore
+
+
+def _convert_servers_to_configs(
+    client_server_map: dict[str, list[MCPServerConfig]],
+) -> tuple[list[ServerConfig], list[MCPServerConfig]]:
+    """Convert MCP servers to API ServerConfig format with client info."""
+    server_configs: list[ServerConfig] = []
+    original_servers: list[MCPServerConfig] = []
+
+    print(f"Client server map: {client_server_map}")
+    for client_name, servers in client_server_map.items():
+        print(f"Client name: {client_name}")
+        for server in servers:
+            print(f"-Server: {server}")
+            server_config = convert_to_server_config(server)
+            server_config.client = client_name
+            server_configs.append(server_config)
+            original_servers.append(server)
+
+    return server_configs, original_servers
+
+
+def _detect_duplicate_servers(
+    original_servers: list[MCPServerConfig], server_configs: list[ServerConfig]
+) -> None:
+    """Detect and mark potential duplicate servers."""
+    duplicate_reasons: dict[int, set[str]] = defaultdict(set)
+
+    def _mark_duplicates(index_map: dict[Any, list[int]], reason: str) -> None:
+        for indices in index_map.values():
+            if len(indices) > 1:
+                for idx in indices:
+                    duplicate_reasons[idx].add(reason)
+
+    # Build index maps for duplicate detection
+    exact_map: dict[Any, list[int]] = defaultdict(list)
+    name_map: dict[str, list[int]] = defaultdict(list)
+    command_args_map: dict[tuple[str, tuple[str, ...]], list[int]] = defaultdict(list)
+
+    for idx, server in enumerate(original_servers):
+        env_items = tuple(sorted((server.env or {}).items()))
+        roots_tuple = tuple(server.roots or [])
+        exact_key = (
+            server.name,
+            server.command,
+            tuple(server.args),
+            env_items,
+            server.enabled,
+            roots_tuple,
+        )
+        exact_map[exact_key].append(idx)
+        name_map[server.name].append(idx)
+        command_args_map[(server.command, tuple(server.args))].append(idx)
+
+    # Mark duplicates based on different criteria
+    _mark_duplicates(exact_map, "identical configuration")
+    _mark_duplicates(name_map, "same name")
+    _mark_duplicates(command_args_map, "same command and args")
+
+    # Update server configs with duplicate information
+    for idx, reasons in duplicate_reasons.items():
+        server_config = server_configs[idx]
+        server_config.potential_duplicate = True
+        sorted_reasons = ", ".join(sorted(reasons))
+        server_config.duplicate_reason = sorted_reasons
+
+
 @app.post("/import", response_model=ImportResponse)  # noqa
 async def import_mcp_servers(request: ImportRequest):
-    """Import MCP servers from specified clients."""
+    """Import MCP servers from specified clients.
+    The servers are returned to the server, including client metadata and not deduplicated.
+    """
     try:
-        all_servers = []
-        errors = []
-
-        # Track client-server relationships
-        client_server_map: dict[str, list[MCPServerConfig]] = {}
-
-        for client_name in request.clients:
-            try:
-                # Convert string to CLIENT enum
-                client = CLIENT(client_name)
-                servers = import_from(client)
-                client_server_map[client_name] = servers
-                all_servers.extend(servers)  # type: ignore
-            except ValueError:
-                errors.append(f"Unknown client: {client_name}")  # type: ignore
-            except Exception as e:
-                errors.append(f"Error importing from {client_name}: {str(e)}")  # type: ignore
-
-        # Don't deduplicate servers since we want to keep client associations
-        # all_servers = deduplicate_by_name(all_servers)  # type: ignore
+        # Import servers from all requested clients
+        client_server_map, errors = _import_servers_from_clients(request.clients)
 
         # Convert to API format with client information
-        server_configs: list[ServerConfig] = []
-        for client_name, servers in client_server_map.items():
-            for server in servers:
-                server_config = convert_to_server_config(server)
-                server_config.client = client_name
-                server_configs.append(server_config)
+        server_configs, original_servers = _convert_servers_to_configs(client_server_map)
 
-        # Deduplicate servers by name, keeping the first occurrence
-        # This ensures we don't have duplicate servers in the final result
-        seen_names: set[str] = set()
-        deduplicated_servers: list[ServerConfig] = []
-        for server_config in server_configs:
-            if server_config.name not in seen_names:
-                seen_names.add(server_config.name)
-                deduplicated_servers.append(server_config)
+        # Detect and mark potential duplicates
+        _detect_duplicate_servers(original_servers, server_configs)
 
         return ImportResponse(
-            success=len(deduplicated_servers) > 0,
-            servers=deduplicated_servers,
+            success=len(server_configs) > 0,
+            servers=server_configs,
             errors=errors,  # type: ignore
-            message=f"Imported {len(deduplicated_servers)} servers from {len(request.clients)} clients",
+            message=f"Imported {len(server_configs)} servers from {len(request.clients)} clients",
         )
 
     except Exception as e:
@@ -249,15 +314,23 @@ async def verify_servers(request: VerificationRequest):
         for server_config in request.servers:
             try:
                 mcp_config = convert_from_server_config(server_config)
-                print(f"Verifying server: {server_config.name}")
-                is_valid = verify_mcp_server(mcp_config)
-                print(f"Server {server_config.name} verification result: {is_valid}")
-                results[server_config.name] = is_valid
+                print(
+                    f"Verifying server: {server_config.name} with timeout: {request.timeout_seconds}"
+                )
+                status = verify_mcp_server(mcp_config, timeout_seconds=request.timeout_seconds)
+                print(f"Server {server_config.name} verification result: {status}")
+                client_name = server_config.client or "unknown"
+                composite_key = f"{client_name}:{server_config.name}"
+                results[composite_key] = status
+                results[server_config.name] = status
             except Exception as e:
-                results[server_config.name] = False
+                client_name = server_config.client or "unknown"
+                composite_key = f"{client_name}:{server_config.name}"
+                results[composite_key] = "failed"
+                results[server_config.name] = "failed"
                 print(f"Verification error for {server_config.name}: {e}")
 
-        success_count = sum(1 for valid in results.values() if valid is True)  # type: ignore
+        success_count = sum(1 for status in results.values() if status == "success")  # type: ignore
         print(f"Final results: {results}")
         print(f"Success count: {success_count}")
 
@@ -329,6 +402,8 @@ async def export_to_clients(request: ExportRequest):
                     server_name=request.server_name,
                     dry_run=request.dry_run,
                     force=request.force,
+                    create_if_missing=request.create_if_missing,
+                    selected_servers=request.selected_servers,
                 )
                 results[client_name] = {
                     "success": result.wrote_changes,
@@ -364,8 +439,9 @@ async def replace_mcp_servers(request: ReplaceRequest):
 
     This will:
     1. Backup existing MCP configurations
-    2. Replace them with Open Edison configuration
-    3. Provide restore functionality
+    2. Replace selected servers with Open Edison configuration
+    3. Retain non-selected servers from original configuration
+    4. Provide restore functionality
     """
     try:
         results = {}
@@ -373,7 +449,9 @@ async def replace_mcp_servers(request: ReplaceRequest):
         for client_name in request.clients:
             try:
                 client = CLIENT(client_name.lower())
-                log.debug(f"Exporting Open Edison to {client_name}")
+                log.debug(
+                    f"Exporting Open Edison to {client_name} (selected servers: {request.selected_servers})"
+                )
                 result = export_edison_to(
                     client,
                     url=request.url,
@@ -382,6 +460,7 @@ async def replace_mcp_servers(request: ReplaceRequest):
                     dry_run=request.dry_run,
                     force=request.force,
                     create_if_missing=request.create_if_missing,
+                    selected_servers=request.selected_servers,
                 )
                 results[client_name] = {
                     "success": result.wrote_changes,

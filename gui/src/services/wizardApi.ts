@@ -35,11 +35,12 @@ export interface ClientDetectionResponse {
 
 export interface VerificationRequest {
   servers: ServerConfig[];
+  timeout_seconds?: number | null;  // Timeout in seconds for verification (null = no timeout)
 }
 
 export interface VerificationResponse {
   success: boolean;
-  results: Record<string, boolean>;
+  results: Record<string, string>;  // server_name -> "success" | "failed" | "timeout"
   message: string;
 }
 
@@ -59,6 +60,8 @@ export interface ExportRequest {
   server_name?: string;
   dry_run?: boolean;
   force?: boolean;
+  create_if_missing?: boolean;
+  selected_servers?: string[];
 }
 
 export interface ExportResponse {
@@ -75,6 +78,7 @@ export interface ReplaceRequest {
   dry_run?: boolean;
   force?: boolean;
   create_if_missing?: boolean;
+  selected_servers?: string[];  // List of server names that were selected for import
 }
 
 export interface ReplaceResponse {
