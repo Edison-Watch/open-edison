@@ -165,18 +165,18 @@ class OpenEdisonProxy:
             raise
 
         # Special-case: serve SQLite db and config JSONs for dashboard (prod replacement for Vite @fs)
-        def _resolve_db_path() -> Path:
-            # Exactly one location: config dir / sessions.db
+        def _resolve_db_path(db_name: str) -> Path:
+            # Resolve database file based on the requested name
             cfg_dir = _get_cfg_dir()
-            looked = cfg_dir / "sessions.db"
+            looked = cfg_dir / db_name
             if looked.exists():
                 return looked
             raise FileNotFoundError(
                 f"Database file not found at {looked}. Expected under config dir: {cfg_dir}"
             )
 
-        async def _serve_db() -> FileResponse:  # type: ignore[override]
-            db_file = _resolve_db_path()
+        async def _serve_db(db_name: str) -> FileResponse:  # type: ignore[override]
+            db_file = _resolve_db_path(db_name)
             resp = FileResponse(str(db_file), media_type="application/octet-stream")
             # Ensure the browser always fetches the latest DB file
             resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -185,38 +185,50 @@ class OpenEdisonProxy:
             return resp
 
         # Provide multiple paths the SPA might attempt (both edison.db legacy and sessions.db canonical)
-        for name in ("edison.db", "sessions.db"):
+        for name in ("edison.db", "sessions.db", "flows.db"):
+            # Create a closure to capture the db_name
+            def make_handler(db_name: str):
+                async def handler():
+                    return await _serve_db(db_name)
+
+                return handler
+
+            handler = make_handler(name)
+
             app.add_api_route(
                 f"/dashboard/{name}",
-                _serve_db,
+                handler,
                 methods=["GET"],
                 dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
             app.add_api_route(
-                f"/{name}", _serve_db, methods=["GET"], dependencies=[Depends(self.verify_api_key)]
+                f"/{name}",
+                handler,
+                methods=["GET"],
+                dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
             app.add_api_route(
                 f"/@fs/dashboard//{name}",
-                _serve_db,
+                handler,
                 methods=["GET"],
                 dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
             app.add_api_route(
                 f"/@fs/{name}",
-                _serve_db,
+                handler,
                 methods=["GET"],
                 dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
             # Also support URL-encoded '@' prefix used by some bundlers
             app.add_api_route(
                 f"/%40fs/dashboard//{name}",
-                _serve_db,
+                handler,
                 methods=["GET"],
                 dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
             app.add_api_route(
                 f"/%40fs/{name}",
-                _serve_db,
+                handler,
                 methods=["GET"],
                 dependencies=[Depends(self.verify_api_key)],
             )  # type: ignore[arg-type]
