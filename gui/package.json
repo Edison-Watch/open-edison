@@ -1,6 +1,6 @@
 {
   "name": "open-edison-desktop",
-  "version": "0.1.122",
+  "version": "0.1.123",
   "description": "Open Edison Desktop Application",
   "main": "dist/main.js",
   "scripts": {

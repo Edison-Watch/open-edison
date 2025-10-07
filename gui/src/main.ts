@@ -149,6 +149,14 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
     const logFilePath = join(logDir, 'backend.log')
     const logStream = fs.createWriteStream(logFilePath, { flags: 'a' })
 
+    // Ensure PATH includes common locations for tools like npx (macOS/Linux GUI apps often have a minimal PATH)
+    const pathSeparator = process.platform === 'win32' ? ';' : ':'
+    const extraPaths = process.platform === 'win32' 
+      ? ['C:\\Program Files\\nodejs', 'C:\\Program Files (x86)\\nodejs']
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
+    const mergedPath = `${extraPaths.join(pathSeparator)}${pathSeparator}${process.env.PATH || ''}`
+    const enrichedEnv = { ...process.env, PATH: mergedPath }
+
     // Decide how to start backend based on environment
     const startMethods = (() => {
       if (isPackaged) {
@@ -157,12 +165,12 @@ async function startBackend(host: string = 'localhost', port: number = 3001): Pr
         const resourcesPath = process.resourcesPath
         const bundledPath = join(resourcesPath, 'backend', backendExecutable)
         return [
-          () => spawn(bundledPath, [], { cwd: resourcesPath, stdio: 'pipe', shell: false })
+          () => spawn(bundledPath, [], { cwd: resourcesPath, stdio: 'pipe', shell: false, env: enrichedEnv })
         ]
       }
       // Development: fall back to uv/python
       return [
-        () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true })
+        () => spawn('uv', ['run', 'python', '-m', 'src.gui'], { cwd: projectRoot, stdio: 'pipe', shell: true, env: enrichedEnv })
       ]
     })()
 
@@ -270,6 +278,14 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
     const logFilePath = join(logDir, 'wizard-api.log')
     const logStream = fs.createWriteStream(logFilePath, { flags: 'a' })
 
+    // Ensure PATH includes common locations for tools like npx (macOS/Linux GUI apps often have a minimal PATH)
+    const pathSeparator = process.platform === 'win32' ? ';' : ':'
+    const extraPaths = process.platform === 'win32' 
+      ? ['C:\\Program Files\\nodejs', 'C:\\Program Files (x86)\\nodejs']
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
+    const mergedPath = `${extraPaths.join(pathSeparator)}${pathSeparator}${process.env.PATH || ''}`
+    const enrichedEnv = { ...process.env, PATH: mergedPath }
+
     if (isPackaged) {
       // Spawn bundled wizard binary
       const wizardExecutable = process.platform === 'win32' ? 'open-edison-wizard.exe' : 'open-edison-wizard'
@@ -277,14 +293,16 @@ async function startSetupWizardApi(host: string = 'localhost', port: number = 30
       setupWizardApiProcess = spawn(bundledPath, ['--host', host, '--port', port.toString()], {
         cwd: resourcesPath,
         stdio: 'pipe',
-        shell: false
+        shell: false,
+        env: enrichedEnv
       })
     } else {
       // Dev: uv run python -m src.mcp_importer.wizard_server
       setupWizardApiProcess = spawn('uv', ['run', 'python', '-m', 'src.mcp_importer.wizard_server', '--host', host, '--port', port.toString()], {
         cwd: projectRoot,
         stdio: 'pipe',
-        shell: true
+        shell: true,
+        env: enrichedEnv
       })
     }
 
@@ -1517,9 +1535,12 @@ ipcMain.handle('spawn-process', async (event, command: string, args: string[], e
     const { spawn } = require('child_process')
     const fs = require('fs')
 
-    // Ensure PATH includes common Homebrew locations (macOS GUI apps often have a minimal PATH)
-    const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
-    const mergedPath = `${extraPaths.join(':')}:${process.env.PATH || ''}`
+    // Ensure PATH includes common locations (macOS/Linux GUI apps often have a minimal PATH)
+    const pathSeparator = process.platform === 'win32' ? ';' : ':'
+    const extraPaths = process.platform === 'win32' 
+      ? ['C:\\Program Files\\nodejs', 'C:\\Program Files (x86)\\nodejs']
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
+    const mergedPath = `${extraPaths.join(pathSeparator)}${pathSeparator}${process.env.PATH || ''}`
 
     // Try to resolve absolute command path for ngrok specifically
     let resolvedCommand = command

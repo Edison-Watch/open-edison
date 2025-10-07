@@ -25,10 +25,87 @@ const App: React.FC = () => {
     if (stored) return stored
     return 'light'
   })
+  
+  // Help modal state
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpMessage, setHelpMessage] = useState('');
+  const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
 
   const switchTab = (tab: 'overview' | 'dashboard' | 'wizard' | 'logs') => {
     setActiveTab(tab);
   };
+  
+  // Help modal functions
+  const openHelpModal = () => {
+    setShowHelpModal(true);
+    // Hide dashboard when help modal opens (so modal appears on top)
+    try {
+      window.electronAPI?.hideDashboard?.();
+    } catch (e) {
+      console.error('Failed to hide dashboard:', e);
+    }
+  };
+
+  const closeHelpModal = () => {
+    setShowHelpModal(false);
+    setHelpMessage('');
+    setIncludeDebugLogs(false);
+    // Restore dashboard if we're on dashboard tab
+    if (activeTab === 'dashboard') {
+      try {
+        window.electronAPI?.showDashboard?.({ x: 0, y: 0, width: 0, height: 0 });
+      } catch (e) {
+        console.error('Failed to show dashboard:', e);
+      }
+    }
+  };
+
+  const submitHelpRequest = async () => {
+    if (!helpMessage.trim()) {
+      return;
+    }
+
+    try {
+      // Prepare email content
+      const subject = `Open Edison Help Request - ${new Date().toLocaleString()}`;
+      let emailBody = `Help Request Details:\n\n`;
+      emailBody += `Message: ${helpMessage}\n\n`;
+      emailBody += `Timestamp: ${new Date().toISOString()}\n\n`;
+
+      // Build logs text for attachment if requested
+      let logsText: string | undefined = undefined;
+      if (includeDebugLogs) {
+        logsText = logs.map(log => `[${log.timestamp}] (${log.type}) ${log.message}`).join('\n');
+      }
+
+      // Prefer native composition with attachment via Electron IPC
+      if (window.electronAPI && window.electronAPI.composeHelpEmail) {
+        const result = await window.electronAPI.composeHelpEmail(subject, emailBody, includeDebugLogs, logsText);
+        if (result && result.success) {
+          closeHelpModal();
+        }
+      }
+    } catch (error) {
+      console.error('Error submitting help request:', error);
+    }
+  };
+
+  // Show/hide dashboard based on active tab
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      try {
+        window.electronAPI?.showDashboard?.({ x: 0, y: 0, width: 0, height: 0 });
+      } catch (e) {
+        console.error('Failed to show dashboard:', e);
+      }
+    } else {
+      try {
+        window.electronAPI?.hideDashboard?.();
+      } catch (e) {
+        console.error('Failed to hide dashboard:', e);
+      }
+    }
+  }, [activeTab]);
 
   // Check if we're in wizard mode based on URL query parameter
   useEffect(() => {
@@ -280,11 +357,7 @@ const App: React.FC = () => {
 
         {/* Help Icon at bottom */}
         <button
-          onClick={() => {
-            // Trigger help from Overview component
-            const event = new CustomEvent('open-help-modal');
-            window.dispatchEvent(event);
-          }}
+          onClick={openHelpModal}
           style={{
             width: '48px',
             height: '48px',
@@ -360,12 +433,7 @@ const App: React.FC = () => {
         {/* Content */}
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           {activeTab === 'overview' && (
-            <div
-              style={{ width: '100%', height: '100%' }}
-              ref={(_el) => {
-                try { window.electronAPI?.hideDashboard?.() } catch { }
-              }}
-            >
+            <div style={{ width: '100%', height: '100%' }}>
               <Overview logs={logs} setLogs={setLogs} />
             </div>
           )}
@@ -379,11 +447,6 @@ const App: React.FC = () => {
                 bottom: 0,
                 width: '100%',
                 height: '100%'
-              }}
-              ref={(_el) => {
-                // Dashboard positioning is now handled by hardcoded offsets in main.ts
-                // Pass dummy values since main.ts ignores them and uses SIDEBAR_WIDTH_DIP/PAGE_HEADER_HEIGHT_DIP
-                try { window.electronAPI?.showDashboard?.({ x: 0, y: 0, width: 0, height: 0 }) } catch { }
               }}
             />
           )}
@@ -611,6 +674,197 @@ const App: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: 'var(--card-bg)',
+            borderRadius: '12px',
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            border: '1px solid var(--card-border)',
+            position: 'relative'
+          }}>
+            <button
+              onClick={closeHelpModal}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--card-hover-bg)';
+                e.currentTarget.style.color = 'var(--text-heading)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'none';
+                e.currentTarget.style.color = 'var(--text-muted)';
+              }}
+            >
+              ×
+            </button>
+
+            <h2 style={{ color: 'var(--text-heading)', marginBottom: '1rem', fontSize: '1.5rem' }}>
+              💬 Contact Support
+            </h2>
+
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              Having issues with Open Edison? Let us know what's going wrong and we'll help you out! You can also contact us on our{' '}
+              <a
+                href="https://discord.gg/tXjATaKgTV"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--link-color)', textDecoration: 'underline' }}
+              >
+                Discord channel
+              </a>
+              .
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: '500',
+                color: 'var(--text-heading)'
+              }}>
+                Describe your issue:
+              </label>
+              <textarea
+                value={helpMessage}
+                onChange={(e) => setHelpMessage(e.target.value)}
+                placeholder="Please describe the problem you're experiencing, what you were trying to do, and any error messages you've seen..."
+                style={{
+                  width: '100%',
+                  minHeight: '120px',
+                  padding: '0.75rem',
+                  border: '1px solid var(--input-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  outline: 'none',
+                  transition: 'border-color 0.3s ease',
+                  background: 'var(--input-bg)',
+                  color: 'var(--input-text)'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#3498db';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'var(--input-border)';
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                color: '#2c3e50'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={includeDebugLogs}
+                  onChange={(e) => setIncludeDebugLogs(e.target.checked)}
+                  style={{ margin: 0 }}
+                />
+                <span>Attach debug logs to help with troubleshooting</span>
+              </label>
+              <p style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-secondary)',
+                margin: '0.25rem 0 0 1.5rem',
+                lineHeight: '1.4'
+              }}>
+                This will include server logs and system information to help us diagnose the issue.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeHelpModal}
+                style={{
+                  background: '#95a5a6',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#7f8c8d';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#95a5a6';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitHelpRequest}
+                disabled={!helpMessage.trim()}
+                style={{
+                  background: helpMessage.trim() ? '#27ae60' : '#bdc3c7',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '6px',
+                  cursor: helpMessage.trim() ? 'pointer' : 'not-allowed',
+                  fontSize: '0.875rem',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (helpMessage.trim()) {
+                    e.currentTarget.style.background = '#229954';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (helpMessage.trim()) {
+                    e.currentTarget.style.background = '#27ae60';
+                  }
+                }}
+              >
+                Submit Help Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
