@@ -21,13 +21,14 @@ function dayFromSession(s: Session): string | null {
 
 export function DateRangeSlider({
     sessions,
-    startTimeLabel,
-    endTimeLabel,
+    startTimeLabel: _startTimeLabel,
+    endTimeLabel: _endTimeLabel,
     onTimeRangeChange,
     hoverTimeLabel,
     onHoverTimeChange,
     onTimeRangeMsChange,
     nowMs,
+    itemLabel = 'sessions',
 }: {
     sessions: (Session & { day?: string })[]
     startTimeLabel: string
@@ -37,6 +38,7 @@ export function DateRangeSlider({
     onHoverTimeChange?: (label: string | null) => void
     onTimeRangeMsChange?: (startMs: number, endMs: number) => void
     nowMs?: number
+    itemLabel?: string
 }) {
     // Quick ranges dropdown (declare hooks before any early return to keep hook order stable)
     const [open, setOpen] = useState(false)
@@ -87,7 +89,6 @@ export function DateRangeSlider({
     }, [sessions, nowMs])
 
     const [value, setValue] = useState<[number, number]>(() => [minTs, maxTs])
-    const rafRef = useRef<number | null>(null)
     const latestMinMaxRef = useRef<[number, number]>([minTs, maxTs])
     useEffect(() => { latestMinMaxRef.current = [minTs, maxTs] }, [minTs, maxTs])
 
@@ -108,27 +109,29 @@ export function DateRangeSlider({
     }, [nowMs, liveWindowMs, minTs, maxTs])
 
     // Clamp current value to new bounds if sessions update or now advances
-    useEffect(() => {
-        const [curA, curB] = value
-        const a = Math.max(minTs, Math.min(curA, maxTs))
-        const b = Math.max(a, Math.min(curB, maxTs))
-        if (a !== curA || b !== curB) setValue([a, b])
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [minTs, maxTs])
+    // DISABLED: This was causing handles to snap and not be draggable
+    // useEffect(() => {
+    //     const [curA, curB] = value
+    //     const a = Math.max(minTs, Math.min(curA, maxTs))
+    //     const b = Math.max(a, Math.min(curB, maxTs))
+    //     if (a !== curA || b !== curB) setValue([a, b])
+    //     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // }, [minTs, maxTs])
 
     // Sync external start/end to slider values (snap to day boundaries but slider stays continuous)
-    useEffect(() => {
-        if (!days.length) return
-        const s = startTimeLabel || days[0]!
-        const e = endTimeLabel || days[days.length - 1]!
-        const sTs = new Date(`${s}T00:00:00`).getTime()
-        const eTs = new Date(`${e}T23:59:59`).getTime()
-        if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) {
-            const next: [number, number] = [Math.min(sTs, eTs), Math.max(sTs, eTs)]
-            if (next[0] !== value[0] || next[1] !== value[1]) setValue(next)
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startTimeLabel, endTimeLabel, days.join(',')])
+    // DISABLED: This was causing handles to snap and not be draggable
+    // useEffect(() => {
+    //     if (!days.length) return
+    //     const s = startTimeLabel || days[0]!
+    //     const e = endTimeLabel || days[days.length - 1]!
+    //     const sTs = new Date(`${s}T00:00:00`).getTime()
+    //     const eTs = new Date(`${e}T23:59:59`).getTime()
+    //     if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) {
+    //         const next: [number, number] = [Math.min(sTs, eTs), Math.max(sTs, eTs)]
+    //         if (next[0] !== value[0] || next[1] !== value[1]) setValue(next)
+    //     }
+    //     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // }, [startTimeLabel, endTimeLabel, days.join(',')])
 
     const marks = useMemo(() => {
         const out: Record<number, string> = {}
@@ -252,7 +255,7 @@ export function DateRangeSlider({
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 text-xs text-app-muted">
                     <div>Date range (drag handles or bar)</div>
-                    <span className="badge">{inRangeCount} sessions</span>
+                    <span className="badge">{inRangeCount} {itemLabel}</span>
                     <span className="badge">{selectionDurationLabel}</span>
                 </div>
                 <div className="relative">
@@ -358,38 +361,32 @@ export function DateRangeSlider({
                     }}
                     onChange={(val: number | number[]) => {
                         const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
-                        let next: [number, number] = [Math.max(minTs, Math.min(v[0], v[1])), Math.min(maxTs, Math.max(v[0], v[1]))]
-                        const SNAP_MS = 15 * 60_000
-                        // Snap to edges when close
-                        if (Math.abs(next[0] - minTs) <= SNAP_MS) next[0] = minTs
-                        if (Math.abs(maxTs - next[1]) <= SNAP_MS) next[1] = maxTs
+                        // Just set the value directly without any constraints or snapping
+                        setValue(v)
+
                         if (liveWindowMs != null) setLiveWindowMs(null)
-                        setValue(next)
-                        // Live update parent (throttled to animation frame) for smooth sliding
-                        if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-                        rafRef.current = requestAnimationFrame(() => {
-                            // Emit date strings (clamp to day) and raw ms range for charts
-                            const sa = new Date(next[0]).toISOString().slice(0, 10)
-                            const sb = new Date(next[1]).toISOString().slice(0, 10)
-                            onTimeRangeMsChange?.(next[0], next[1])
-                            if (sa && sb) onTimeRangeChange(sa, sb)
-                        })
+
+                        // Convert positions to timestamps and emit
+                        const sa = new Date(v[0]).toISOString().slice(0, 10)
+                        const sb = new Date(v[1]).toISOString().slice(0, 10)
+                        onTimeRangeMsChange?.(v[0], v[1])
+                        if (sa && sb) onTimeRangeChange(sa, sb)
                     }}
                     onAfterChange={(val: number | number[]) => {
                         const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
-                        let a = Math.max(minTs, Math.min(v[0], v[1]))
-                        let b = Math.min(maxTs, Math.max(v[0], v[1]))
-                        const SNAP_MS = 15 * 60_000
-                        if (Math.abs(a - minTs) <= SNAP_MS) a = minTs
-                        if (Math.abs(maxTs - b) <= SNAP_MS) b = maxTs
+                        // Just set the value directly without any constraints or snapping
+                        setValue(v)
+
                         if (liveWindowMs != null) setLiveWindowMs(null)
-                        const sa = new Date(a).toISOString().slice(0, 10)
-                        const sb = new Date(b).toISOString().slice(0, 10)
-                        onTimeRangeMsChange?.(a, b)
+
+                        // Convert positions to timestamps and emit
+                        const sa = new Date(v[0]).toISOString().slice(0, 10)
+                        const sb = new Date(v[1]).toISOString().slice(0, 10)
+                        onTimeRangeMsChange?.(v[0], v[1])
                         if (sa && sb) onTimeRangeChange(sa, sb)
                     }}
-                    allowCross={false}
-                    step={900_000}
+                    allowCross={true}
+                    step={1000}
                     marks={marks}
                     pushable={false}
                 />

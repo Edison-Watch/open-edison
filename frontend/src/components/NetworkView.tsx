@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useFlows } from '../hooks'
+import { useFlows, useFlowsStatic } from '../hooks'
 import { Panel } from './Panel'
 import { NetworkDataflowGraph } from './NetworkDataflowGraph'
 import DateRangeSlider from './DateRangeSlider'
@@ -12,13 +12,22 @@ export function NetworkView() {
         ? `${(globalThis as any).__PROJECT_ROOT__}${flowsDbRelativePath}`
         : `${window.location.pathname}${flowsDbRelativePath}`
 
-    // Date range state
+    // Date range state - same pattern as observability page
     const [startDay, setStartDay] = useState<string>('')
     const [endDay, setEndDay] = useState<string>('')
-    const [startTimeMs, setStartTimeMs] = useState<number | undefined>(undefined)
-    const [endTimeMs, setEndTimeMs] = useState<number | undefined>(undefined)
+    const [rangeMs, setRangeMs] = useState<{ start: number; end: number } | null>(null)
+    const [debouncedRangeMs, setDebouncedRangeMs] = useState<{ start: number; end: number } | null>(null)
 
-    const { data, loading, error } = useFlows(flowsDbAbsolutePath, startTimeMs, endTimeMs)
+    // Debounce the range changes to avoid interrupting dragging
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedRangeMs(rangeMs)
+        }, 300) // 300ms delay after dragging stops
+
+        return () => clearTimeout(timer)
+    }, [rangeMs])
+
+    const { data, loading, error } = useFlows(flowsDbAbsolutePath, debouncedRangeMs?.start, debouncedRangeMs?.end)
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
     const [selectedFlows, setSelectedFlows] = useState<Set<string>>(new Set())
 
@@ -31,9 +40,52 @@ export function NetworkView() {
         }
     }, [data])
 
+    // Get all flows (unfiltered) for DateRangeSlider to show full timeline - same pattern as observability
+    const { data: allData } = useFlowsStatic(flowsDbAbsolutePath)
+    const allFlows = useMemo(() => allData?.flows ?? [], [allData])
+
     // Convert flows to session-like format for DateRangeSlider
-    const mockSessions = useMemo(() => {
-        return flows.map((flow, index) => ({
+    // Use actual flows data but memoize based on time range to prevent constant resets
+    const sliderData = useMemo(() => {
+        if (allFlows.length === 0) {
+            // If no flows, create a default range for the last 7 days
+            const now = Date.now()
+            const weekAgo = now - (7 * 24 * 60 * 60 * 1000)
+            return [{
+                session_id: 'default-start',
+                correlation_id: 'default-start',
+                agent_name: 'Default',
+                tool_calls: [{
+                    id: 'default-call',
+                    tool_name: 'Default',
+                    parameters: {},
+                    timestamp: weekAgo.toString(),
+                    duration_ms: 0,
+                    result: null
+                }],
+                created_at: weekAgo.toString(),
+                data_access_summary: {},
+                day: new Date(weekAgo).toISOString().slice(0, 10)
+            }, {
+                session_id: 'default-end',
+                correlation_id: 'default-end',
+                agent_name: 'Default',
+                tool_calls: [{
+                    id: 'default-call-2',
+                    tool_name: 'Default',
+                    parameters: {},
+                    timestamp: now.toString(),
+                    duration_ms: 0,
+                    result: null
+                }],
+                created_at: now.toString(),
+                data_access_summary: {},
+                day: new Date(now).toISOString().slice(0, 10)
+            }] as (Session & { day: string })[]
+        }
+
+        // Convert actual flows to session format for DateRangeSlider
+        return allFlows.map((flow, index) => ({
             session_id: `flow-${index}`,
             correlation_id: `flow-${index}`,
             agent_name: 'Network Flow',
@@ -49,7 +101,8 @@ export function NetworkView() {
             data_access_summary: {},
             day: new Date(parseInt(flow.timestamp)).toISOString().slice(0, 10)
         } as Session & { day: string }))
-    }, [flows])
+    }, [allFlows.length, allFlows.length > 0 ? Math.min(...allFlows.map(f => parseInt(f.timestamp)).filter(t => !isNaN(t))) : 0, allFlows.length > 0 ? Math.max(...allFlows.map(f => parseInt(f.timestamp)).filter(t => !isNaN(t))) : 0]) // Depend on time range bounds, not individual flows
+
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1)
@@ -147,7 +200,9 @@ export function NetworkView() {
         )
     }
 
-    if (flows.length === 0) {
+    // Don't return early for empty flows - show the full UI with empty state cards
+    const hasNoDataAtAll = allFlows.length === 0
+    if (hasNoDataAtAll) {
         return (
             <div className="space-y-4">
                 <div className="card p-4 text-center text-app-muted">
@@ -170,19 +225,14 @@ export function NetworkView() {
                 </div>
             )}
 
-            {/* Date Range Filter */}
+            {/* Date range selector - flows-focused */}
             <DateRangeSlider
-                sessions={mockSessions}
+                sessions={sliderData}
                 startTimeLabel={startDay}
                 endTimeLabel={endDay}
-                onTimeRangeChange={(s: string, e: string) => {
-                    setStartDay(s);
-                    setEndDay(e)
-                }}
-                onTimeRangeMsChange={(startMs: number, endMs: number) => {
-                    setStartTimeMs(startMs)
-                    setEndTimeMs(endMs)
-                }}
+                onTimeRangeChange={(s: string, e: string) => { setStartDay(s); setEndDay(e) }}
+                onTimeRangeMsChange={(s, e) => setRangeMs({ start: s, end: e })}
+                itemLabel="flows"
             />
 
             {/* Overview Stats */}
@@ -264,8 +314,8 @@ export function NetworkView() {
             {/* AI Providers and Protocols - Side by Side */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* AI Provider Breakdown */}
-                {stats.providerStats.length > 0 && (
-                    <Panel title="AI Providers" subtitle="Traffic by detected AI service">
+                <Panel title="AI Providers" subtitle="Traffic by detected AI service">
+                    {stats.providerStats.length > 0 ? (
                         <div className="space-y-3">
                             {stats.providerStats.map(({ provider, count, bytes, apiRequests }) => (
                                 <div key={provider} className="flex items-center justify-between p-3 bg-app-bg-secondary rounded">
@@ -287,40 +337,57 @@ export function NetworkView() {
                                 </div>
                             ))}
                         </div>
-                    </Panel>
-                )}
+                    ) : (
+                        <div className="text-center text-app-muted py-8">
+                            No AI provider traffic in selected range
+                        </div>
+                    )}
+                </Panel>
 
                 {/* Protocol Breakdown */}
                 <Panel title="Protocols" subtitle="Traffic by network protocol">
-                    <div className="space-y-3">
-                        {stats.protocolStats.map(({ protocol, count, bytes }) => (
-                            <div key={protocol} className="flex items-center justify-between p-3 bg-app-bg-secondary rounded">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full ${protocol === 'HTTPS' ? 'bg-green-500' :
-                                        protocol === 'HTTP' ? 'bg-blue-500' :
-                                            protocol === 'DNS' ? 'bg-purple-500' :
-                                                'bg-gray-500'
-                                        }`}></div>
-                                    <div>
-                                        <div className="font-semibold">{protocol}</div>
-                                        <div className="text-xs text-app-muted">{count} flows</div>
+                    {stats.protocolStats.length > 0 ? (
+                        <div className="space-y-3">
+                            {stats.protocolStats.map(({ protocol, count, bytes }) => (
+                                <div key={protocol} className="flex items-center justify-between p-3 bg-app-bg-secondary rounded">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-3 h-3 rounded-full ${protocol === 'HTTPS' ? 'bg-green-500' :
+                                            protocol === 'HTTP' ? 'bg-blue-500' :
+                                                protocol === 'DNS' ? 'bg-purple-500' :
+                                                    'bg-gray-500'
+                                            }`}></div>
+                                        <div>
+                                            <div className="font-semibold">{protocol}</div>
+                                            <div className="text-xs text-app-muted">{count} flows</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-semibold">{formatBytes(bytes)}</div>
+                                        <div className="text-xs text-app-muted">
+                                            {((bytes / stats.totalBytes) * 100).toFixed(1)}% of total
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <div className="font-semibold">{formatBytes(bytes)}</div>
-                                    <div className="text-xs text-app-muted">
-                                        {((bytes / stats.totalBytes) * 100).toFixed(1)}% of total
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center text-app-muted py-8">
+                            No protocol traffic in selected range
+                        </div>
+                    )}
                 </Panel>
             </div>
 
+
+            {/* Network Dataflow Graph */}
+            <NetworkDataflowGraph
+                flows={flows}
+                onSelectedFlowsChange={setSelectedFlows}
+            />
+
             {/* Recent API Requests */}
-            {flows.filter(f => f.is_api_request === 1).length > 0 && (
-                <Panel title="Recent API Requests" subtitle="Latest HTTPS requests to AI providers">
+            <Panel title="Recent API Requests" subtitle="Latest HTTPS requests to AI providers">
+                {flows.filter(f => f.is_api_request === 1).length > 0 ? (
                     <div className="space-y-2">
                         {flows
                             .filter(f => f.is_api_request === 1)
@@ -348,14 +415,12 @@ export function NetworkView() {
                                 </div>
                             ))}
                     </div>
-                </Panel>
-            )}
-
-            {/* Network Dataflow Graph */}
-            <NetworkDataflowGraph
-                flows={flows}
-                onSelectedFlowsChange={setSelectedFlows}
-            />
+                ) : (
+                    <div className="text-center text-app-muted py-8">
+                        No API requests in selected range
+                    </div>
+                )}
+            </Panel>
 
             {/* All Flows Table */}
             <Panel title="All Network Flows" subtitle="Complete flow data from nfstream">
@@ -380,7 +445,7 @@ export function NetworkView() {
                                 const isSelected = selectedFlows.has(flowId)
 
                                 return (
-                                    <tr 
+                                    <tr
                                         key={index}
                                         className={isSelected ? 'bg-app-accent/5 border-l-2 border-app-accent' : ''}
                                         onClick={() => {

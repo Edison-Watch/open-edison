@@ -68,17 +68,35 @@ function getNodeSize(n: NodeDatum): { w: number; h: number } {
     return { w: n.width || base.w, h: n.height || base.h }
 }
 
-function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: number): { nodes: NodeDatum[]; edges: EdgeDatum[] } {
+function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: number, showAIOnly: boolean = false): { nodes: NodeDatum[]; edges: EdgeDatum[] } {
     // Base dimensions match actual card dimensions
     const BASE_W = cardWidth
     const BASE_H = cardHeight
+
+    // Filter flows based on criteria
+    const filteredFlows = flows.filter(flow => {
+        // Filter for AI-only mode
+        if (showAIOnly && flow.is_ai_provider !== 1) {
+            return false
+        }
+
+        // Filter out localhost nodes (IPv4 and IPv6)
+        const isLocalhostSrc = flow.src_ip === '127.0.0.1' || flow.src_ip === '::1' || flow.src_ip.startsWith('127.') || flow.src_ip.startsWith('::1')
+        const isLocalhostDst = flow.dst_ip === '127.0.0.1' || flow.dst_ip === '::1' || flow.dst_ip.startsWith('127.') || flow.dst_ip.startsWith('::1')
+
+        if (isLocalhostSrc || isLocalhostDst) {
+            return false
+        }
+
+        return true
+    })
 
     // Group flows by source and destination
     const sourceGroups = new Map<string, FlowData[]>()
     const providerGroups = new Map<string, FlowData[]>()
     const externalGroups = new Map<string, FlowData[]>()
 
-    flows.forEach(flow => {
+    filteredFlows.forEach(flow => {
         const srcKey = flow.src_ip
         const dstKey = flow.dst_ip
 
@@ -118,18 +136,18 @@ function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: num
     }
 
     // Debug firewall positioning
-    console.log('Firewall debug:', {
-        BASE_W, BASE_H,
-        firewallX: firewallNode.x,
-        firewallY: firewallNode.y,
-        centerX: BASE_W / 2,
-        centerY: BASE_H / 2,
-        nodeWidth: 120,
-        nodeHeight: 50,
-        expectedCenterX: BASE_W / 2 - 60,
-        expectedCenterY: BASE_H / 2 - 25,
-        cardDimensions: { width: cardWidth, height: cardHeight }
-    })
+    // console.log('Firewall debug:', {
+    //     BASE_W, BASE_H,
+    //     firewallX: firewallNode.x,
+    //     firewallY: firewallNode.y,
+    //     centerX: BASE_W / 2,
+    //     centerY: BASE_H / 2,
+    //     nodeWidth: 120,
+    //     nodeHeight: 50,
+    //     expectedCenterX: BASE_W / 2 - 60,
+    //     expectedCenterY: BASE_H / 2 - 25,
+    //     cardDimensions: { width: cardWidth, height: cardHeight }
+    // })
 
     nodes.push(firewallNode)
 
@@ -142,21 +160,21 @@ function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: num
     const leftStartY = BASE_H * 0.15 // More margin from top
 
     // Debug node sizing and layout calculations
-    console.log('Node sizing debug:', {
-        firewallSize: getNodeSize(firewallNode),
-        sourceSize: sourceEntries.length > 0 ? getNodeSize({ type: 'source' } as NodeDatum) : null
-    })
+    // console.log('Node sizing debug:', {
+    //     firewallSize: getNodeSize(firewallNode),
+    //     sourceSize: sourceEntries.length > 0 ? getNodeSize({ type: 'source' } as NodeDatum) : null
+    // })
 
-    console.log('Layout debug:', {
-        nodeSpacing,
-        leftStartX,
-        leftStartY,
-        rightStartX: centerX + (BASE_W * 0.25),
-        rightStartY: BASE_H * 0.15,
-        centerX,
-        leftTargetZone: centerX - (BASE_W * 0.25),
-        rightTargetZone: centerX + (BASE_W * 0.25)
-    })
+    // console.log('Layout debug:', {
+    //     nodeSpacing,
+    //     leftStartX,
+    //     leftStartY,
+    //     rightStartX: centerX + (BASE_W * 0.25),
+    //     rightStartY: BASE_H * 0.15,
+    //     centerX,
+    //     leftTargetZone: centerX - (BASE_W * 0.25),
+    //     rightTargetZone: centerX + (BASE_W * 0.25)
+    // })
 
     sourceEntries.forEach(([srcKey, sourceFlows], index) => {
         const row = Math.floor(index / colsPerRow)
@@ -213,10 +231,10 @@ function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: num
     const rightStartY = BASE_H * 0.15 // More margin from top
 
     // Debug provider sizing
-    console.log('Provider sizing debug:', {
-        providerSize: providerEntries.length > 0 ? getNodeSize({ type: 'provider' } as NodeDatum) : null,
-        providerCount: providerEntries.length
-    })
+    // console.log('Provider sizing debug:', {
+    //     providerSize: providerEntries.length > 0 ? getNodeSize({ type: 'provider' } as NodeDatum) : null,
+    //     providerCount: providerEntries.length
+    // })
 
     providerEntries.forEach(([providerId, providerFlows], index) => {
         const row = Math.floor(index / colsPerRow)
@@ -347,7 +365,7 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
     const [hoverNode, setHoverNode] = useState<string | null>(null)
     const [hoverEdge, setHoverEdge] = useState<string | null>(null)
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
-    const [showAIOnly, setShowAIOnly] = useState(false)
+    const [showAIOnly, setShowAIOnly] = useState(true) // Default to AI-only mode
     const [running, setRunning] = useState(true)
     const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
@@ -355,7 +373,7 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
     const BASE_H = 600
     const [dims, setDims] = useState<{ w: number; h: number }>({ w: BASE_W, h: BASE_H })
 
-    const { nodes, edges } = useMemo(() => buildNetworkGraph(flows, dims.w, dims.h), [flows, dims.w, dims.h])
+    const { nodes, edges } = useMemo(() => buildNetworkGraph(flows, dims.w, dims.h, showAIOnly), [flows, dims.w, dims.h, showAIOnly])
 
     // Call callback when selectedNode changes
     useEffect(() => {
@@ -429,12 +447,6 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
 
                 if (isFixed) {
                     // Fixed nodes use exact original position without scaling or jitter
-                    console.log('Initializing fixed node:', {
-                        nodeId: n.id,
-                        originalX: n.x,
-                        originalY: n.y,
-                        nodeSize: { w, h }
-                    })
                     m.set(n.id, {
                         id: n.id,
                         x: n.x,
@@ -661,8 +673,34 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
         }
     }, [drag, nodes, dims.w, dims.h])
 
-    const visibleEdges = edges.filter(e => !showAIOnly || e.isAIProvider)
-    const visibleNodes = nodes.filter(n => !showAIOnly || n.type === 'firewall' || n.type === 'provider')
+    // For AI-only mode, show AI provider edges AND edges from sources that contacted AI providers
+    const visibleEdges = edges.filter(e => {
+        if (!showAIOnly) return true
+        if (e.isAIProvider) return true
+
+        // Also show edges from sources to firewall if the source contacted AI providers
+        if (e.from !== 'firewall' && e.to === 'firewall') {
+            const sourceNode = nodes.find(n => n.id === e.from)
+            if (sourceNode && sourceNode.flows) {
+                return sourceNode.flows.some(flow => flow.is_ai_provider === 1)
+            }
+        }
+
+        return false
+    })
+
+    // For AI-only mode, show firewall, AI providers, AND sources that contacted AI providers
+    const visibleNodes = nodes.filter(n => {
+        if (!showAIOnly) return true
+        if (n.type === 'firewall' || n.type === 'provider') return true
+
+        // For source nodes, check if they have any flows to AI providers
+        if (n.type === 'source' && n.flows) {
+            return n.flows.some(flow => flow.is_ai_provider === 1)
+        }
+
+        return false
+    })
 
     function edgeOpacity(e: EdgeDatum): number {
         // Priority: selectedNode > hoverNode > hoverEdge > default
@@ -792,16 +830,16 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
         svgBoundsRef.current = { w: viewW, h: viewH }
 
         // Debug rendering dimensions
-        console.log('Rendering debug:', {
-            viewW, viewH,
-            dims,
-            BASE_W, BASE_H,
-            scaleX: viewW / BASE_W,
-            scaleY: viewH / BASE_H,
-            svgViewBox: `0 0 ${viewW} ${viewH}`,
-            cardContainer: containerRef.current?.getBoundingClientRect(),
-            svgElement: containerRef.current?.querySelector('svg')?.getBoundingClientRect()
-        })
+        // console.log('Rendering debug:', {
+        //     viewW, viewH,
+        //     dims,
+        //     BASE_W, BASE_H,
+        //     scaleX: viewW / BASE_W,
+        //     scaleY: viewH / BASE_H,
+        //     svgViewBox: `0 0 ${viewW} ${viewH}`,
+        //     cardContainer: containerRef.current?.getBoundingClientRect(),
+        //     svgElement: containerRef.current?.querySelector('svg')?.getBoundingClientRect()
+        // })
     }, [viewW, viewH])
 
     return (
@@ -907,22 +945,22 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                         const ny = (sim?.y ?? n.y)
 
                         // Debug node rendering for firewall
-                        if (n.id === 'firewall') {
-                            console.log('Firewall rendering debug:', {
-                                nodeId: n.id,
-                                originalX: n.x,
-                                originalY: n.y,
-                                simX: sim?.x,
-                                simY: sim?.y,
-                                renderedX: nx,
-                                renderedY: ny,
-                                nodeSize: { w, h },
-                                centerX: nx + w / 2,
-                                centerY: ny + h / 2,
-                                viewW, viewH,
-                                isFixed: sim?.isFixed
-                            })
-                        }
+                        // if (n.id === 'firewall') {
+                        //     console.log('Firewall rendering debug:', {
+                        //         nodeId: n.id,
+                        //         originalX: n.x,
+                        //         originalY: n.y,
+                        //         simX: sim?.x,
+                        //         simY: sim?.y,
+                        //         renderedX: nx,
+                        //         renderedY: ny,
+                        //         nodeSize: { w, h },
+                        //         centerX: nx + w / 2,
+                        //         centerY: ny + h / 2,
+                        //         viewW, viewH,
+                        //         isFixed: sim?.isFixed
+                        //     })
+                        // }
 
                         return (
                             <g key={n.id} opacity={op}
