@@ -29,6 +29,9 @@ export function DateRangeSlider({
     onTimeRangeMsChange,
     nowMs,
     itemLabel = 'sessions',
+    value: externalValue,
+    onChange: onExternalChange,
+    flowsData,
 }: {
     sessions: (Session & { day?: string })[]
     startTimeLabel: string
@@ -39,6 +42,9 @@ export function DateRangeSlider({
     onTimeRangeMsChange?: (startMs: number, endMs: number) => void
     nowMs?: number
     itemLabel?: string
+    value?: [number, number]
+    onChange?: (value: [number, number]) => void
+    flowsData?: Array<{ timestamp: string; is_ai_provider: number }> // New prop for flow data
 }) {
     // Quick ranges dropdown (declare hooks before any early return to keep hook order stable)
     const [open, setOpen] = useState(false)
@@ -47,8 +53,13 @@ export function DateRangeSlider({
         // Also emit ms range covering full selected days
         try {
             const sTs = new Date(`${fromIso}T00:00:00`).getTime()
-            const eTs = new Date(`${toIso}T23:59:59`).getTime()
-            if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) onTimeRangeMsChange?.(Math.min(sTs, eTs), Math.max(sTs, eTs))
+            const eTs = new Date(`${toIso}T23:59:59.999`).getTime() // Use end of day instead of 23:59:59
+            if (!Number.isNaN(sTs) && !Number.isNaN(eTs)) {
+                const newValue = [Math.min(sTs, eTs), Math.max(sTs, eTs)] as [number, number]
+                setValue(newValue)
+                onExternalChange?.(newValue) // Call external onChange for controlled components
+                onTimeRangeMsChange?.(Math.min(sTs, eTs), Math.max(sTs, eTs))
+            }
         } catch { /* noop */ }
         setOpen(false)
     }
@@ -88,17 +99,26 @@ export function DateRangeSlider({
         return [minV, maxV]
     }, [sessions, nowMs])
 
-    const [value, setValue] = useState<[number, number]>(() => [minTs, maxTs])
+    const [value, setValue] = useState<[number, number]>(() => externalValue || [minTs, maxTs])
     const latestMinMaxRef = useRef<[number, number]>([minTs, maxTs])
     useEffect(() => { latestMinMaxRef.current = [minTs, maxTs] }, [minTs, maxTs])
 
     // Live anchoring: when a live quick-range is selected, keep right edge at now
     const [liveWindowMs, setLiveWindowMs] = useState<number | null>(null)
+    const [isManuallyDragging, setIsManuallyDragging] = useState(false)
+
+    // Sync external value with internal state
     useEffect(() => {
-        if (liveWindowMs == null) return
+        if (externalValue && !isManuallyDragging && (externalValue[0] !== value[0] || externalValue[1] !== value[1])) {
+            setValue(externalValue)
+        }
+    }, [externalValue, isManuallyDragging])
+    useEffect(() => {
+        if (liveWindowMs == null || isManuallyDragging) return
         const now = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : Date.now()
-        const a = Math.max(minTs, now - liveWindowMs)
-        const b = Math.min(maxTs, now)
+        // For live ranges, don't clamp to data bounds - allow any range up to now
+        const a = now - liveWindowMs
+        const b = now
         if (value[0] !== a || value[1] !== b) {
             setValue([a, b])
             const sa = new Date(a).toISOString().slice(0, 10)
@@ -106,7 +126,7 @@ export function DateRangeSlider({
             onTimeRangeMsChange?.(a, b)
             if (sa && sb) onTimeRangeChange(sa, sb)
         }
-    }, [nowMs, liveWindowMs, minTs, maxTs])
+    }, [nowMs, liveWindowMs, isManuallyDragging])
 
     // Clamp current value to new bounds if sessions update or now advances
     // DISABLED: This was causing handles to snap and not be draggable
@@ -151,34 +171,69 @@ export function DateRangeSlider({
         return out
     }, [days, minTs, maxTs])
 
-    // Histogram of sessions per day for inline context
+    // Histogram of sessions/flows per day for inline context
     const histogram = useMemo(() => {
         const counts = new Map<string, number>()
-        for (const s of sessions) {
-            const d = (s as any).day || dayFromSession(s)
-            if (!d) continue
-            counts.set(d, (counts.get(d) ?? 0) + 1)
+
+        if (flowsData) {
+            // Use flows data for histogram
+            for (const flow of flowsData) {
+                const day = new Date(Date.parse(flow.timestamp)).toISOString().slice(0, 10)
+                counts.set(day, (counts.get(day) ?? 0) + 1)
+            }
+        } else {
+            // Use sessions data for histogram
+            for (const s of sessions) {
+                const d = (s as any).day || dayFromSession(s)
+                if (!d) continue
+                counts.set(d, (counts.get(d) ?? 0) + 1)
+            }
         }
+
         const labels = days
         const data = labels.map((d) => counts.get(d) ?? 0)
         return { labels, data }
-    }, [sessions, days])
+    }, [sessions, flowsData, days])
 
     const sparkRef = useRef<any>(null)
 
-    // Count sessions in current slider range (by ms value)
+    // Count sessions/flows in current slider range (by ms value)
     const inRangeCount = useMemo(() => {
         const [a, b] = value
         let count = 0
-        for (const s of sessions) {
-            const iso = (s as any).created_at || s.tool_calls?.[0]?.timestamp
-            if (!iso) continue
-            const t = Date.parse(String(iso))
-            if (Number.isNaN(t)) continue
-            if (t >= a && t <= b) count += 1
+
+        if (flowsData) {
+            // Count flows when flowsData is provided
+            for (const flow of flowsData) {
+                const t = Date.parse(flow.timestamp)
+                if (Number.isNaN(t)) continue
+                if (t >= a && t <= b) count += 1
+            }
+        } else {
+            // Count sessions when flowsData is not provided
+            for (const s of sessions) {
+                const iso = (s as any).created_at || s.tool_calls?.[0]?.timestamp
+                if (!iso) continue
+                const t = Date.parse(String(iso))
+                if (Number.isNaN(t)) continue
+                if (t >= a && t <= b) count += 1
+            }
         }
         return count
-    }, [value, sessions])
+    }, [value, sessions, flowsData])
+
+    // Count AI flows in current slider range (only when flowsData is provided)
+    const inRangeAICount = useMemo(() => {
+        if (!flowsData) return 0
+        const [a, b] = value
+        let count = 0
+        for (const flow of flowsData) {
+            const t = Date.parse(flow.timestamp)
+            if (Number.isNaN(t)) continue
+            if (t >= a && t <= b && flow.is_ai_provider === 1) count += 1
+        }
+        return count
+    }, [value, flowsData])
 
     const selectionDurationMs = useMemo(() => {
         const [a, b] = value
@@ -255,7 +310,14 @@ export function DateRangeSlider({
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 text-xs text-app-muted">
                     <div>Date range (drag handles or bar)</div>
-                    <span className="badge">{inRangeCount} {itemLabel}</span>
+                    {flowsData ? (
+                        <>
+                            <span className="badge">{inRangeCount} flows</span>
+                            <span className="badge">{inRangeAICount} AI flows</span>
+                        </>
+                    ) : (
+                        <span className="badge">{inRangeCount} {itemLabel}</span>
+                    )}
                     <span className="badge">{selectionDurationLabel}</span>
                 </div>
                 <div className="relative">
@@ -276,11 +338,14 @@ export function DateRangeSlider({
                                     return days[0]!
                                 }
                                 const activateLive = (windowMs: number) => {
-                                    const now = (typeof nowMs === 'number' && Number.isFinite(nowMs)) ? nowMs : Date.now()
+                                    const now = Date.now() // Always use current time, not stale nowMs
                                     const a = now - windowMs
                                     const b = now
-                                    setLiveWindowMs(windowMs)
-                                    setValue([a, b] as any)
+                                    // Don't set up live window - just set a static range
+                                    setLiveWindowMs(null)
+                                    const newValue = [a, b] as [number, number]
+                                    setValue(newValue)
+                                    onExternalChange?.(newValue) // Call external onChange for controlled components
                                     onTimeRangeMsChange?.(a, b)
                                     const sa = new Date(a).toISOString().slice(0, 10)
                                     const sb = new Date(b).toISOString().slice(0, 10)
@@ -293,6 +358,10 @@ export function DateRangeSlider({
                                         <button className="badge" onClick={() => activateLive(5 * 60_000)}>Last 5 min</button>
                                         <button className="badge" onClick={() => activateLive(30 * 60_000)}>Last 30 min</button>
                                         <button className="badge" onClick={() => activateLive(60 * 60_000)}>Last 1 hour</button>
+                                        <button className="badge" onClick={() => activateLive(6 * 60 * 60_000)}>Last 6 hours</button>
+                                        <button className="badge" onClick={() => activateLive(24 * 60 * 60_000)}>Last 24 hours</button>
+                                        <button className="badge" onClick={() => activateLive(7 * 24 * 60 * 60_000)}>Last 7 days</button>
+                                        <button className="badge" onClick={() => activateLive(30 * 24 * 60 * 60_000)}>Last 30 days</button>
                                         <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(todayIso); applyRange(s, maxDay || s) }}>Today</button>
                                         <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(lastNDays(7)); applyRange(s, maxDay || s) }}>This week</button>
                                         <button className="badge" onClick={() => { setLiveWindowMs(null); const s = clampStart(lastNDays(30)); applyRange(s, maxDay || s) }}>This month</button>
@@ -307,24 +376,33 @@ export function DateRangeSlider({
             </div>
             <div className="px-2">
                 <div className="mb-3" style={{ height: 80, overflow: 'hidden' }}>
-                    <Line ref={sparkRef as any} height={60} data={{
-                        labels: histogram.labels,
-                        datasets: [{ label: 'sessions', data: histogram.data, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.2)', tension: 0.3, pointRadius: 0 }],
-                    }} options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
-                        interaction: { mode: 'index', intersect: false },
-                        onHover: (_evt: any, elements: any[]) => {
-                            try {
-                                const idx = elements?.[0]?.index
-                                if (typeof idx === 'number') onHoverTimeChange?.(histogram.labels[idx]!)
-                            } catch { /* noop */ }
-                        },
-                        // @ts-expect-error allow custom callback property via plugin typing hole
-                        onLeave: () => onHoverTimeChange?.(null),
-                        scales: { x: { offset: false, bounds: 'ticks', alignToPixels: true, ticks: { color: '#a0a7b4', autoSkip: true, maxTicksLimit: 8, align: 'inner' as any, callback: (_v: any, i: number) => (i === 0 ? '' : undefined) as any } }, y: { ticks: { color: '#a0a7b4' } } },
-                    }} />
+                    {histogram.labels.length > 0 ? (
+                        <Line ref={sparkRef as any} height={60} data={{
+                            labels: histogram.labels,
+                            datasets: [{ label: flowsData ? 'flows' : 'sessions', data: histogram.data, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.2)', tension: 0.3, pointRadius: 0 }],
+                        }} options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+                            interaction: { mode: 'index', intersect: false },
+                            onHover: (_evt: any, elements: any[]) => {
+                                try {
+                                    const idx = elements?.[0]?.index
+                                    if (typeof idx === 'number' && idx >= 0 && idx < histogram.labels.length) {
+                                        const label = histogram.labels[idx]
+                                        if (label) onHoverTimeChange?.(label)
+                                    }
+                                } catch { /* noop */ }
+                            },
+                            // @ts-expect-error allow custom callback property via plugin typing hole
+                            onLeave: () => onHoverTimeChange?.(null),
+                            scales: { x: { offset: false, bounds: 'ticks', alignToPixels: true, ticks: { color: '#a0a7b4', autoSkip: true, maxTicksLimit: 8, align: 'inner' as any, callback: (_v: any, i: number) => (i === 0 ? '' : undefined) as any } }, y: { ticks: { color: '#a0a7b4' } } },
+                        }} />
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-app-muted text-sm">
+                            No data available
+                        </div>
+                    )}
                 </div>
                 <Slider
                     style={{ overflow: 'hidden' }}
@@ -363,8 +441,12 @@ export function DateRangeSlider({
                         const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
                         // Just set the value directly without any constraints or snapping
                         setValue(v)
+                        setIsManuallyDragging(true) // Mark as manually dragging
 
                         if (liveWindowMs != null) setLiveWindowMs(null)
+
+                        // Call external onChange if provided
+                        onExternalChange?.(v)
 
                         // Convert positions to timestamps and emit
                         const sa = new Date(v[0]).toISOString().slice(0, 10)
@@ -376,8 +458,12 @@ export function DateRangeSlider({
                         const v = (Array.isArray(val) ? val : [minTs, minTs]) as [number, number]
                         // Just set the value directly without any constraints or snapping
                         setValue(v)
+                        setIsManuallyDragging(false) // Clear manual dragging flag
 
                         if (liveWindowMs != null) setLiveWindowMs(null)
+
+                        // Call external onChange if provided
+                        onExternalChange?.(v)
 
                         // Convert positions to timestamps and emit
                         const sa = new Date(v[0]).toISOString().slice(0, 10)

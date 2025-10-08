@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import initSqlJs from 'sql.js'
 import type { SessionsResponse, Session } from './types'
 
@@ -160,17 +160,11 @@ export function useFlows(dbPath: string, startTimeMs?: number, endTimeMs?: numbe
 
   useEffect(() => {
     let active = true
-    let refreshInterval: NodeJS.Timeout | null = null
-    let isInitialLoad = true
 
     const fetchFlows = async () => {
       if (!active) return
 
-      // Only show loading on initial load, not on refreshes
-      if (isInitialLoad) {
-        setLoading(true)
-        isInitialLoad = false
-      }
+      setLoading(true)
       setError(null)
       try {
         const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
@@ -273,25 +267,158 @@ export function useFlows(dbPath: string, startTimeMs?: number, endTimeMs?: numbe
       }
     }
 
-    // Initial fetch
+    // Initial fetch only - no auto-refresh
     void fetchFlows()
-
-    // Set up refresh interval every 10 seconds (less disruptive)
-    refreshInterval = setInterval(() => {
-      if (active) {
-        void fetchFlows()
-      }
-    }, 10000)
 
     return () => {
       active = false
-      if (refreshInterval) {
-        clearInterval(refreshInterval)
-      }
     }
   }, [dbPath, startTimeMs, endTimeMs])
 
   return { data, loading, error }
+}
+
+export function useFlowsBackground(dbPath: string, startTimeMs?: number, endTimeMs?: number) {
+  const [data, setData] = useState<FlowsResponse | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isInitialLoadRef = useRef(true)
+  const dataRef = useRef<FlowsResponse | null>(null)
+
+  const fetchFlows = useCallback(async () => {
+    setError(null)
+    try {
+      const SQL = await initSqlJs({ locateFile: (f: string) => `https://sql.js.org/dist/${f}` })
+      // Get API key from localStorage (for autonomous operation), global variable, or URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlApiKey = urlParams.get('api_key');
+      const globalApiKey = (window as any).OPEN_EDISON_API_KEY;
+      const storedKey = (() => {
+        try {
+          return localStorage.getItem('api_key') || globalApiKey || urlApiKey || ''
+        } catch {
+          return globalApiKey || urlApiKey || ''
+        }
+      })()
+      const headers: Record<string, string> = {}
+      if (storedKey) {
+        headers['Authorization'] = `Bearer ${storedKey}`
+      }
+
+      // Add timestamp to prevent caching
+      const timestamp = Date.now()
+      const fileResp = await fetch(`/@fs${dbPath}?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          ...headers,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
+      if (!fileResp.ok) throw new Error(`Cannot read flows DB at ${dbPath}`)
+      const buf = new Uint8Array(await fileResp.arrayBuffer())
+      const db = new SQL.Database(buf as any as BufferSource)
+
+      // Query flows data with AI provider detection and time filtering
+      let query = `
+        SELECT run_id, timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+               bidirectional_packets, src2dst_packets, dst2src_packets,
+               bidirectional_bytes, src2dst_bytes, dst2src_bytes,
+               bidirectional_duration_ms, bidirectional_min_ps, bidirectional_max_ps, bidirectional_mean_ps,
+               is_ai_provider, provider_id, is_api_request, correlated_dns_domain
+        FROM flows 
+      `
+
+      // Add time filtering if provided
+      const conditions = []
+      if (startTimeMs !== undefined) {
+        conditions.push(`strftime('%s', timestamp) * 1000 >= ${startTimeMs}`)
+      }
+      if (endTimeMs !== undefined) {
+        conditions.push(`strftime('%s', timestamp) * 1000 <= ${endTimeMs}`)
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`
+      }
+
+      query += ` ORDER BY timestamp DESC LIMIT 1000`
+      const result = db.exec(query)
+      const flows: FlowData[] = []
+      if (result.length > 0) {
+        const cols = result[0].columns
+        const rows = result[0].values
+        for (const row of rows) {
+          const record: any = {}
+          cols.forEach((c: string, i: number) => (record[c] = row[i]))
+          flows.push({
+            run_id: String(record.run_id),
+            timestamp: String(record.timestamp),
+            src_ip: String(record.src_ip),
+            dst_ip: String(record.dst_ip),
+            src_port: Number(record.src_port),
+            dst_port: Number(record.dst_port),
+            protocol: String(record.protocol),
+            bidirectional_packets: Number(record.bidirectional_packets),
+            src2dst_packets: Number(record.src2dst_packets),
+            dst2src_packets: Number(record.dst2src_packets),
+            bidirectional_bytes: Number(record.bidirectional_bytes),
+            src2dst_bytes: Number(record.dst2src_bytes),
+            dst2src_bytes: Number(record.dst2src_bytes),
+            bidirectional_duration_ms: Number(record.bidirectional_duration_ms),
+            bidirectional_min_ps: Number(record.bidirectional_min_ps),
+            bidirectional_max_ps: Number(record.bidirectional_max_ps),
+            bidirectional_mean_ps: Number(record.bidirectional_mean_ps),
+            is_ai_provider: Number(record.is_ai_provider),
+            provider_id: record.provider_id || null,
+            is_api_request: Number(record.is_api_request),
+            correlated_dns_domain: record.correlated_dns_domain || null,
+          })
+        }
+      }
+      
+      const newData = { flows }
+      
+      // Only update state if data has actually changed
+      const dataChanged = !dataRef.current || 
+        dataRef.current.flows.length !== newData.flows.length ||
+        JSON.stringify(dataRef.current.flows) !== JSON.stringify(newData.flows)
+      
+      if (dataChanged) {
+        dataRef.current = newData
+        setData(newData)
+        setLastUpdate(new Date())
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      if (isInitialLoadRef.current) {
+        setLoading(false)
+        isInitialLoadRef.current = false
+      }
+    }
+  }, [dbPath, startTimeMs, endTimeMs])
+
+  useEffect(() => {
+    // Initial fetch
+    void fetchFlows()
+
+    // Set up background refresh every 5 seconds
+    refreshIntervalRef.current = setInterval(() => {
+      void fetchFlows()
+    }, 5000)
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current)
+      }
+    }
+  }, [fetchFlows])
+
+  return { data, loading, error, lastUpdate }
 }
 
 export function useSessions(dbPath: string) {

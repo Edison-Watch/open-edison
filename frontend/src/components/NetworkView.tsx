@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useFlows, useFlowsStatic } from '../hooks'
+import { useFlowsBackground } from '../hooks'
 import { Panel } from './Panel'
 import { NetworkDataflowGraph } from './NetworkDataflowGraph'
 import DateRangeSlider from './DateRangeSlider'
@@ -18,6 +18,37 @@ export function NetworkView() {
     const [rangeMs, setRangeMs] = useState<{ start: number; end: number } | null>(null)
     const [debouncedRangeMs, setDebouncedRangeMs] = useState<{ start: number; end: number } | null>(null)
 
+    // Store the selected time range to persist across reloads
+    const [selectedTimeRange, setSelectedTimeRange] = useState<{ start: number; end: number } | null>(() => {
+        try {
+            const saved = localStorage.getItem('network_selected_time_range')
+            if (saved) {
+                const parsed = JSON.parse(saved)
+                if (parsed && typeof parsed.start === 'number' && typeof parsed.end === 'number') {
+                    return parsed
+                }
+            }
+        } catch {
+            // Ignore localStorage errors
+        }
+        return null
+    })
+
+    // Save selected time range to localStorage
+    useEffect(() => {
+        if (selectedTimeRange) {
+            try {
+                localStorage.setItem('network_selected_time_range', JSON.stringify(selectedTimeRange))
+            } catch {
+                // Ignore localStorage errors
+            }
+        }
+    }, [selectedTimeRange])
+
+    // Get all flows (unfiltered) for DateRangeSlider to show full timeline - same pattern as observability
+    const { data: allData } = useFlowsBackground(`${flowsDbAbsolutePath}`)
+    const allFlows = useMemo(() => allData?.flows ?? [], [allData])
+
     // Debounce the range changes to avoid interrupting dragging
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -27,11 +58,26 @@ export function NetworkView() {
         return () => clearTimeout(timer)
     }, [rangeMs])
 
-    const { data, loading, error } = useFlows(flowsDbAbsolutePath, debouncedRangeMs?.start, debouncedRangeMs?.end)
+    const { data, loading, error } = useFlowsBackground(`${flowsDbAbsolutePath}`, debouncedRangeMs?.start, debouncedRangeMs?.end)
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
     const [selectedFlows, setSelectedFlows] = useState<Set<string>>(new Set())
 
     const flows = useMemo(() => data?.flows ?? [], [data])
+
+    // Create a stable flows reference that only changes when the actual data content changes
+    const stableFlows = useMemo(() => {
+        if (flows.length === 0) return flows
+        // Create a stable reference by sorting and creating a new array only when content changes
+        return [...flows].sort((a, b) => {
+            // Sort by timestamp, then by src_ip, then by dst_ip for consistency
+            const timeA = parseInt(a.timestamp)
+            const timeB = parseInt(b.timestamp)
+            if (timeA !== timeB) return timeB - timeA // Most recent first
+            if (a.src_ip !== b.src_ip) return a.src_ip.localeCompare(b.src_ip)
+            return a.dst_ip.localeCompare(b.dst_ip)
+        })
+    }, [flows.length, flows.map(f => `${f.src_ip}-${f.dst_ip}-${f.timestamp}-${f.is_ai_provider}`).join('|')])
+
 
     // Track last update time
     useEffect(() => {
@@ -40,20 +86,15 @@ export function NetworkView() {
         }
     }, [data])
 
-    // Get all flows (unfiltered) for DateRangeSlider to show full timeline - same pattern as observability
-    const { data: allData } = useFlowsStatic(flowsDbAbsolutePath)
-    const allFlows = useMemo(() => allData?.flows ?? [], [allData])
-
-    // Convert flows to session-like format for DateRangeSlider
-    // Use actual flows data but memoize based on time range to prevent constant resets
+    // Create minimal session data for DateRangeSlider bounds - just for time range calculation
     const sliderData = useMemo(() => {
         if (allFlows.length === 0) {
             // If no flows, create a default range for the last 7 days
             const now = Date.now()
             const weekAgo = now - (7 * 24 * 60 * 60 * 1000)
             return [{
-                session_id: 'default-start',
-                correlation_id: 'default-start',
+                session_id: 'default-range',
+                correlation_id: 'default-range',
                 agent_name: 'Default',
                 tool_calls: [{
                     id: 'default-call',
@@ -66,47 +107,37 @@ export function NetworkView() {
                 created_at: weekAgo.toString(),
                 data_access_summary: {},
                 day: new Date(weekAgo).toISOString().slice(0, 10)
-            }, {
-                session_id: 'default-end',
-                correlation_id: 'default-end',
-                agent_name: 'Default',
-                tool_calls: [{
-                    id: 'default-call-2',
-                    tool_name: 'Default',
-                    parameters: {},
-                    timestamp: now.toString(),
-                    duration_ms: 0,
-                    result: null
-                }],
-                created_at: now.toString(),
-                data_access_summary: {},
-                day: new Date(now).toISOString().slice(0, 10)
             }] as (Session & { day: string })[]
         }
 
-        // Convert actual flows to session format for DateRangeSlider
-        return allFlows.map((flow, index) => ({
-            session_id: `flow-${index}`,
-            correlation_id: `flow-${index}`,
-            agent_name: 'Network Flow',
+        // Use actual flow timestamps to create bounds
+        const timestamps = allFlows.map(f => Date.parse(f.timestamp)).filter(t => !isNaN(t))
+        if (timestamps.length === 0) return []
+
+        const minTs = Math.min(...timestamps)
+
+        return [{
+            session_id: 'flow-bounds',
+            correlation_id: 'flow-bounds',
+            agent_name: 'Flow Bounds',
             tool_calls: [{
-                id: `flow-${index}-call`,
-                tool_name: flow.protocol,
+                id: 'bounds-call',
+                tool_name: 'Bounds',
                 parameters: {},
-                timestamp: flow.timestamp,
-                duration_ms: flow.bidirectional_duration_ms,
+                timestamp: minTs.toString(),
+                duration_ms: 0,
                 result: null
             }],
-            created_at: flow.timestamp,
+            created_at: minTs.toString(),
             data_access_summary: {},
-            day: new Date(parseInt(flow.timestamp)).toISOString().slice(0, 10)
-        } as Session & { day: string }))
-    }, [allFlows.length, allFlows.length > 0 ? Math.min(...allFlows.map(f => parseInt(f.timestamp)).filter(t => !isNaN(t))) : 0, allFlows.length > 0 ? Math.max(...allFlows.map(f => parseInt(f.timestamp)).filter(t => !isNaN(t))) : 0]) // Depend on time range bounds, not individual flows
+            day: new Date(minTs).toISOString().slice(0, 10)
+        }] as (Session & { day: string })[]
+    }, [allFlows.length]) // Only depend on data availability
 
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1)
-    const flowsPerPage = 50
+    const [flowsPerPage, setFlowsPerPage] = useState(25)
     const totalPages = Math.ceil(flows.length / flowsPerPage)
 
     const paginatedFlows = useMemo(() => {
@@ -119,12 +150,21 @@ export function NetworkView() {
         setCurrentPage(1)
     }, [flows.length])
 
-    // Compute statistics
+    // Compute statistics using the same dataset and filtering as DateRangeSlider
     const stats = useMemo(() => {
-        const totalFlows = flows.length
-        const aiFlows = flows.filter(f => f.is_ai_provider === 1)
-        const apiRequests = flows.filter(f => f.is_api_request === 1)
-        const totalBytes = flows.reduce((sum, f) => sum + f.bidirectional_bytes, 0)
+        // Use allFlows and filter by the current slider range, just like DateRangeSlider does
+        const [a, b] = selectedTimeRange ? [selectedTimeRange.start, selectedTimeRange.end] : [0, Date.now()]
+        const filteredFlows = allFlows.filter(flow => {
+            const t = Date.parse(flow.timestamp)
+            if (Number.isNaN(t)) return false
+            return t >= a && t <= b
+        })
+
+        const totalFlows = filteredFlows.length
+        const aiFlows = filteredFlows.filter(f => f.is_ai_provider === 1)
+        // Treat AI provider flows as API requests since they represent API calls to AI services
+        const apiRequests = filteredFlows.filter(f => f.is_api_request === 1 || f.is_ai_provider === 1)
+        const totalBytes = filteredFlows.reduce((sum, f) => sum + f.bidirectional_bytes, 0)
         const aiBytes = aiFlows.reduce((sum, f) => sum + f.bidirectional_bytes, 0)
 
         // Provider breakdown
@@ -134,13 +174,14 @@ export function NetworkView() {
             const existing = providerStats.get(provider) || { count: 0, bytes: 0, apiRequests: 0 }
             existing.count += 1
             existing.bytes += flow.bidirectional_bytes
-            if (flow.is_api_request === 1) existing.apiRequests += 1
+            // Count AI provider flows as API requests
+            if (flow.is_api_request === 1 || flow.is_ai_provider === 1) existing.apiRequests += 1
             providerStats.set(provider, existing)
         })
 
         // Protocol breakdown
         const protocolStats = new Map<string, { count: number; bytes: number }>()
-        flows.forEach(flow => {
+        filteredFlows.forEach(flow => {
             const proto = flow.protocol
             const existing = protocolStats.get(proto) || { count: 0, bytes: 0 }
             existing.count += 1
@@ -163,7 +204,7 @@ export function NetworkView() {
                 ...stats
             })).sort((a, b) => b.bytes - a.bytes)
         }
-    }, [flows])
+    }, [allFlows, selectedTimeRange])
 
     const formatBytes = (bytes: number) => {
         if (bytes === 0) return '0 B'
@@ -231,8 +272,19 @@ export function NetworkView() {
                 startTimeLabel={startDay}
                 endTimeLabel={endDay}
                 onTimeRangeChange={(s: string, e: string) => { setStartDay(s); setEndDay(e) }}
-                onTimeRangeMsChange={(s, e) => setRangeMs({ start: s, end: e })}
+                onTimeRangeMsChange={(s, e) => {
+                    const newRange = { start: s, end: e }
+                    setRangeMs(newRange)
+                    setSelectedTimeRange(newRange) // Store the selected range
+                }}
                 itemLabel="flows"
+                value={selectedTimeRange ? [selectedTimeRange.start, selectedTimeRange.end] : undefined}
+                onChange={(value) => {
+                    const newRange = { start: value[0], end: value[1] }
+                    setSelectedTimeRange(newRange)
+                    setRangeMs(newRange)
+                }}
+                flowsData={allFlows.map(f => ({ timestamp: f.timestamp, is_ai_provider: f.is_ai_provider }))}
             />
 
             {/* Overview Stats */}
@@ -381,16 +433,21 @@ export function NetworkView() {
 
             {/* Network Dataflow Graph */}
             <NetworkDataflowGraph
-                flows={flows}
+                flows={stableFlows}
                 onSelectedFlowsChange={setSelectedFlows}
             />
 
             {/* Recent API Requests */}
             <Panel title="Recent API Requests" subtitle="Latest HTTPS requests to AI providers">
-                {flows.filter(f => f.is_api_request === 1).length > 0 ? (
+                {stats.apiRequests > 0 ? (
                     <div className="space-y-2">
-                        {flows
-                            .filter(f => f.is_api_request === 1)
+                        {allFlows
+                            .filter(flow => {
+                                const t = Date.parse(flow.timestamp)
+                                if (Number.isNaN(t)) return false
+                                const [a, b] = selectedTimeRange ? [selectedTimeRange.start, selectedTimeRange.end] : [0, Date.now()]
+                                return t >= a && t <= b && (flow.is_api_request === 1 || flow.is_ai_provider === 1)
+                            })
                             .slice(0, 10)
                             .map((flow, index) => (
                                 <div key={index} className="flex items-center justify-between p-2 bg-app-bg-secondary rounded text-sm">
@@ -423,10 +480,26 @@ export function NetworkView() {
             </Panel>
 
             {/* All Flows Table */}
-            <Panel title="All Network Flows" subtitle="Complete flow data from nfstream">
-                <div className="overflow-x-auto">
+            <Panel title="All Network Flows" subtitle="Complete flow data from nfstream" heightRem={32}>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-semibold">Network Flows</div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-app-muted">Per page:</span>
+                        <select
+                            className="button text-xs"
+                            value={flowsPerPage}
+                            onChange={(e) => setFlowsPerPage(Number(e.target.value))}
+                        >
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                     <table className="table w-full text-sm">
-                        <thead>
+                        <thead className="sticky top-0 bg-app-bg z-10">
                             <tr className="border-b border-app-border">
                                 <th className="px-4 py-3 text-left font-semibold">Time</th>
                                 <th className="px-4 py-3 text-left font-semibold">Protocol</th>
@@ -504,24 +577,24 @@ export function NetworkView() {
                         </tbody>
                     </table>
                 </div>
-                <div className="flex items-center justify-between mt-4 px-4">
-                    <div className="text-sm text-app-muted">
+                <div className="flex items-center justify-between mt-3">
+                    <div className="text-xs text-app-muted">
                         Showing {Math.min((currentPage - 1) * flowsPerPage + 1, flows.length)}-{Math.min(currentPage * flowsPerPage, flows.length)} of {flows.length} flows
                     </div>
                     {totalPages > 1 && (
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             <button
-                                className="button text-sm px-3 py-1"
+                                className="button text-xs"
                                 disabled={currentPage === 1}
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             >
                                 Previous
                             </button>
-                            <span className="text-sm text-app-muted">
+                            <span className="text-xs text-app-muted">
                                 Page {currentPage} of {totalPages}
                             </span>
                             <button
-                                className="button text-sm px-3 py-1"
+                                className="button text-xs"
                                 disabled={currentPage === totalPages}
                                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                             >

@@ -747,13 +747,24 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                 }
             })
 
+            // Check if either endpoint is shadowed (not connected)
+            const fromNode = nodes.find(n => n.id === e.from)
+            const toNode = nodes.find(n => n.id === e.to)
+            const isFromShadowed = fromNode && !connectedNodes.has(fromNode.id)
+            const isToShadowed = toNode && !connectedNodes.has(toNode.id)
+
+            // If either endpoint is shadowed, shadow the edge
+            if (isFromShadowed || isToShadowed) {
+                return 0.05 // Very dim for edges with shadowed endpoints
+            }
+
             // Highlight edges connected to any node in the connected set
             const isConnectedToActive = connectedNodes.has(e.from) || connectedNodes.has(e.to)
             if (!isConnectedToActive) return 0.05 // Very dim for unconnected edges
             return 1 // Full opacity for connected edges
         }
         if (hoverEdge && hoverEdge !== e.id) return 0.2
-        return 1
+        return 0.6 // Base opacity for edges (more subtle)
     }
 
     function nodeOpacity(n: NodeDatum): number {
