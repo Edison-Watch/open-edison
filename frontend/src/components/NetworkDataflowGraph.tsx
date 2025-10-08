@@ -702,6 +702,47 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
         return false
     })
 
+    function getConnectedNodes(activeNode: string): Set<string> {
+        const activeNodeObj = nodes.find(node => node.id === activeNode)
+        if (!activeNodeObj) return new Set([activeNode])
+
+        const connectedNodes = new Set<string>()
+        connectedNodes.add(activeNode) // Always include self
+
+        // Find nodes that share actual flows with the active node
+        const isActiveOnLeft = activeNodeObj.type === 'source'
+
+        nodes.forEach(node => {
+            if (node.id === activeNode) return // Skip self
+
+            // Only consider nodes on the opposite side of the firewall
+            const isCurrentOnLeft = node.type === 'source'
+            const isOppositeSide = isActiveOnLeft !== isCurrentOnLeft
+
+            if (!isOppositeSide) return // Skip nodes on the same side
+
+            // Check if this node shares any flows with the active node
+            const sharedFlows = node.flows?.filter(nodeFlow =>
+                activeNodeObj.flows?.some(activeFlow =>
+                    // Same flow: same source and destination IPs and ports
+                    nodeFlow.src_ip === activeFlow.src_ip &&
+                    nodeFlow.dst_ip === activeFlow.dst_ip &&
+                    nodeFlow.src_port === activeFlow.src_port &&
+                    nodeFlow.dst_port === activeFlow.dst_port
+                )
+            ) || []
+
+            if (sharedFlows.length > 0) {
+                connectedNodes.add(node.id)
+            }
+        })
+
+        // Always include the firewall node since it's part of the path between source and destination nodes
+        connectedNodes.add('firewall')
+
+        return connectedNodes
+    }
+
     function edgeOpacity(e: EdgeDatum): number {
         // Priority: selectedNode > hoverNode > hoverEdge > default
         const activeNode = selectedNode || hoverNode
@@ -716,36 +757,7 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                 return 1 // No special highlighting for firewall hover
             }
 
-            const connectedNodes = new Set<string>()
-            connectedNodes.add(activeNode) // Always include self
-
-            // Find nodes that share actual flows with the active node
-            const isActiveOnLeft = activeNodeObj.type === 'source'
-
-            nodes.forEach(node => {
-                if (node.id === activeNode) return // Skip self
-
-                // Only consider nodes on the opposite side of the firewall
-                const isCurrentOnLeft = node.type === 'source'
-                const isOppositeSide = isActiveOnLeft !== isCurrentOnLeft
-
-                if (!isOppositeSide) return // Skip nodes on the same side
-
-                // Check if this node shares any flows with the active node
-                const sharedFlows = node.flows?.filter(nodeFlow =>
-                    activeNodeObj.flows?.some(activeFlow =>
-                        // Same flow: same source and destination IPs and ports
-                        nodeFlow.src_ip === activeFlow.src_ip &&
-                        nodeFlow.dst_ip === activeFlow.dst_ip &&
-                        nodeFlow.src_port === activeFlow.src_port &&
-                        nodeFlow.dst_port === activeFlow.dst_port
-                    )
-                ) || []
-
-                if (sharedFlows.length > 0) {
-                    connectedNodes.add(node.id)
-                }
-            })
+            const connectedNodes = getConnectedNodes(activeNode)
 
             // Check if either endpoint is shadowed (not connected)
             const fromNode = nodes.find(n => n.id === e.from)
@@ -781,39 +793,11 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                 return 1 // No special highlighting for firewall hover
             }
 
-            const connectedNodes = new Set<string>()
-            connectedNodes.add(activeNode) // Always include self
-
-            // Find nodes that share actual flows with the active node
-            const isActiveOnLeft = activeNodeObj.type === 'source'
-
-            nodes.forEach(node => {
-                if (node.id === activeNode) return // Skip self
-
-                // Only consider nodes on the opposite side of the firewall
-                const isCurrentOnLeft = node.type === 'source'
-                const isOppositeSide = isActiveOnLeft !== isCurrentOnLeft
-
-                if (!isOppositeSide) return // Skip nodes on the same side
-
-                // Check if this node shares any flows with the active node
-                const sharedFlows = node.flows?.filter(nodeFlow =>
-                    activeNodeObj.flows?.some(activeFlow =>
-                        // Same flow: same source and destination IPs and ports
-                        nodeFlow.src_ip === activeFlow.src_ip &&
-                        nodeFlow.dst_ip === activeFlow.dst_ip &&
-                        nodeFlow.src_port === activeFlow.src_port &&
-                        nodeFlow.dst_port === activeFlow.dst_port
-                    )
-                ) || []
-
-                if (sharedFlows.length > 0) {
-                    connectedNodes.add(node.id)
-                }
-            })
+            const connectedNodes = getConnectedNodes(activeNode)
 
             // Only shadow nodes on the opposite side of the firewall that are NOT connected
             const isCurrentOnLeft = n.type === 'source'
+            const isActiveOnLeft = activeNodeObj.type === 'source'
             const isOppositeSide = isActiveOnLeft !== isCurrentOnLeft
 
             // Only shadow if: opposite side AND not connected AND not the active node itself
