@@ -5,6 +5,14 @@ import { NetworkDataflowGraph } from './NetworkDataflowGraph'
 import DateRangeSlider from './DateRangeSlider'
 import type { Session } from '../types'
 
+// Helper function to format IP with hostname
+function formatIpWithHostname(ip: string, hostname: string | null, port: number): string {
+    if (hostname && hostname.trim()) {
+        return `${hostname} (${ip}:${port})`
+    }
+    return `${ip}:${port}`
+}
+
 export function NetworkView() {
     // Use the same path resolution as sessions.db
     const flowsDbRelativePath = '/flows.db'
@@ -545,8 +553,8 @@ export function NetworkView() {
                                                 {flow.protocol}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 font-mono text-sm">{flow.src_ip}:{flow.src_port}</td>
-                                        <td className="px-4 py-3 font-mono text-sm">{flow.dst_ip}:{flow.dst_port}</td>
+                                        <td className="px-4 py-3 font-mono text-sm">{formatIpWithHostname(flow.src_ip, flow.src_hostname, flow.src_port)}</td>
+                                        <td className="px-4 py-3 font-mono text-sm">{formatIpWithHostname(flow.dst_ip, flow.dst_hostname, flow.dst_port)}</td>
                                         <td className="px-4 py-3">
                                             {flow.is_ai_provider === 1 ? (
                                                 <span className="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">

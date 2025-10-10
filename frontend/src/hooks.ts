@@ -6,7 +6,9 @@ export type FlowData = {
   run_id: string
   timestamp: string
   src_ip: string
+  src_hostname: string | null
   dst_ip: string
+  dst_hostname: string | null
   src_port: number
   dst_port: number
   protocol: string
@@ -79,7 +81,7 @@ export function useFlowsStatic(dbPath: string, startTimeMs?: number, endTimeMs?:
 
         // Query flows data with AI provider detection and time filtering
         let query = `
-          SELECT run_id, timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+          SELECT run_id, timestamp, src_ip, src_hostname, dst_ip, dst_hostname, src_port, dst_port, protocol,
                  bidirectional_packets, src2dst_packets, dst2src_packets,
                  bidirectional_bytes, src2dst_bytes, dst2src_bytes,
                  bidirectional_duration_ms, bidirectional_min_ps, bidirectional_max_ps, bidirectional_mean_ps,
@@ -102,6 +104,7 @@ export function useFlowsStatic(dbPath: string, startTimeMs?: number, endTimeMs?:
 
         query += ` ORDER BY timestamp DESC LIMIT 1000`
         const result = db.exec(query)
+        console.log('🔍 hooks.ts: Database query executed, result length:', result.length)
         const flows: FlowData[] = []
         if (result.length > 0) {
           const cols = result[0].columns
@@ -113,7 +116,9 @@ export function useFlowsStatic(dbPath: string, startTimeMs?: number, endTimeMs?:
               run_id: String(record.run_id),
               timestamp: String(record.timestamp),
               src_ip: String(record.src_ip),
+              src_hostname: record.src_hostname && record.src_hostname !== 'null' ? record.src_hostname : null,
               dst_ip: String(record.dst_ip),
+              dst_hostname: record.dst_hostname && record.dst_hostname !== 'null' ? record.dst_hostname : null,
               src_port: Number(record.src_port),
               dst_port: Number(record.dst_port),
               protocol: String(record.protocol),
@@ -204,7 +209,7 @@ export function useFlows(dbPath: string, startTimeMs?: number, endTimeMs?: numbe
 
         // Query flows data with AI provider detection and time filtering
         let query = `
-          SELECT run_id, timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+          SELECT run_id, timestamp, src_ip, src_hostname, dst_ip, dst_hostname, src_port, dst_port, protocol,
                  bidirectional_packets, src2dst_packets, dst2src_packets,
                  bidirectional_bytes, src2dst_bytes, dst2src_bytes,
                  bidirectional_duration_ms, bidirectional_min_ps, bidirectional_max_ps, bidirectional_mean_ps,
@@ -227,6 +232,7 @@ export function useFlows(dbPath: string, startTimeMs?: number, endTimeMs?: numbe
 
         query += ` ORDER BY timestamp DESC LIMIT 1000`
         const result = db.exec(query)
+        console.log('🔍 hooks.ts: Database query executed, result length:', result.length)
         const flows: FlowData[] = []
         if (result.length > 0) {
           const cols = result[0].columns
@@ -238,7 +244,9 @@ export function useFlows(dbPath: string, startTimeMs?: number, endTimeMs?: numbe
               run_id: String(record.run_id),
               timestamp: String(record.timestamp),
               src_ip: String(record.src_ip),
+              src_hostname: record.src_hostname && record.src_hostname !== 'null' ? record.src_hostname : null,
               dst_ip: String(record.dst_ip),
+              dst_hostname: record.dst_hostname && record.dst_hostname !== 'null' ? record.dst_hostname : null,
               src_port: Number(record.src_port),
               dst_port: Number(record.dst_port),
               protocol: String(record.protocol),
@@ -324,12 +332,12 @@ export function useFlowsBackground(dbPath: string, startTimeMs?: number, endTime
 
       // Query flows data with AI provider detection and time filtering
       let query = `
-        SELECT run_id, timestamp, src_ip, dst_ip, src_port, dst_port, protocol,
+        SELECT run_id, timestamp, src_ip, src_hostname, dst_ip, dst_hostname, src_port, dst_port, protocol,
                bidirectional_packets, src2dst_packets, dst2src_packets,
                bidirectional_bytes, src2dst_bytes, dst2src_bytes,
                bidirectional_duration_ms, bidirectional_min_ps, bidirectional_max_ps, bidirectional_mean_ps,
                is_ai_provider, provider_id, is_api_request, correlated_dns_domain
-        FROM flows 
+        FROM flows
       `
 
       // Add time filtering if provided
@@ -358,7 +366,9 @@ export function useFlowsBackground(dbPath: string, startTimeMs?: number, endTime
             run_id: String(record.run_id),
             timestamp: String(record.timestamp),
             src_ip: String(record.src_ip),
+            src_hostname: record.src_hostname && record.src_hostname !== 'null' ? record.src_hostname : null,
             dst_ip: String(record.dst_ip),
+            dst_hostname: record.dst_hostname && record.dst_hostname !== 'null' ? record.dst_hostname : null,
             src_port: Number(record.src_port),
             dst_port: Number(record.dst_port),
             protocol: String(record.protocol),
@@ -366,7 +376,7 @@ export function useFlowsBackground(dbPath: string, startTimeMs?: number, endTime
             src2dst_packets: Number(record.src2dst_packets),
             dst2src_packets: Number(record.dst2src_packets),
             bidirectional_bytes: Number(record.bidirectional_bytes),
-            src2dst_bytes: Number(record.dst2src_bytes),
+            src2dst_bytes: Number(record.src2dst_bytes),
             dst2src_bytes: Number(record.dst2src_bytes),
             bidirectional_duration_ms: Number(record.bidirectional_duration_ms),
             bidirectional_min_ps: Number(record.bidirectional_min_ps),
@@ -379,14 +389,14 @@ export function useFlowsBackground(dbPath: string, startTimeMs?: number, endTime
           })
         }
       }
-      
+
       const newData = { flows }
-      
+
       // Only update state if data has actually changed
-      const dataChanged = !dataRef.current || 
+      const dataChanged = !dataRef.current ||
         dataRef.current.flows.length !== newData.flows.length ||
         JSON.stringify(dataRef.current.flows) !== JSON.stringify(newData.flows)
-      
+
       if (dataChanged) {
         dataRef.current = newData
         setData(newData)

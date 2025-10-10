@@ -666,7 +666,7 @@ export function App(): React.JSX.Element {
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
                         <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'network' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('network')}>Network</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'network' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('network')}>Network</button>
                     </div>
                     {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
                     {!(window as any).__ELECTRON_EMBED__ && (new URLSearchParams(location.search).get('embed') !== 'electron') && (

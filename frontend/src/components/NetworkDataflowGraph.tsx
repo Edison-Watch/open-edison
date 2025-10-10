@@ -36,6 +36,64 @@ const PROTOCOL_COLORS: Record<string, string> = {
     'UDP': '#6b7280',
 }
 
+function formatHostname(ip: string, hostname: string | null): string {
+    if (hostname && hostname.trim()) {
+        return hostname
+    }
+    return ip
+}
+
+function splitTextIntoLines(text: string, maxLength: number = 10): string[] {
+    if (text.length <= maxLength) return [text]
+
+    // Try to split at natural break points (dots, hyphens)
+    const breakPoints = ['.', '-', '_']
+    let bestSplit = -1
+    let bestDistance = Infinity
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i]
+        if (char && breakPoints.includes(char)) {
+            const distance = Math.abs(i - maxLength)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                bestSplit = i
+            }
+        }
+    }
+
+    if (bestSplit > 0 && bestSplit < text.length - 1) {
+        const firstLine = text.substring(0, bestSplit + 1)
+        const secondLine = text.substring(bestSplit + 1)
+        return [firstLine, secondLine.length > maxLength ? secondLine.substring(0, maxLength - 3) + '...' : secondLine]
+    }
+
+    // Fallback: split at maxLength
+    const firstLine = text.substring(0, maxLength)
+    const secondLine = text.substring(maxLength)
+    return [firstLine, secondLine.length > maxLength ? secondLine.substring(0, maxLength - 3) + '...' : secondLine]
+}
+
+function getHostnameForIp(ip: string, flow: FlowData): string | null {
+    // Check if this IP is the source or destination in this flow
+    if (flow.src_ip === ip) {
+        return flow.src_hostname
+    } else if (flow.dst_ip === ip) {
+        return flow.dst_hostname
+    }
+    return null
+}
+
+function findHostnameForIp(ip: string, flows: FlowData[]): string | null {
+    for (const flow of flows) {
+        const hostname = getHostnameForIp(ip, flow)
+        if (hostname && hostname !== 'null') {
+            return hostname
+        }
+    }
+    return null
+}
+
 function nodeFill(n: NodeDatum): string {
     if (n.type === 'firewall') return '#2b1b3d'  // Dark purple for firewall
     if (n.health === 'critical') return '#3a0d0d'
@@ -63,8 +121,8 @@ function formatBytesPerHour(bytes: number): string {
 }
 
 function getNodeSize(n: NodeDatum): { w: number; h: number } {
-    const base = { w: 100, h: 40 }
-    if (n.type === 'firewall') return { w: 120, h: 50 }
+    const base = { w: 120, h: 50 } // Increased width from 100 to 120, height from 40 to 50
+    if (n.type === 'firewall') return { w: 140, h: 60 } // Increased firewall size too
     return { w: n.width || base.w, h: n.height || base.h }
 }
 
@@ -191,9 +249,14 @@ function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: num
         const portCount = sourcePorts.size
         const portList = Array.from(sourcePorts).sort((a, b) => a - b)
 
+        // Get hostname from any flow where this IP appears (source or destination)
+        // Search through ALL flows, not just sourceFlows
+        const sourceHostname = findHostnameForIp(srcKey, flows)
+        const sourceLabel = formatHostname(srcKey, sourceHostname)
+
         const sourceNode: NodeDatum = {
             id: `source-${srcKey}`,
-            label: srcKey,
+            label: sourceLabel,
             type: 'source',
             x,
             y,
@@ -304,9 +367,14 @@ function buildNetworkGraph(flows: FlowData[], cardWidth: number, cardHeight: num
         const portCount = destPorts.size
         const portList = Array.from(destPorts).sort((a, b) => a - b)
 
+        // Get hostname from any flow where this IP appears (source or destination)
+        // Search through ALL flows, not just externalFlows
+        const externalHostname = findHostnameForIp(dstKey, flows)
+        const externalLabel = formatHostname(dstKey, externalHostname)
+
         const externalNode: NodeDatum = {
             id: `external-${dstKey}`,
-            label: dstKey,
+            label: externalLabel,
             type: 'external',
             x,
             y,
@@ -989,9 +1057,19 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                                 ) : (
                                     <Rounded x={nx} y={ny} w={w} h={h} fill={fill} stroke={stroke} />
                                 )}
-                                <text x={nx + w / 2} y={ny + h / 2 + 4} textAnchor="middle" fill="#e6e6e6" fontSize={12} style={{ userSelect: 'none' }}>
-                                    {n.label}
-                                </text>
+                                {splitTextIntoLines(n.label, 12).map((line, index) => (
+                                    <text
+                                        key={index}
+                                        x={nx + w / 2}
+                                        y={ny + h / 2 + 8 + (index - 0.5) * 8}
+                                        textAnchor="middle"
+                                        fill="#e6e6e6"
+                                        fontSize={8}
+                                        style={{ userSelect: 'none' }}
+                                    >
+                                        {line}
+                                    </text>
+                                ))}
                                 {/* Badges */}
                                 <g transform={`translate(${nx + 12}, ${ny + 10})`}>
                                     <rect x={0} y={-10} width={80} height={18} rx={9} ry={9} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.06)" />
@@ -1000,7 +1078,7 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                                     </text>
                                 </g>
                                 <title>
-                                    {`${n.label}\n${Object.entries(n.meta).map(([k, v]) => `${k}: ${String(v)}`).join('\n')}`}
+                                    {`${n.label}${n.type === 'source' || n.type === 'external' ? `\nIP: ${n.id.replace('source-', '').replace('external-', '')}` : ''}\n${Object.entries(n.meta).map(([k, v]) => `${k}: ${String(v)}`).join('\n')}`}
                                 </title>
                             </g>
                         )
@@ -1029,7 +1107,12 @@ export function NetworkDataflowGraph({ flows, onSelectedFlowsChange }: { flows: 
                                 <div className="text-sm"><strong>{n.label}</strong></div>
                                 <button className="text-sm" onClick={() => setSelectedNode(null)}>Close</button>
                             </div>
-                            <div className="text-xs opacity-80 mb-2">Type: {n.type} • Health: {n.health}</div>
+                            <div className="text-xs opacity-80 mb-2">
+                                Type: {n.type} • Health: {n.health}
+                                {(n.type === 'source' || n.type === 'external') && (
+                                    <span> • IP: {n.id.replace('source-', '').replace('external-', '')}</span>
+                                )}
+                            </div>
                             <div className="space-y-1 text-sm">
                                 {Object.entries(n.meta).map(([k, v]) => (
                                     <div key={k} className="flex items-center justify-between">
