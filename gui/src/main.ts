@@ -35,6 +35,133 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 app.setName('Open Edison Desktop')
 app.setAppUserModelId('com.open-edison.desktop')
 
+// Global SSE connection for notifications
+let sseConnection: any = null
+
+// Function to establish SSE connection for notifications
+async function establishSSEConnection() {
+  try {
+    console.log('🔌 Establishing SSE connection from Electron main process...')
+    const { EventSource } = require('eventsource')
+    const urlInfo = await readServerConfig()
+    const host = urlInfo.host || 'localhost'
+    const port = urlInfo.port || 3000
+    const apiKey = urlInfo.api_key || 'dev-api-key-change-me'
+    
+    const sseUrl = `http://${host}:${port}/events`
+    console.log('📡 Connecting to SSE endpoint:', sseUrl)
+    
+    sseConnection = new EventSource(sseUrl, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      }
+    })
+    
+    sseConnection.onmessage = (event: any) => {
+      try {
+        const data = JSON.parse(event.data || '{}')
+        if (data?.type === 'mcp_pre_block') {
+          console.log('🔔 Received mcp_pre_block event in Electron main process:', data)
+          handlePreBlockEvent(data)
+        }
+      } catch (error) {
+        console.error('❌ Failed to parse SSE message:', error)
+      }
+    }
+    
+    sseConnection.onerror = (error: any) => {
+      console.error('❌ SSE connection error:', error)
+    }
+    
+    sseConnection.onopen = () => {
+      console.log('✅ SSE connection established from Electron main process')
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to establish SSE connection:', error)
+  }
+}
+
+// Function to handle pre-block events
+async function handlePreBlockEvent(data: any) {
+  try {
+    const title = 'Edison blocked a risky action'
+    const body = `${data.kind}: ${data.name}${data.reason ? ` — ${data.reason}` : ''}`
+    const sessionId = data.session_id || ''
+    
+    console.log('📱 Showing system notification for pre-block event:', {
+      sessionId,
+      kind: data.kind,
+      name: data.name,
+      reason: data.reason,
+      title,
+      body
+    })
+    
+    if (process.platform !== 'darwin') {
+      console.warn('System notifications only supported on macOS')
+      return
+    }
+
+    const { Notification } = require('electron')
+
+    // Include reason for blocking if available
+    const bodyText = data.reason
+      ? `${data.kind}: ${data.name}\n\nBlocked because: ${data.reason}`
+      : `${data.kind}: ${data.name}\n\nThis action is blocked by Edison.`
+
+    console.log('📱 Creating system notification with body:', bodyText)
+    const notification = new Notification({
+      title: 'Edison Firewall: Approval Required',
+      body: bodyText,
+      subtitle: `${data.kind} requires approval`,
+      hasReply: false,
+      sound: 'default',
+      urgency: 'critical',
+      actions: [
+        { type: 'button', text: 'Approve' },
+        { type: 'button', text: 'Deny' }
+      ]
+    })
+    console.log('📱 Notification created, showing...')
+
+    // Add action buttons
+    notification.addListener('click', () => {
+      console.log('Notification clicked - opening dashboard')
+      try {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      } catch (e) {
+        console.error('Failed to show main window:', e)
+      }
+    })
+
+    notification.addListener('action', (event, index) => {
+      const action = index === 0 ? 'approve' : 'deny'
+      console.log(`Notification action: ${action} for ${data.kind} ${data.name}`)
+
+      // Notify the dashboard webview that the action was completed (to clear from queue)
+      if (dashboardView) {
+        dashboardView.webContents.send('notification-action-completed', {
+          sessionId: data.session_id,
+          kind: data.kind,
+          name: data.name,
+          action
+        })
+      }
+    })
+
+    console.log('📱 Showing notification...')
+    notification.show()
+    console.log('📱 Notification shown successfully')
+    
+  } catch (error) {
+    console.error('❌ Failed to handle pre-block event:', error)
+  }
+}
+
 // Read host and port from config.json
 async function readServerConfig(): Promise<{ host: string; port: number; api_key?: string }> {
   const configPath = join(app.getPath('userData'), 'config.json')
@@ -924,6 +1051,9 @@ async function startMainApplication() {
 
   // Create the main window
   await createWindow()
+  
+  // Establish SSE connection for notifications
+  await establishSSEConnection()
 }
 
 // This method will be called when Electron has finished initialization
