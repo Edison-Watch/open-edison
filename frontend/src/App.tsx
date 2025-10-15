@@ -607,6 +607,57 @@ export function App(): React.JSX.Element {
                         })
                         setLastBannerAt(Date.now())
                     }
+                    // Try Electron system notification first (if available)
+                    const tryElectron = async () => {
+                        try {
+                            const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
+                            console.log('🔍 Checking Electron environment:', { 
+                                isElectron, 
+                                hasElectronAPI: !!(window as any).electronAPI,
+                                __ELECTRON_EMBED__: !!(window as any).__ELECTRON_EMBED__,
+                                embedParam: new URLSearchParams(location.search).get('embed'),
+                                electronAPI: typeof (window as any).electronAPI,
+                                showSystemNotification: typeof (window as any).electronAPI?.showSystemNotification
+                            })
+                            if (isElectron && typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.showSystemNotification === 'function') {
+                                console.log('📱 Calling Electron system notification...')
+                                console.log('📱 Notification payload:', {
+                                    sessionId,
+                                    kind: data.kind,
+                                    name: data.name,
+                                    reason: data.reason,
+                                    title,
+                                    body
+                                })
+                                try {
+                                    const result = await (window as any).electronAPI.showSystemNotification({
+                                        sessionId,
+                                        kind: data.kind,
+                                        name: data.name,
+                                        reason: data.reason,
+                                        title,
+                                        body
+                                    })
+                                    console.log('✅ Electron notification result:', result)
+                                    return true
+                                } catch (error) {
+                                    console.error('❌ Electron notification failed:', error)
+                                    return false
+                                }
+                            } else {
+                                console.log('❌ Electron notification not available:', { 
+                                    isElectron, 
+                                    hasElectronAPI: !!(window as any).electronAPI,
+                                    hasShowSystemNotification: typeof (window as any).electronAPI?.showSystemNotification === 'function'
+                                })
+                            }
+                        } catch (e) {
+                            console.warn('❌ Failed to show Electron system notification:', e)
+                        }
+                        return false
+                    }
+
+                    // Fallback to service worker notification
                     const trySW = async () => {
                         try {
                             if ('serviceWorker' in navigator && Notification) {
@@ -628,7 +679,15 @@ export function App(): React.JSX.Element {
                             }
                         } catch { /* ignore */ }
                     }
-                    void trySW()
+
+                    // Try Electron first, then fallback to service worker
+                    const showNotification = async () => {
+                        const electronSuccess = await tryElectron()
+                        if (!electronSuccess) {
+                            void trySW()
+                        }
+                    }
+                    void showNotification()
                 }
                 // For any other events, still tick now to advance live ranges
                 setNowMs(Date.now())
@@ -642,6 +701,26 @@ export function App(): React.JSX.Element {
             try { es.close() } catch { /* ignore */ }
             navigator.serviceWorker?.removeEventListener?.('message', onMessage)
             window.removeEventListener('message', onKeyRequest)
+        }
+    }, [])
+
+    // Listen for notification action completed events from Electron (when approve/deny is clicked on system notification)
+    useEffect(() => {
+        const isElectron = !!(window as any).__ELECTRON_EMBED__ || new URLSearchParams(location.search).get('embed') === 'electron'
+        if (!isElectron) return
+
+        try {
+            if (typeof (window as any).electronAPI !== 'undefined' && typeof (window as any).electronAPI.onNotificationActionCompleted === 'function') {
+                (window as any).electronAPI.onNotificationActionCompleted((data: { sessionId: string; kind: string; name: string; action: string }) => {
+                    // Remove the corresponding item from pendingApprovals
+                    setPendingApprovals(prev => prev.filter(p =>
+                        !(p.sessionId === data.sessionId && p.kind === data.kind && p.name === data.name)
+                    ))
+                    console.log(`🔔 Cleared notification from queue: ${data.action} ${data.kind} ${data.name}`)
+                })
+            }
+        } catch (e) {
+            console.warn('Failed to setup notification-action-completed listener:', e)
         }
     }, [])
 
