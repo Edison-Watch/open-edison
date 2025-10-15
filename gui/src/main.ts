@@ -31,6 +31,10 @@ const FORCE_FIRST_INSTALL = process.env.FORCE_FIRST_INSTALL === 'true' || proces
 // Disable Electron security warnings (dev tool)
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 
+// Set app name for macOS notifications
+app.setName('Open Edison Desktop')
+app.setAppUserModelId('com.open-edison.desktop')
+
 // Read host and port from config.json
 async function readServerConfig(): Promise<{ host: string; port: number; api_key?: string }> {
   const configPath = join(app.getPath('userData'), 'config.json')
@@ -441,6 +445,25 @@ async function startReactDevServer(): Promise<void> {
 }
 
 async function createWindow(): Promise<void> {
+  // Set macOS dock icon (this affects notification icons too)
+  if (process.platform === 'darwin') {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const base = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), '..')
+      const iconPath = path.join(base, 'media', 'Edison.icns')
+      if (fs.existsSync(iconPath)) {
+        const img = nativeImage.createFromPath(iconPath)
+        if (!img.isEmpty()) {
+          app.dock.setIcon(img)
+          console.log('Set Open Edison dock icon:', iconPath)
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to set dock icon:', e)
+    }
+  }
+
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -1731,9 +1754,32 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
           nodeIntegration: false,
           contextIsolation: true,
           javascript: true,
+          preload: join(__dirname, 'dashboard-preload.js')
         }
       })
-      dashboardView.webContents.loadURL(dashUrl)
+      console.log('Loading dashboard URL:', dashUrl)
+
+      // In packaged mode, retry loading dashboard if backend isn't ready yet
+      const loadDashboard = async (retries = 10) => {
+        try {
+          await dashboardView.webContents.loadURL(dashUrl)
+        } catch (e) {
+          if (retries > 0) {
+            console.log(`Dashboard load failed, retrying in 1s... (${retries} attempts left)`)
+            setTimeout(() => loadDashboard(retries - 1), 1000)
+          } else {
+            console.error('Dashboard failed to load after all retries')
+          }
+        }
+      }
+
+      if (app.isPackaged) {
+        // Wait a bit for backend to be fully ready
+        setTimeout(() => loadDashboard(), 2000)
+      } else {
+        dashboardView.webContents.loadURL(dashUrl)
+      }
+
       // Mark environment so dashboard can hide its own theme switch
       try { dashboardView.webContents.executeJavaScript("window.__ELECTRON_EMBED__ = true").catch(() => { }) } catch { }
       // Store api_key in localStorage for dashboard
@@ -1741,8 +1787,13 @@ ipcMain.handle('dashboard-create-or-show', async (event, bounds: { x: number; y:
       // When the dashboard finishes loading, apply the current theme
       try {
         dashboardView.webContents.on('did-finish-load', () => {
+          console.log('Dashboard loaded successfully')
           try { setApiKeyForDashboard(apiKey) } catch { }
           try { applyThemeToDashboard(getEffectiveTheme(themeMode), themeMode) } catch { }
+        })
+
+        dashboardView.webContents.on('did-fail-load', (event: any, errorCode: number, errorDescription: string, validatedURL: string) => {
+          console.error('Dashboard failed to load:', { errorCode, errorDescription, validatedURL })
         })
       } catch { }
     }
@@ -1831,6 +1882,90 @@ ipcMain.handle('dashboard-refresh', async () => {
     return { success: true }
   } catch (e) {
     console.error('dashboard-refresh error:', e)
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
+})
+
+// Show system notification for MCP blocks
+ipcMain.handle('show-system-notification', async (event, payload: {
+  sessionId: string
+  kind: 'tool' | 'resource' | 'prompt'
+  name: string
+  reason?: string
+  title: string
+  body: string
+}) => {
+  try {
+    console.log('🔔 Received show-system-notification request:', payload)
+    console.log('🔔 Notification request details:', {
+      sessionId: payload.sessionId,
+      kind: payload.kind,
+      name: payload.name,
+      reason: payload.reason,
+      title: payload.title,
+      body: payload.body
+    })
+    if (process.platform !== 'darwin') {
+      console.warn('System notifications only supported on macOS')
+      return { success: false, error: 'Not supported on this platform' }
+    }
+
+    const { Notification } = require('electron')
+
+    // Include reason for blocking if available
+    const bodyText = payload.reason
+      ? `${payload.kind}: ${payload.name}\n\nBlocked because: ${payload.reason}`
+      : `${payload.kind}: ${payload.name}\n\nThis action is blocked by Edison.`
+
+    console.log('📱 Creating system notification with body:', bodyText)
+    const notification = new Notification({
+      title: 'Edison Firewall: Approval Required',
+      body: bodyText,
+      subtitle: `${payload.kind} requires approval`,
+      hasReply: false,
+      sound: 'default',
+      urgency: 'critical',
+      actions: [
+        { type: 'button', text: 'Approve' },
+        { type: 'button', text: 'Deny' }
+      ]
+    })
+    console.log('📱 Notification created, showing...')
+
+    // Add action buttons
+    notification.addListener('click', () => {
+      console.log('Notification clicked - opening dashboard')
+      try {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      } catch (e) {
+        console.error('Failed to show main window:', e)
+      }
+    })
+
+    notification.addListener('action', (event, index) => {
+      const action = index === 0 ? 'approve' : 'deny'
+      console.log(`Notification action: ${action} for ${payload.kind} ${payload.name}`)
+      
+      // Notify the dashboard webview that the action was completed (to clear from queue)
+      if (dashboardView) {
+        dashboardView.webContents.send('notification-action-completed', {
+          sessionId: payload.sessionId,
+          kind: payload.kind,
+          name: payload.name,
+          action
+        })
+      }
+    })
+
+    console.log('📱 Showing notification...')
+    notification.show()
+    console.log('📱 Notification shown successfully')
+    return { success: true }
+  } catch (e) {
+    console.error('Failed to show system notification:', e)
     return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 })
