@@ -2,7 +2,9 @@
 
 > The Secure MCP Control Panel
 
-<p> <video src="https://github.com/user-attachments/assets/f64b4659-299f-4ef8-b9f2-a3079c4c1905" alt="Open Edison Announcement Video" width="520">Open Edison Announcement Video</video>
+<img width="1920" height="1080" alt="Edison Watch Video Frame" src="https://github.com/user-attachments/assets/7cdcf3ae-f58f-45aa-8c23-bcbdcc19ac47" />
+
+
 
 Connect AI to your data/software with additional security controls to help reduce data exfiltration risks. Gain visibility, monitor potential threats, and get alerts on the data your agent is reading/writing.
 
