@@ -2,7 +2,7 @@
 
 > The Secure MCP Control Panel
 
-<img width="1920" height="1080" alt="Edison Watch Video Frame" src="https://github.com/user-attachments/assets/7cdcf3ae-f58f-45aa-8c23-bcbdcc19ac47" />
+<img width="1466" height="819" alt="Screenshot 2025-10-16 at 17 56 39" src="https://github.com/user-attachments/assets/25383811-22e2-4b54-8fa5-b0940fe4ca90" />
 
 
 
