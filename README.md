@@ -235,7 +235,7 @@ endpoints:
 ### 2. Start ngrok Tunnel
 
 ```bash
-make ngrok
+make ngrok-start
 ```
 
 This will start the ngrok tunnel and make Open-Edison accessible via your custom domain.
