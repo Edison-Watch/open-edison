@@ -11,7 +11,12 @@ from fastmcp import FastMCP
 from fastmcp.client.auth.oauth import FileTokenStorage
 from loguru import logger as log  # kept for non-TUI contexts; printing used in TUI flows
 
-from src.config import Config, MCPServerConfig, get_config_json_path
+from src.config import (
+    Config,
+    MCPServerConfig,
+    clear_json_file_cache,
+    get_config_json_path,
+)
 from src.mcp_importer import paths as _paths
 from src.mcp_importer.exporters import (
     ExportResult,
@@ -95,6 +100,8 @@ def save_imported_servers(
     merged = merge_servers(existing=cfg.mcp_servers, imported=servers, policy=merge_policy)
     cfg.mcp_servers = merged
     cfg.save(target_path)
+    # Clear cache so subsequent Config() loads see the updated file
+    clear_json_file_cache()
     return target_path
 
 
