@@ -335,20 +335,20 @@ show_version: ## Show current project version from pyproject.toml
 	print(f"Current version: {m.group(1)}.{m.group(2)}.{m.group(3)}")
 	PY
 
-bump_version: gui_check_version_matches_backend ## Bump project version in pyproject.toml (PART=patch|minor|major; default: patch) and commit it
+bump_version: ## Bump project version in pyproject.toml (PART=patch|minor|major; default: patch), sync GUI version, and commit it
 	@echo "$(YELLOW)🔧 Bumping $(PART) version in pyproject.toml...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --commit
-	@echo "$(GREEN)✅ Version bumped and committed.$(RESET)"
+	@echo "$(GREEN)✅ Version bumped and committed (GUI version synced automatically).$(RESET)"
 
-bump_version_no_commit: gui_check_version_matches_backend ## Bump version without committing (PART=patch|minor|major)
+bump_version_no_commit: ## Bump version without committing (PART=patch|minor|major)
 	@echo "$(YELLOW)🔧 Bumping $(PART) version in pyproject.toml (no commit)...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --no-commit
-	@echo "$(GREEN)✅ Version bumped (not committed).$(RESET)"
+	@echo "$(GREEN)✅ Version bumped (not committed, GUI version synced automatically).$(RESET)"
 
-bump_version_amend: gui_check_version_matches_backend ## Bump version and amend the last commit
+bump_version_amend: ## Bump version and amend the last commit
 	@echo "$(YELLOW)🔧 Bumping $(PART) version and amending last commit...$(RESET)"
 	@$(PYTHON) scripts/version_bump.py --part $(PART) --commit --amend
-	@echo "$(GREEN)✅ Version bumped and amended into last commit.$(RESET)"
+	@echo "$(GREEN)✅ Version bumped and amended into last commit (GUI version synced automatically).$(RESET)"
 
 # GUI/Desktop version helpers (keep GUI app version aligned with backend when bundling)
 .PHONY: gui_check_version_matches_backend gui_sync_version_to_backend
