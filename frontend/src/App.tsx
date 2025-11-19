@@ -3124,10 +3124,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 </div>
                 {true ? (
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.from(new Set([
-                            ...((config.mcp_servers || []).map(s => (s.name || '').trim())),
-                            ...defaults.map(d => (d.name || '').trim())
-                        ])).map((srvName) => {
+                        {((config.mcp_servers || []).map(s => (s.name || '').trim())).map((srvName) => {
                             const def = defaults.find(d => (d.name || '').trim().toLowerCase() === srvName.toLowerCase()) || { name: srvName } as MCPServerDefault
                             const existing = (config.mcp_servers || []).find(
                                 s => (s.name || '').trim().toLowerCase() === srvName.toLowerCase()
