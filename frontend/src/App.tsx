@@ -5,6 +5,7 @@ import { useSessions } from './hooks'
 import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus, ToolSchemasResponse, ToolSchemaEntry } from './types'
 import { SessionTable } from './components/SessionTable'
 import { Toggle } from './components/Toggle'
+import { Modal } from './components/Modal'
 import AgentDataflow from './components/AgentDataflow'
 import Stats from './components/Stats'
 import Kpis from './components/Kpis'
@@ -1140,9 +1141,12 @@ function JsonEditors({ projectRoot, onUnsavedChangesChange, theme }: { projectRo
         try {
             const file = files.find(f => f.key === active)!
             // Attempt to POST to a local helper endpoint. If none running, inform the user.
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = getApiKey()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
             const resp = await fetch('/__save_json__', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ path: file.path, content: content[active] ?? '' })
             })
             if (!resp.ok) throw new Error('Local save helper not running or error saving')
@@ -1416,6 +1420,16 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
     const [oauthInfo, setOauthInfo] = useState<Record<string, OAuthServerInfo>>({})
     const [oauthLoading, setOauthLoading] = useState<Record<string, boolean>>({})
     const [oauthError, setOauthError] = useState<Record<string, string>>({})
+
+    // Add MCP Server modal state
+    const [isAddServerModalOpen, setIsAddServerModalOpen] = useState(false)
+    const [addServerTab, setAddServerTab] = useState<'manual' | 'json'>('json')
+    const [newServerName, setNewServerName] = useState('')
+    const [newServerCommand, setNewServerCommand] = useState('')
+    const [newServerArgs, setNewServerArgs] = useState('')
+    const [newServerEnv, setNewServerEnv] = useState('{}')
+    const [pastedJson, setPastedJson] = useState('')
+    const [isVscodeStyle, setIsVscodeStyle] = useState(true)
 
     // Auto-dismiss toast after 10 seconds
     useEffect(() => {
@@ -2026,10 +2040,290 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
         }
     }
 
-    async function quickStart(serverName: string) {
-        await validateAndImport(serverName)
-        await toggleServer(serverName, true)
-        setToast({ message: 'Quick-start: imported permissions and enabled', type: 'success' })
+    const addNewServer = async () => {
+        try {
+            let newServer: any
+
+            if (addServerTab === 'json') {
+                // Parse pasted JSON
+                if (!pastedJson.trim()) {
+                    setToast({ message: 'Please paste a JSON server configuration', type: 'error' })
+                    return
+                }
+
+                try {
+                    const parsed = JSON.parse(pastedJson)
+                    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+                        throw new Error('JSON must be an object')
+                    }
+
+                    let serverConfig: any
+                    let serverName: string
+
+                    if (isVscodeStyle) {
+                        // VSCode style: server name is the key
+                        const keys = Object.keys(parsed)
+                        if (keys.length === 0) {
+                            throw new Error('VSCode style JSON must have at least one server key')
+                        }
+                        if (keys.length > 1) {
+                            throw new Error('VSCode style JSON must have exactly one server key')
+                        }
+                        serverName = keys[0]!
+                        serverConfig = parsed[serverName]
+                        if (typeof serverConfig !== 'object' || Array.isArray(serverConfig)) {
+                            throw new Error('Server configuration must be an object')
+                        }
+                    } else {
+                        // Standard style: name is a field
+                        if (!parsed.name || typeof parsed.name !== 'string') {
+                            setToast({ message: 'JSON must have a "name" field', type: 'error' })
+                            return
+                        }
+                        serverName = parsed.name.trim()
+                        serverConfig = parsed
+                    }
+
+                    if (!serverConfig.command || typeof serverConfig.command !== 'string') {
+                        setToast({ message: 'JSON must have a "command" field', type: 'error' })
+                        return
+                    }
+
+                    newServer = {
+                        name: serverName,
+                        command: serverConfig.command.trim(),
+                        args: Array.isArray(serverConfig.args) ? serverConfig.args : [],
+                        env: serverConfig.env && typeof serverConfig.env === 'object' && !Array.isArray(serverConfig.env) ? serverConfig.env : {},
+                        enabled: serverConfig.enabled === true,
+                        roots: Array.isArray(serverConfig.roots) ? serverConfig.roots : []
+                    }
+                } catch (e) {
+                    setToast({ message: `Invalid JSON: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' })
+                    return
+                }
+            } else {
+                // Manual input
+                if (!newServerName.trim()) {
+                    setToast({ message: 'Server name is required', type: 'error' })
+                    return
+                }
+                if (!newServerCommand.trim()) {
+                    setToast({ message: 'Command is required', type: 'error' })
+                    return
+                }
+
+                // Parse args (space-separated or JSON array)
+                let argsArray: string[] = []
+                if (newServerArgs.trim()) {
+                    try {
+                        // Try parsing as JSON array first
+                        const parsed = JSON.parse(newServerArgs)
+                        if (Array.isArray(parsed)) {
+                            argsArray = parsed.map(a => String(a))
+                        } else {
+                            // If not JSON array, treat as space-separated
+                            argsArray = newServerArgs.trim().split(/\s+/).filter(s => s.length > 0)
+                        }
+                    } catch {
+                        // If not valid JSON, treat as space-separated
+                        argsArray = newServerArgs.trim().split(/\s+/).filter(s => s.length > 0)
+                    }
+                }
+
+                // Parse env JSON
+                let envObj: Record<string, string> = {}
+                if (newServerEnv.trim()) {
+                    try {
+                        envObj = JSON.parse(newServerEnv)
+                        if (typeof envObj !== 'object' || Array.isArray(envObj)) {
+                            throw new Error('env must be a JSON object')
+                        }
+                    } catch (e) {
+                        setToast({ message: 'Invalid JSON in env field', type: 'error' })
+                        return
+                    }
+                }
+
+                newServer = {
+                    name: newServerName.trim(),
+                    command: newServerCommand.trim(),
+                    args: argsArray,
+                    env: envObj,
+                    enabled: true, // Always enable new servers
+                    roots: []
+                }
+            }
+
+            // Check if server name already exists
+            const currentList = [...(config?.mcp_servers || [])]
+            const existingIndex = currentList.findIndex(
+                s => (s.name || '').trim().toLowerCase() === newServer.name.toLowerCase()
+            )
+            if (existingIndex >= 0) {
+                setToast({ message: 'A server with this name already exists', type: 'error' })
+                return
+            }
+
+            // Add to config
+            const nextList = [...currentList, newServer]
+            const nextCfg = { ...(config || { mcp_servers: [] } as any), mcp_servers: nextList }
+
+            // Optimistically update UI
+            setConfig(nextCfg as any)
+
+            // Persist config file to backend first
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            const storedKey = getApiKey()
+            if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+            const resp = await fetch('/__save_json__', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ name: 'config.json', content: JSON.stringify(nextCfg, null, 4) })
+            })
+            if (!resp.ok) throw new Error('Save failed')
+
+            // Update baseline after successful save
+            setOrigConfig(nextCfg as any)
+            setToast({ message: `Server "${newServer.name}" saved. Validating and importing...`, type: 'success' })
+
+            // Now that config file is saved, validate & import, then reinitialize
+            try {
+                // Use the server config we just created instead of reading from state
+                // (state updates are async and might not be available yet)
+                const validateBody = {
+                    name: newServer.name,
+                    command: newServer.command,
+                    args: newServer.args,
+                    env: newServer.env,
+                    roots: newServer.roots,
+                    timeout_s: 20,
+                }
+                const validateHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+                const validateKey = getApiKey()
+                if (validateKey) validateHeaders['Authorization'] = `Bearer ${validateKey}`
+                
+                console.log(`[addNewServer] Validating server: ${newServer.name}`)
+                const validateResp = await fetch('/mcp/validate', { 
+                    method: 'POST', 
+                    headers: validateHeaders, 
+                    body: JSON.stringify(validateBody) 
+                })
+                const validateData = await validateResp.json() as any
+                console.log(`[addNewServer] Validation response for ${newServer.name}:`, validateData)
+                
+                if (!validateResp.ok || validateData?.valid === false) {
+                    const msg = (validateData && typeof validateData.error === 'string') ? validateData.error : `Validate failed (${validateResp.status})`
+                    throw new Error(msg)
+                }
+
+                // Import permissions from validation response
+                const toPerm = (desc?: string): PermissionFlags => ({ 
+                    enabled: true, 
+                    write_operation: true, 
+                    read_private_data: true, 
+                    read_untrusted_public_data: true, 
+                    description: desc, 
+                    acl: 'SECRET' 
+                } as PermissionFlags)
+
+                setToolPerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = next[newServer.name] || {}
+                    for (const t of validateData.tools || []) {
+                        const key = unprefixByServer(String(t.name || ''), newServer.name)
+                        if (!server[key]) server[key] = toPerm(t.description)
+                    }
+                    next[newServer.name] = server
+                    return next
+                })
+                setResourcePerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = next[newServer.name] || {}
+                    for (const r of validateData.resources || []) { 
+                        const key = r.uri
+                        if (!server[key]) server[key] = toPerm(r.description) 
+                    }
+                    next[newServer.name] = server
+                    return next
+                })
+                setPromptPerms(prev => {
+                    const next = { ...(prev || {}) } as any
+                    const server = next[newServer.name] || {}
+                    for (const p of validateData.prompts || []) {
+                        const key = unprefixByServer(String(p.name || ''), newServer.name)
+                        if (!server[key]) server[key] = toPerm(p.description)
+                    }
+                    next[newServer.name] = server
+                    return next
+                })
+                
+                console.log(`[addNewServer] Imported permissions for ${newServer.name}`)
+                
+                // Save permission files after validation
+                const post = (name: string, content: string) => {
+                    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                    const storedKey = getApiKey()
+                    if (storedKey) headers['Authorization'] = `Bearer ${storedKey}`
+                    return fetch('/__save_json__', { method: 'POST', headers, body: JSON.stringify({ name, content }) })
+                }
+
+                const toolsToSave = toolPerms
+                const resourcesToSave = resourcePerms
+                const promptsToSave = promptPerms
+
+                await Promise.all([
+                    post(TOOL_NAME, JSON.stringify(toolsToSave, null, 4)),
+                    post(RESOURCE_NAME, JSON.stringify(resourcesToSave, null, 4)),
+                    post(PROMPT_NAME, JSON.stringify(promptsToSave, null, 4)),
+                ])
+
+                // Reinitialize servers
+                const reinitHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+                const reinitKey = getApiKey()
+                if (reinitKey) {
+                    reinitHeaders['Authorization'] = `Bearer ${reinitKey}`
+                }
+
+                const reinitResponse = await fetchWithTimeout(`/mcp/reinitialize`, {
+                    method: 'POST',
+                    headers: reinitHeaders
+                }, 10_000)
+
+                if (!reinitResponse.ok) {
+                    const errorData = await reinitResponse.json().catch(() => ({}))
+                    throw new Error(errorData.message || `Reinitialize failed (${reinitResponse.status})`)
+                }
+
+                const result = await reinitResponse.json()
+                const count = result.total_final_mounted || 0
+                const names = Array.isArray(result.mounted_servers) ? result.mounted_servers.join(', ') : ''
+                setToast({ message: `Server "${newServer.name}" added, validated, and reinitialized. ${count} servers mounted${names ? `: ${names}` : ''}`, type: 'success' })
+
+                // Reset config update flag
+                try {
+                    const configFlags = safeLocalStorage.getItem('json_editor_needs_config_update')
+                    const flags = configFlags ? JSON.parse(configFlags) : {}
+                    flags.config = false
+                    localStorage.setItem('json_editor_needs_config_update', JSON.stringify(flags))
+                } catch { /* ignore */ }
+            } catch (validateError) {
+                console.error('Validation or reinitialize failed:', validateError)
+                setToast({ message: `Server added but validation/reinitialize failed: ${validateError instanceof Error ? validateError.message : 'Unknown error'}`, type: 'error' })
+            }
+
+            // Reset form and close modal
+            setNewServerName('')
+            setNewServerCommand('')
+            setNewServerArgs('')
+            setNewServerEnv('{}')
+            setPastedJson('')
+            setAddServerTab('json')
+            setIsVscodeStyle(true)
+            setIsAddServerModalOpen(false)
+        } catch (e) {
+            console.error('Failed to add server:', e)
+            setToast({ message: `Failed to add server: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' })
+        }
     }
 
     const AUTOCONFIG_URL = (globalThis as any).__AUTOCONFIG_URL__ || 'https://api.edison.watch/api/config-perms'// 'http://localhost:3101/api/config-perms'
@@ -2809,6 +3103,14 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         <div className="text-xs text-app-muted">Click a tile to edit. Toggle enable and set API keys as needed.</div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            className="button inline-flex items-center gap-2"
+                            onClick={() => setIsAddServerModalOpen(true)}
+                            title="Add MCP server"
+                        >
+                            <span>+</span>
+                            <span>Add MCP server</span>
+                        </button>
                         {/* Tiles view removed; single layout */}
                         <button
                             className={`button ${needsReinitialize ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
@@ -2822,10 +3124,7 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                 </div>
                 {true ? (
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.from(new Set([
-                            ...((config.mcp_servers || []).map(s => (s.name || '').trim())),
-                            ...defaults.map(d => (d.name || '').trim())
-                        ])).map((srvName) => {
+                        {((config.mcp_servers || []).map(s => (s.name || '').trim())).map((srvName) => {
                             const def = defaults.find(d => (d.name || '').trim().toLowerCase() === srvName.toLowerCase()) || { name: srvName } as MCPServerDefault
                             const existing = (config.mcp_servers || []).find(
                                 s => (s.name || '').trim().toLowerCase() === srvName.toLowerCase()
@@ -2923,7 +3222,6 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                                             </details>
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 <button className="button" onClick={() => validateAndImport(def.name)}>Validate & import</button>
-                                                <button className="button" onClick={() => quickStart(def.name)}>Quick start</button>
                                                 {(() => {
                                                     const c = getCounts(def.name); return (enabled && (c.tools + c.resources + c.prompts) > 0) ? (
                                                         <button className="button" onClick={() => autoConfigure(def.name)}>Autoconfig</button>
@@ -3112,6 +3410,164 @@ function ConfigurationManager({ projectRoot }: { projectRoot: string }) {
                         </button>
                     </div>
                 </div>
+            )}
+            {isAddServerModalOpen && (
+                <Modal
+                    title="Add MCP Server"
+                    onClose={() => {
+                        setIsAddServerModalOpen(false)
+                        setNewServerName('')
+                        setNewServerCommand('')
+                        setNewServerArgs('')
+                        setNewServerEnv('{}')
+                        setPastedJson('')
+                        setAddServerTab('json')
+                        setIsVscodeStyle(true)
+                    }}
+                    actions={
+                        (() => {
+                            // Check if save should be enabled
+                            const canSave = addServerTab === 'manual' 
+                                ? newServerName.trim() && newServerCommand.trim()
+                                : pastedJson.trim().length > 0
+                            
+                            return (
+                                <button
+                                    className={`button ${canSave ? '!bg-orange-500 hover:!bg-orange-600 !text-white' : ''}`}
+                                    onClick={addNewServer}
+                                    disabled={!canSave}
+                                >
+                                    Save
+                                </button>
+                            )
+                        })()
+                    }
+                >
+                    <div className="space-y-4">
+                        {/* Tabs */}
+                        <div className="flex border-b border-app-border">
+                            <button
+                                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    addServerTab === 'manual'
+                                        ? 'border-app-accent text-app-accent'
+                                        : 'border-transparent text-app-muted hover:text-app-fg'
+                                }`}
+                                onClick={() => setAddServerTab('manual')}
+                            >
+                                Input manually
+                            </button>
+                            <button
+                                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    addServerTab === 'json'
+                                        ? 'border-app-accent text-app-accent'
+                                        : 'border-transparent text-app-muted hover:text-app-fg'
+                                }`}
+                                onClick={() => setAddServerTab('json')}
+                            >
+                                Paste JSON
+                            </button>
+                        </div>
+
+                        {/* Manual Input Tab */}
+                        {addServerTab === 'manual' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium block mb-2">
+                                        Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newServerName}
+                                        onChange={(e) => setNewServerName(e.target.value)}
+                                        placeholder="Server name"
+                                        className="w-full px-3 py-2 border border-app-border rounded bg-app-bg text-app-fg"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium block mb-2">
+                                        Command
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newServerCommand}
+                                        onChange={(e) => setNewServerCommand(e.target.value)}
+                                        placeholder="e.g., npx, uvx, python"
+                                        className="w-full px-3 py-2 border border-app-border rounded bg-app-bg text-app-fg"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium block mb-2">
+                                        Args
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newServerArgs}
+                                        onChange={(e) => setNewServerArgs(e.target.value)}
+                                        placeholder='Space-separated or JSON array: ["-y", "package-name"]'
+                                        className="w-full px-3 py-2 border border-app-border rounded bg-app-bg text-app-fg"
+                                    />
+                                    <p className="text-xs text-app-muted mt-1">
+                                        Command arguments as space-separated values or JSON array
+                                    </p>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium block mb-2">
+                                        Env (JSON)
+                                    </label>
+                                    <textarea
+                                        value={newServerEnv}
+                                        onChange={(e) => setNewServerEnv(e.target.value)}
+                                        placeholder='{"KEY": "value"}'
+                                        className="w-full px-3 py-2 border border-app-border rounded bg-app-bg text-app-fg font-mono text-sm"
+                                        rows={4}
+                                    />
+                                    <p className="text-xs text-app-muted mt-1">
+                                        Environment variables as JSON object (e.g., {"{"}"KEY": "value"{"}"})
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Paste JSON Tab */}
+                        {addServerTab === 'json' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 pb-2 border-b border-app-border">
+                                    <input
+                                        type="checkbox"
+                                        id="vscode-style"
+                                        checked={isVscodeStyle}
+                                        onChange={(e) => setIsVscodeStyle(e.target.checked)}
+                                        className="cursor-pointer"
+                                    />
+                                    <label htmlFor="vscode-style" className="text-sm font-medium cursor-pointer">
+                                        VSCode style
+                                    </label>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium block mb-2">
+                                        Server Configuration (JSON)
+                                    </label>
+                                    <textarea
+                                        value={pastedJson}
+                                        onChange={(e) => setPastedJson(e.target.value)}
+                                        placeholder={isVscodeStyle 
+                                            ? `{\n  "server_name": {\n    "command": "npx",\n    "args": ["-y", "package-name"],\n    "env": {},\n    "enabled": true,\n    "roots": []\n  }\n}`
+                                            : `{\n  "name": "server-name",\n  "command": "npx",\n  "args": ["-y", "package-name"],\n  "env": {},\n  "enabled": true,\n  "roots": []\n}`
+                                        }
+                                        className="w-full px-3 py-2 border border-app-border rounded bg-app-bg text-app-fg font-mono text-sm"
+                                        rows={12}
+                                    />
+                                    <p className="text-xs text-app-muted mt-1">
+                                        {isVscodeStyle 
+                                            ? 'Paste VSCode-style JSON where server name is the key. Required fields: command'
+                                            : 'Paste a complete MCP server configuration as JSON. Required fields: name, command'
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Modal>
             )}
         </div>
     )

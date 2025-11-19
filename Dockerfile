@@ -61,6 +61,7 @@ COPY config.json ./config.json
 COPY tool_permissions.json ./tool_permissions.json
 COPY resource_permissions.json ./resource_permissions.json
 COPY prompt_permissions.json ./prompt_permissions.json
+RUN touch ./.setup_tui_ran
 
 # Expose ports
 EXPOSE 3000 3001 50001
