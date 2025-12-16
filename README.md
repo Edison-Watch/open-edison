@@ -1,12 +1,15 @@
 # OpenEdison 🔒⚡️
 
-> The Secure MCP Control Panel
+> The Agentic Data Firewall
 
 <img width="1466" height="819" alt="Screenshot 2025-10-16 at 17 56 39" src="https://github.com/user-attachments/assets/25383811-22e2-4b54-8fa5-b0940fe4ca90" />
 
 
+Agentic AI breaks traditional data security. OpenEdison secures & unifies agent data access to stop data leaks by securing your agent's interactions with your data/software.
 
-Connect AI to your data/software with additional security controls to help reduce data exfiltration risks. Gain visibility, monitor potential threats, and get alerts on the data your agent is reading/writing.
+Gain visibility, monitor potential threats, and get alerts on the data your agent is reading/writing.
+
+How is it different from other MCP Gateways? Read our [MCP Gateway Comparison Blog](https://edisonwatch.substack.com/p/mcp-gateway-comparison-for-security) and our [OpenEdison release post](https://edisonwatch.substack.com/p/introducing-openedison).
 
 OpenEdison helps address the [lethal trifecta problem](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/), which can increase risks of agent hijacking & data exfiltration by malicious actors.
 
