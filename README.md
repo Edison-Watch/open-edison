@@ -62,6 +62,24 @@ Read more in [docs/langgraph_quickstart.md](docs/quick-reference/langgraph_quick
 
 Edison helps you gain observability, control, and policy enforcement for AI interactions with systems of records, existing company software and data. Reduce risks of AI-caused data leakage with streamlined setup for cross-system governance.
 
+<details>
+<summary><strong>OpenEdison vs EdisonWatch</strong> - EdisonWatch adds Multi-Tenancy, SIEM, SSO, and Auto-Enforcement</summary>
+
+| Feature | OpenEdison (Open Source) | EdisonWatch (Commercial) |
+|---------|--------------------------|--------------------------|
+| Single User | ✅ | ✅ |
+| MCP Security Controls | ✅ | ✅ |
+| Lethal Trifecta Detection | ✅ | ✅ |
+| Tool/Resource Permissions | ✅ | ✅ |
+| Multi-Tenancy | ❌ | ✅ |
+| SIEM Integration | ❌ | ✅ |
+| SSO (Single Sign-On) | ❌ | ✅ |
+| Client Software for Auto-Enforcement | ❌ | ✅ |
+
+👉 **Interested in EdisonWatch?** Visit [edison.watch](https://edison.watch) or [contact us](mailto:hello@edison.watch).
+
+</details>
+
 ## Quick Start 🚀
 
 The fastest way to get started:
