@@ -1,5 +1,3 @@
-import React from 'react'
-
 interface Feature {
   name: string
   openEdison: boolean

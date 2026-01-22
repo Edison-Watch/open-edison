@@ -1,5 +1,3 @@
-import React from 'react'
-
 interface EnterpriseFeatureProps {
   featureName: string
   description: string
