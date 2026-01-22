@@ -116,7 +116,7 @@ export default function Kpis({ sessions, prevSessions }: { sessions: Session[]; 
 
     return (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
-            <Item title="Sessions" value={formatNumber(sessionsCount)} delta={dSessions.text} deltaPos={dSessions.pos} deltaZero={dSessions.zero} spark={<Spark data={callsSpark} color="#8b5cf6" />} />
+            <Item title="Sessions" value={formatNumber(sessionsCount)} delta={dSessions.text} deltaPos={dSessions.pos} deltaZero={dSessions.zero} spark={<Spark data={callsSpark} color="#C3FFFD" />} />
             <Item title="Calls" value={formatNumber(callsCount)} delta={dCalls.text} deltaPos={dCalls.pos} deltaZero={dCalls.zero} spark={<Spark data={callsSpark} color="#34d399" />} />
             <Item title="Error rate" value={`${Math.round(errorRate * 1000) / 10}%`} delta={dErr.text} deltaPos={dErr.pos} deltaZero={dErr.zero} />
             <Item title="p95 duration" value={`${Math.round(p95ms)}`} unit="ms" delta={dP95.text} deltaPos={dP95.pos} deltaZero={dP95.zero} />
