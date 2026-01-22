@@ -10,7 +10,6 @@ import AgentDataflow from './components/AgentDataflow'
 import Stats from './components/Stats'
 import Kpis from './components/Kpis'
 import DateRangeSlider from './components/DateRangeSlider'
-import { ComparisonTable } from './components/ComparisonTable'
 import { EnterpriseFeature } from './components/EnterpriseFeature'
 
 // Embedding/Electron detection
@@ -339,10 +338,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'comparison' | 'users' | 'roles'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'users' | 'roles'>(() => {
         try {
             const saved = safeLocalStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents' || saved === 'comparison' || saved === 'users' || saved === 'roles') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents' || saved === 'users' || saved === 'roles') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -351,7 +350,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'comparison' | 'users' | 'roles') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'users' | 'roles') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -737,7 +736,6 @@ export function App(): React.JSX.Element {
                         {view === 'configs' && 'Direct JSON editing for configuration and permission files.'}
                         {view === 'manager' && 'Manage MCP servers, tools, and permissions with a guided interface.'}
                         {view === 'agents' && 'Monitor agent identities, sessions, and permission overrides.'}
-                        {view === 'comparison' && 'Feature comparison between OpenEdison (Open Source) and EdisonWatch (Commercial).'}
                         {view === 'users' && 'Multi-user management and access control (Enterprise feature).'}
                         {view === 'roles' && 'Role-based access control and permission management (Enterprise feature).'}
                     </p>
@@ -763,8 +761,7 @@ export function App(): React.JSX.Element {
                             </span>
                         </button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'comparison' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('comparison')}>Comparison</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Servers</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
@@ -869,8 +866,6 @@ export function App(): React.JSX.Element {
                 <ConfigurationManager projectRoot={projectRoot} />
             ) : view === 'agents' ? (
                 <AgentsView sessions={uiSessions} />
-            ) : view === 'comparison' ? (
-                <ComparisonTable />
             ) : view === 'users' ? (
                 <EnterpriseFeature
                     featureName="User Management"
