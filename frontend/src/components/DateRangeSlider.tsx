@@ -306,7 +306,7 @@ export function DateRangeSlider({
                 <div className="mb-3" style={{ height: 80, overflow: 'hidden' }}>
                     <Line ref={sparkRef as any} height={60} data={{
                         labels: histogram.labels,
-                        datasets: [{ label: 'sessions', data: histogram.data, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.2)', tension: 0.3, pointRadius: 0 }],
+                        datasets: [{ label: 'sessions', data: histogram.data, borderColor: '#C3FFFD', backgroundColor: 'rgba(195,255,253,0.2)', tension: 0.3, pointRadius: 0 }],
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,

@@ -4,12 +4,13 @@ import Editor from '@monaco-editor/react'
 import { useSessions } from './hooks'
 import type { Session, OAuthServerInfo, OAuthStatusResponse, OAuthAuthorizeRequest, OAuthStatus, ToolSchemasResponse, ToolSchemaEntry } from './types'
 import { SessionTable } from './components/SessionTable'
-import { Toggle } from './components/Toggle'
+import { Toggle, ThemeToggle } from './components/Toggle'
 import { Modal } from './components/Modal'
 import AgentDataflow from './components/AgentDataflow'
 import Stats from './components/Stats'
 import Kpis from './components/Kpis'
 import DateRangeSlider from './components/DateRangeSlider'
+import { EnterpriseFeature } from './components/EnterpriseFeature'
 
 // Embedding/Electron detection
 const isEmbedded = (() => {
@@ -337,10 +338,10 @@ export function App(): React.JSX.Element {
 
     const projectRoot = (globalThis as any).__PROJECT_ROOT__ || ''
 
-    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents'>(() => {
+    const [view, setView] = useState<'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'users' | 'roles'>(() => {
         try {
             const saved = safeLocalStorage.getItem('app_view')
-            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents') {
+            if (saved === 'sessions' || saved === 'configs' || saved === 'manager' || saved === 'observability' || saved === 'agents' || saved === 'users' || saved === 'roles') {
                 return saved
             }
         } catch { /* ignore */ }
@@ -349,7 +350,7 @@ export function App(): React.JSX.Element {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
     // Handle view changes with unsaved changes warning
-    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents') => {
+    const handleViewChange = (newView: 'sessions' | 'configs' | 'manager' | 'observability' | 'agents' | 'users' | 'roles') => {
         if (hasUnsavedChanges && view === 'configs') {
             const confirmed = window.confirm('You have unsaved changes in the JSON editor. Are you sure you want to switch views? Your changes will be lost.')
             if (!confirmed) return
@@ -735,23 +736,48 @@ export function App(): React.JSX.Element {
                         {view === 'configs' && 'Direct JSON editing for configuration and permission files.'}
                         {view === 'manager' && 'Manage MCP servers, tools, and permissions with a guided interface.'}
                         {view === 'agents' && 'Monitor agent identities, sessions, and permission overrides.'}
+                        {view === 'users' && 'Multi-user management and access control (Enterprise feature).'}
+                        {view === 'roles' && 'Role-based access control and permission management (Enterprise feature).'}
                     </p>
                 </div>
                 <div className="flex gap-2 items-center">
                     <div className="hidden sm:flex border border-app-border rounded overflow-hidden">
                         <button className={`px-3 py-1 text-sm ${view === 'sessions' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('sessions')}>Sessions</button>
                         <button className={`px-3 py-1 text-sm ${view === 'agents' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('agents')}>Agents</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'users' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('users')}>
+                            <span className="inline-flex items-center gap-1">
+                                Users
+                                <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                </svg>
+                            </span>
+                        </button>
+                        <button className={`px-3 py-1 text-sm ${view === 'roles' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('roles')}>
+                            <span className="inline-flex items-center gap-1">
+                                Roles
+                                <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                </svg>
+                            </span>
+                        </button>
                         <button className={`px-3 py-1 text-sm ${view === 'configs' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('configs')}>Raw Config</button>
-                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Server Manager</button>
+                        <button className={`px-3 py-1 text-sm ${view === 'manager' ? 'text-app-accent border-r border-app-border bg-app-accent/10' : ''}`} onClick={() => handleViewChange('manager')}>Servers</button>
                         <button className={`px-3 py-1 text-sm ${view === 'observability' ? 'text-app-accent bg-app-accent/10' : ''}`} onClick={() => handleViewChange('observability')}>Observability</button>
                     </div>
                     {/* Hide theme switch when embedded in Electron (exposed via window.__ELECTRON_EMBED__) */}
                     {!(window as any).__ELECTRON_EMBED__ && (new URLSearchParams(location.search).get('embed') !== 'electron') && (
-                        <button className="button" onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
-                            {theme === 'light' ? 'Dark' : 'Light'} mode
-                        </button>
+                        <ThemeToggle theme={theme} onChange={setTheme} />
                     )}
-                    <button className="button" onClick={() => location.reload()}>Refresh</button>
+                    <button
+                        className="button flex items-center justify-center"
+                        onClick={() => location.reload()}
+                        aria-label="Refresh page"
+                        title="Refresh page"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 
@@ -840,6 +866,16 @@ export function App(): React.JSX.Element {
                 <ConfigurationManager projectRoot={projectRoot} />
             ) : view === 'agents' ? (
                 <AgentsView sessions={uiSessions} />
+            ) : view === 'users' ? (
+                <EnterpriseFeature
+                    featureName="User Management"
+                    description="Manage multiple users, roles, and permissions across your organization with enterprise-grade access control."
+                />
+            ) : view === 'roles' ? (
+                <EnterpriseFeature
+                    featureName="Role-Based Access Control"
+                    description="Define custom roles and granular permissions to control what users can access and manage across your MCP infrastructure."
+                />
             ) : (
                 <div className="space-y-4">
                     <Kpis sessions={timeFiltered} prevSessions={prevTimeFiltered} />

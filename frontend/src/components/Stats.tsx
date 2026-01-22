@@ -45,14 +45,14 @@ const CrosshairPlugin = {
 ChartJS.register(CrosshairPlugin as any)
 
 const COLOR_PALETTE = [
-    { fill: 'rgba(99,102,241,0.6)', stroke: 'rgba(99,102,241,1)' }, // indigo
+    { fill: 'rgba(195,255,253,0.6)', stroke: 'rgba(195,255,253,1)' }, // core cyan
     { fill: 'rgba(34,197,94,0.6)', stroke: 'rgba(34,197,94,1)' },  // green
     { fill: 'rgba(59,130,246,0.6)', stroke: 'rgba(59,130,246,1)' }, // blue
     { fill: 'rgba(244,114,182,0.6)', stroke: 'rgba(244,114,182,1)' }, // pink
     { fill: 'rgba(251,191,36,0.6)', stroke: 'rgba(251,191,36,1)' },  // amber
     { fill: 'rgba(248,113,113,0.6)', stroke: 'rgba(248,113,113,1)' }, // red
     { fill: 'rgba(14,165,233,0.6)', stroke: 'rgba(14,165,233,1)' },  // sky
-    { fill: 'rgba(139,92,246,0.6)', stroke: 'rgba(139,92,246,1)' },  // violet
+    { fill: 'rgba(155,164,166,0.6)', stroke: 'rgba(155,164,166,1)' },  // graphene grey
 ]
 
 type Bucket = { label: string; value: number }
@@ -377,8 +377,8 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                             {
                                 label: 'Calls',
                                 data: callsValues,
-                                borderColor: '#8b5cf6',
-                                backgroundColor: 'rgba(139,92,246,0.2)',
+                                borderColor: '#C3FFFD',
+                                backgroundColor: 'rgba(195,255,253,0.2)',
                                 tension: 0,
                                 cubicInterpolationMode: 'monotone' as any,
                                 pointRadius: (callsValues.length <= 1 ? 3 : 0),
@@ -459,7 +459,7 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                             <Line height={480} data={{
                                 labels: callsLabels,
                                 datasets: [
-                                    { label: 'Calls', data: callsValues, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.2)', tension: 0.25, pointRadius: (callsValues.length <= 1 ? 3 : 0) },
+                                    { label: 'Calls', data: callsValues, borderColor: '#C3FFFD', backgroundColor: 'rgba(195,255,253,0.2)', tension: 0.25, pointRadius: (callsValues.length <= 1 ? 3 : 0) },
                                     ...(showMA ? [{ label: '7-day Moving Average', data: callsMA, borderColor: '#34d399', backgroundColor: 'rgba(16,185,129,0.0)', borderDash: [6, 4], tension: 0, pointRadius: 0 }] : []),
                                 ],
                             }} options={{
@@ -564,7 +564,7 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                 {isEmpty ? EmptyState : (
                     <Bar height={200} data={{
                         labels: sessionLenHist.map(b => b.label),
-                        datasets: [{ label: 'sessions', data: sessionLenHist.map(b => b.value), backgroundColor: '#8b5cf6', borderColor: '#7c3aed' }],
+                        datasets: [{ label: 'sessions', data: sessionLenHist.map(b => b.value), backgroundColor: '#C3FFFD', borderColor: '#9BA4A6' }],
                     }} options={{
                         responsive: true,
                         maintainAspectRatio: false,
@@ -581,7 +581,7 @@ export function Stats({ sessions, onTimeRangeChange, onHoverTimeChange, rangeSta
                         ) : (
                             <Bar height={480} data={{
                                 labels: sessionLenHist.map(b => b.label),
-                                datasets: [{ label: 'sessions', data: sessionLenHist.map(b => b.value), backgroundColor: '#8b5cf6', borderColor: '#7c3aed' }],
+                                datasets: [{ label: 'sessions', data: sessionLenHist.map(b => b.value), backgroundColor: '#C3FFFD', borderColor: '#9BA4A6' }],
                             }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />)}
                     </div>
                 </Modal>
